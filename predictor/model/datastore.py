@@ -32,6 +32,8 @@ class DataStore:
 
     last_updated: datetime
 
+    serialize_lock: asyncio.Lock
+
     def __init__(self, region : PriceRegion, storage_dir: str|None = None, storage_fn_prefix: str|None = None):
         self.data = pd.DataFrame()
         self.region = region
@@ -43,6 +45,8 @@ class DataStore:
         self.horizon_cutoff = None
         self.known_source_horizon = None
         self.source_horizon_revalitation_ts = None
+
+        self.serialize_lock = asyncio.Lock()
 
 
     def set_source_horizon(self, horizon: datetime, revalidation_ts: datetime|None):
@@ -162,7 +166,16 @@ class DataStore:
         fn = self.get_storage_file()
         if fn is not None:
             log.info(f"{self.region.bidding_zone_entsoe}: storing new {self.storage_fn_prefix} data")
-            await asyncio.to_thread(self.data.to_json, fn, compression='gzip')
+            # Written next to the file and then moved into its place. Written in place, a kill in the middle of the
+            # write would leave a file behind that load() cannot read.
+            tmp = f"{fn}.tmp"
+            async with self.serialize_lock:
+                try:
+                    await asyncio.to_thread(self.data.to_json, tmp, compression='gzip')
+                    os.replace(tmp, fn)
+                finally:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
     
     async def load(self) -> Self:
         fn = self.get_storage_file()

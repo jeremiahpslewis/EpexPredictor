@@ -1,5 +1,6 @@
 """Tests for predictor.model.datastore module."""
 
+import asyncio
 import os
 from datetime import datetime, timezone
 
@@ -212,6 +213,54 @@ class TestDataStoreSerialization:
         df.index.name = "time"
         store._update_data(df)
         await store.serialize()  # Should not raise
+
+    @staticmethod
+    def _store_with_data(region, storage_dir):
+        store = ConcreteDataStore(region, storage_dir, "test")
+        dates = pd.date_range(start="2025-01-01", periods=5, freq="15min", tz="UTC")
+        df = pd.DataFrame({"value": [1, 2, 3, 4, 5]}, index=dates)
+        df.index.name = "time"
+        store._update_data(df)
+        return store
+
+    @pytest.mark.asyncio
+    async def test_serialize_leaves_only_the_data_file(self, sample_region, temp_storage_dir):
+        """Test that the temporary file a write goes through is gone afterwards."""
+        store = self._store_with_data(sample_region, temp_storage_dir)
+        await store.serialize()
+
+        assert os.listdir(temp_storage_dir) == [os.path.basename(store.get_storage_file())]
+
+    @pytest.mark.asyncio
+    async def test_interrupted_serialize_keeps_previous_file(self, sample_region, temp_storage_dir, monkeypatch):
+        """Test that a write which stops half way leaves the file of the write before as it was."""
+        store = self._store_with_data(sample_region, temp_storage_dir)
+        await store.serialize()
+
+        def interrupted_to_json(self, path, **kwargs):
+            with open(path, "wb") as f:
+                f.write(b"\x1f\x8b\x08 a gzip file that was cut off")
+            raise OSError("No space left on device")
+
+        store.data = store.data * 100
+        with monkeypatch.context() as patch:
+            patch.setattr(pd.DataFrame, "to_json", interrupted_to_json)
+            with pytest.raises(OSError):
+                await store.serialize()
+
+        assert os.listdir(temp_storage_dir) == [os.path.basename(store.get_storage_file())]
+        loaded = await ConcreteDataStore(sample_region, temp_storage_dir, "test").load()
+        assert loaded.data["value"].tolist() == [1, 2, 3, 4, 5]
+
+    @pytest.mark.asyncio
+    async def test_concurrent_serialize(self, sample_region, temp_storage_dir):
+        """Test that two writes of the same store at the same time do not get in each other's way."""
+        store = self._store_with_data(sample_region, temp_storage_dir)
+        await asyncio.gather(store.serialize(), store.serialize())
+
+        assert os.listdir(temp_storage_dir) == [os.path.basename(store.get_storage_file())]
+        loaded = await ConcreteDataStore(sample_region, temp_storage_dir, "test").load()
+        assert loaded.data["value"].tolist() == [1, 2, 3, 4, 5]
 
 
 class TestDataStorePersistenceEdgeCases:
