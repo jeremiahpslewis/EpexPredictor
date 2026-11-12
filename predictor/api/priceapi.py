@@ -108,7 +108,7 @@ def api_docs():
 
 USE_PERSISTENT_TESTDATA = os.getenv("USE_PERSISTENT_TEST_DATA", "false").lower() in ("yes", "true", "t", "1")
 EPEXPREDICTOR_DATADIR = os.getenv("EPEXPREDICTOR_DATADIR")
-TRAINING_DAYS = 180
+TRAINING_DAYS = 540
 DEFAULT_TIMEZONE = "Europe/Berlin"
 
 
@@ -588,7 +588,7 @@ async def generate_evaluation_plot(
     width: int = Query(2048, description="image width in pixels", ge=300, le=10000),
     height: int = Query(1024, description="image height in pixels", ge=300, le=10000)):
     """
-    Trains a model just for you, training with 120 days before the given time range and providing a forecast for the given range.
+    Trains a model just for you, training with the 540 days before the given time range and providing a forecast for the given range.
     - If there is no cached weather or price data for the given time range, this request can take a while. Be patient.
     - This request is rather CPU intensive. Do not batch-call or you will be banned.
     """

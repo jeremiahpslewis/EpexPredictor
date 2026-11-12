@@ -32,7 +32,7 @@ CROSS_REGIONS = [
 # Regions to evaluate (get metrics for). Usually a subset of CROSS_REGIONS for debugging.
 EVAL_REGIONS = CROSS_REGIONS
 
-LEARN_DAYS : int = 180
+LEARN_DAYS : int = 540
 
 PARALLELIZE = True
 

@@ -19,6 +19,9 @@ from .gaspricestore import GasPriceStore
 
 log = logging.getLogger(__name__)
 
+# Lower bound for the gas price [EUR/MWh] when it is used as divisor
+MIN_GAS_PRICE = 1.0
+
 
 class PricePredictor:
     region: PriceRegion
@@ -31,6 +34,8 @@ class PricePredictor:
     traindata: pd.DataFrame | None = None
 
     predictor: lgb.Booster | None = None
+    # second model for regions with a gas price, trained on price / gas price (see train())
+    gas_predictor: lgb.Booster | None = None
 
     # 2-stage forecasting: stage-1 predictors whose price forecasts are added as extra features
     cross_predictors: list["PricePredictor"]
@@ -89,6 +94,20 @@ class PricePredictor:
 
         self.predictor = await asyncio.to_thread(lgb.train, params=params_lgb, train_set=lgb_dataset)
 
+        # Whenever gas power plants set the price, it follows the gas price almost proportionally. But a tree model
+        # cannot predict a price level it has not seen in its training data, so it lags behind when gas prices
+        # move. A second model therefore predicts price / gas price, which also keeps older training data comparable.
+        # Neither view is right all the time (and for every region), so predict() averages both models.
+        self.gas_predictor = None
+        gas = self.get_gas_scale(params)
+        if gas is not None:
+            lgb_dataset = lgb.Dataset(
+                self.to_gas_relative(params, gas),
+                label=output / gas,
+                weight=gas.to_numpy() ** 2, # keeps the objective a squared error in price units
+            )
+            self.gas_predictor = await asyncio.to_thread(lgb.train, params=params_lgb, train_set=lgb_dataset)
+
 
 
     async def predict(self, start: datetime, end: datetime, fill_known=True) -> pd.DataFrame:
@@ -101,8 +120,14 @@ class PricePredictor:
 
         params = df.drop(columns=["price"])
 
+        prediction = np.asarray(self.predictor.predict(params))
+        gas = self.get_gas_scale(params)
+        if self.gas_predictor is not None and gas is not None:
+            gas_relative = np.asarray(self.gas_predictor.predict(self.to_gas_relative(params, gas)))
+            prediction = (prediction + gas_relative * gas.to_numpy()) / 2
+
         resultdf = pd.DataFrame(index=params.index)
-        resultdf["price"] = np.asarray(self.predictor.predict(params))
+        resultdf["price"] = prediction
 
         if fill_known:
             resultdf.update(prices_known)
@@ -119,6 +144,27 @@ class PricePredictor:
             result[ts] = row["price"]
         return result
 
+
+
+    def get_gas_scale(self, params: pd.DataFrame) -> pd.Series | None:
+        """
+        The gas price each row is divided by for the gas-relative model, or None without gas price data
+        """
+        if "gasprice" not in params.columns:
+            return None
+        return params["gasprice"].clip(lower=MIN_GAS_PRICE)
+
+
+    def to_gas_relative(self, params: pd.DataFrame, gas: pd.Series) -> pd.DataFrame:
+        """
+        Input features of the gas-relative model: cross-region prices are converted to the unit of its target
+        """
+        cross_prices = [c for c in params.columns if c.startswith("cross_price_")]
+        if len(cross_prices) == 0:
+            return params
+        params = params.copy()
+        params[cross_prices] = params[cross_prices].div(gas, axis=0)
+        return params
 
 
     async def get_cross_features(self, start: datetime, end: datetime) -> pd.DataFrame | None:
@@ -142,7 +188,7 @@ class PricePredictor:
         return pd.concat(frames, axis=1, sort=True)
 
     async def prepare_dataframe(self, actual_start: datetime, end: datetime) -> pd.DataFrame | None:
-        # gas prices are usually not available for today or the last few days. If forecast range is in the future, we might have nothing to ffill. Ensure we do
+        # gas prices are not available for the days ahead. If forecast range is in the future, we might have nothing to ffill. Ensure we do
         start = min(datetime.now(timezone.utc) - timedelta(days=14), actual_start)
 
         weather, prices, auxdata = await asyncio.gather(
@@ -161,7 +207,7 @@ class PricePredictor:
 
         if self.region.use_de_nat_gas_price:
             gasprices = await self.gasstore.get_data(start, end)
-            gasprices = gasprices.reindex(weather.index).ffill()
+            gasprices = gasprices.reindex(df.index).ffill()
             df = pd.concat([df, gasprices], axis=1, sort=True)
 
         if len(self.cross_predictors) > 0:
