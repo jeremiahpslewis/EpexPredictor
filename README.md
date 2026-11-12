@@ -140,20 +140,13 @@ Without Entso-E API access
 
 ### Proxmox VE (LXC container)
 
-[`scripts/proxmox-lxc-install.sh`](scripts/proxmox-lxc-install.sh) creates an unprivileged LXC container on a Proxmox VE host and installs EpexPredictor in it as a systemd service, without Docker. Run it as root on the Proxmox host:
+The two scripts in [`proxmox/`](proxmox/) create an LXC container on a Proxmox VE host and install EpexPredictor in it as a systemd service. They are written like the [community-scripts](https://community-scripts.org) and run on their engine, so the usual dialog with default and advanced settings appears. Run this in the shell of the Proxmox host:
 
 ```bash
-wget https://raw.githubusercontent.com/jeremiahpslewis/EpexPredictor/main/scripts/proxmox-lxc-install.sh
-bash proxmox-lxc-install.sh
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/jeremiahpslewis/EpexPredictor/main/proxmox/ct/epexpredictor.sh)"
 ```
 
-The script shows what it is about to create and asks before it does so. Its settings (container id, storage, network, size, ENTSO-E API key, ...) are environment variables, listed at the top of the script:
-
-```bash
-CTID=120 STORAGE=local-zfs IP=192.168.1.50/24 GATEWAY=192.168.1.1 ENTSOE_API_KEY=... bash proxmox-lxc-install.sh
-```
-
-The container gets 2 cores, 4 GB of memory and 8 GB of disk by default, and is based on Debian 13 (or Ubuntu 24.04 if Debian 13 is not on offer), because the code needs Python 3.12 or newer. On the first start, the service downloads its price and weather history before it answers, which takes a while. `pct exec <id> -- journalctl -u epexpredictor -f` shows the progress, `pct exec <id> -- /usr/local/bin/epexpredictor-update` updates to the latest code.
+The container gets 2 cores, 4 GB of memory and 6 GB of disk by default, and the API listens on port 8000. It answers once the first download of price and weather data has finished, which takes a quarter of an hour or more. The ENTSO-E API key and other settings go into `/opt/epexpredictor/.env` (followed by `systemctl restart epexpredictor`), and `update` in the shell of the container pulls the latest code.
 
 # Home Assistant integration
 At some point, I might create a HA addon to run everything locally.
