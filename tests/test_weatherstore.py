@@ -166,3 +166,68 @@ class TestWeatherStoreURLConstruction:
         store = WeatherStore(sample_region)
         old_date = datetime.now(timezone.utc) - timedelta(days=90)
         assert store.needs_history_query(old_date)
+
+
+class TestWeatherStoreLocations:
+    """Tests for the sample locations of a region."""
+
+    def test_expected_columns_cover_extra_locations(self, sample_region):
+        """Test that weather-only locations get the same columns as the region's own ones."""
+        store = WeatherStore(sample_region)
+        locations = len(sample_region.latitudes) + len(sample_region.extra_weather_latitudes)
+
+        assert len(sample_region.extra_weather_latitudes) > 0
+        assert len(store.expected_columns()) == locations * 5
+        assert f"wind_{locations - 1}" in store.expected_columns()
+
+    @pytest.mark.asyncio
+    async def test_request_includes_extra_locations(self, sample_region):
+        """Test that the weather-only locations are part of the API request."""
+        store = WeatherStore(sample_region)
+        requested = []
+
+        class FailingSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            def get(self, url):
+                requested.append(url)
+                raise RuntimeError("no network in tests")
+
+        start = datetime(2025, 11, 1, tzinfo=timezone.utc)
+        with patch("predictor.model.weatherstore.aiohttp.ClientSession", return_value=FailingSession()):
+            with pytest.raises(RuntimeError):
+                await store.refresh_range(start, start + timedelta(days=1))
+
+        lats = ",".join(map(str, sample_region.latitudes + sample_region.extra_weather_latitudes))
+        lons = ",".join(map(str, sample_region.longitudes + sample_region.extra_weather_longitudes))
+        assert f"latitude={lats}&longitude={lons}&" in requested[0]
+
+    @pytest.mark.asyncio
+    async def test_load_discards_cache_of_other_locations(self, sample_region, temp_storage_dir):
+        """Test that a cache written for a different set of locations is not mixed with new data."""
+        dates = pd.date_range(start="2025-11-01", end="2025-11-02", freq="15min", tz="UTC")
+
+        store = WeatherStore(sample_region, temp_storage_dir)
+        outdated = sorted(store.expected_columns())[:-5]
+        store.data = pd.DataFrame({c: [1.0] * len(dates) for c in outdated}, index=dates)
+        await store.serialize()
+
+        loaded = await WeatherStore(sample_region, temp_storage_dir).load()
+        assert loaded.data.empty
+        assert loaded.known_source_horizon is None
+
+    @pytest.mark.asyncio
+    async def test_load_keeps_cache_of_current_locations(self, sample_region, temp_storage_dir):
+        """Test that a cache matching the configured locations survives a restart."""
+        dates = pd.date_range(start="2025-11-01", end="2025-11-02", freq="15min", tz="UTC")
+
+        store = WeatherStore(sample_region, temp_storage_dir)
+        store.data = pd.DataFrame({c: [1.0] * len(dates) for c in sorted(store.expected_columns())}, index=dates)
+        await store.serialize()
+
+        loaded = await WeatherStore(sample_region, temp_storage_dir).load()
+        assert len(loaded.data) == len(dates)

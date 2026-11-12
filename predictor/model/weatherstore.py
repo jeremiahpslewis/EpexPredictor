@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import override
+from typing import Self, override
 
 import aiohttp
 import pandas as pd
@@ -37,10 +37,29 @@ class WeatherStore(DataStore):
     def get_next_horizon_revalidation_time(self) -> datetime | None:
         return self.last_updated + timedelta(hours=6)
 
+    def expected_columns(self) -> set[str]:
+        return {
+            f"{name}_{i}"
+            for i in range(len(self.region.weather_latitudes))
+            for name in ("wind", "temp", "irradiance", "pressure", "humidity")
+        }
+
+    @override
+    async def load(self) -> Self:
+        await super().load()
+        if not self.data.empty and set(self.data.columns) != self.expected_columns():
+            # The region's sample locations changed since this cache was written. Mixing both layouts would
+            # leave rows without values for the new locations, so start over and re-fetch.
+            log.warning(f"{self.region.bidding_zone_entsoe}: cached weather data does not match the configured locations, discarding it")
+            self.data = pd.DataFrame()
+            self.known_source_horizon = None
+            self.source_horizon_revalitation_ts = None
+        return self
+
     async def refresh_range(self, rstart: datetime, rend: datetime) -> bool:
         async with self.update_lock:
-            lats = ",".join(map(str, self.region.latitudes))
-            lons = ",".join(map(str, self.region.longitudes))
+            lats = ",".join(map(str, self.region.weather_latitudes))
+            lons = ",".join(map(str, self.region.weather_longitudes))
 
             updated = False
             if self.needs_history_query(rstart):
