@@ -328,6 +328,30 @@ class TestRegionPriceManagerPrices:
             assert result.prices[0].total == pytest.approx(13.0, rel=0.01)
 
 
+    @pytest.mark.asyncio
+    async def test_prices_leaves_out_times_without_price(self, sample_region):
+        """Test that times with neither a known price nor a forecast are not part of the output."""
+        manager = RegionPriceManager(PriceRegionName.DE, sample_region)
+
+        base_time = datetime(2025, 11, 1, tzinfo=timezone.utc)
+        nan = float("nan")
+        manager.cachedprices = pd.DataFrame(
+            {"price": [10.0, 12.0, 14.0, 16.0, nan, nan, nan, nan]},
+            index=pd.to_datetime([base_time + timedelta(minutes=15 * i) for i in range(8)])
+        )
+        manager.last_known_price = base_time
+        manager.update_in_background = AsyncMock()
+
+        long = await manager.prices(start_ts=base_time, format=OutputFormat.LONG)
+        short = await manager.prices(start_ts=base_time, format=OutputFormat.SHORT)
+        hourly = await manager.prices(start_ts=base_time, hourly=True, format=OutputFormat.LONG)
+
+        assert isinstance(long, PricesModel) and isinstance(short, PricesModelShort) and isinstance(hourly, PricesModel)
+        assert [p.total for p in long.prices] == [10.0, 12.0, 14.0, 16.0]
+        assert short.t == [10.0, 12.0, 14.0, 16.0]
+        assert [p.total for p in hourly.prices] == [13.0]
+
+
 class TestRegionPriceManagerUpdateDataIfNeeded:
     """Tests for RegionPriceManager.update_data_if_needed method."""
 

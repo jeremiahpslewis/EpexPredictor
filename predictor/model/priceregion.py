@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from zoneinfo import ZoneInfo
 
@@ -23,10 +23,16 @@ class PriceRegion:
 
     use_entsoe_load_forecast: bool = True
     use_de_nat_gas_price: bool = True
+    # Additional weather-only sample locations outside the region itself (e.g. offshore). They feed the weather
+    # features, but not the sun position, which stays centered on latitudes/longitudes.
+    extra_weather_latitudes: list[float] = field(default_factory=list)
+    extra_weather_longitudes: list[float] = field(default_factory=list)
     holidays: list[HolidayBase] = None # type:ignore # one entry for each regional holiday set, e.g. one for BW, one for BY, ...
     
 
     def __post_init__(self):
+        assert len(self.latitudes) == len(self.longitudes)
+        assert len(self.extra_weather_latitudes) == len(self.extra_weather_longitudes)
         self.holidays = []
         country_holidays = holidays.country_holidays(self.country_code)
         if country_holidays.subdivisions is None or len(country_holidays.subdivisions) == 0:
@@ -37,6 +43,14 @@ class PriceRegion:
 
     def get_timezone_info(self):
         return ZoneInfo(self.timezone)
+
+    @property
+    def weather_latitudes(self) -> list[float]:
+        return self.latitudes + self.extra_weather_latitudes
+
+    @property
+    def weather_longitudes(self) -> list[float]:
+        return self.longitudes + self.extra_weather_longitudes
 
 
 class PriceRegionName(str, Enum):
@@ -69,7 +83,10 @@ PRICE_REGIONS[PriceRegionName.DE] = PriceRegion(
     bidding_zone_nordpool="GER",
     use_entsoe_load_forecast=False, # Seems to be good in back testing, but worse in practice..
     latitudes=[48.4, 49.7, 51.3, 52.8, 53.8, 54.1],
-    longitudes=[9.3, 11.3, 8.6, 12.0, 8.1, 11.6]
+    longitudes=[9.3, 11.3, 8.6, 12.0, 8.1, 11.6],
+    # North Sea: Dutch coast, Dogger Bank, German Bight, central and northern North Sea
+    extra_weather_latitudes=[53.0, 54.7, 55.0, 56.5, 59.5],
+    extra_weather_longitudes=[3.5, 2.0, 6.5, 3.0, 2.0],
 )
 
 PRICE_REGIONS[PriceRegionName.AT] = PriceRegion(

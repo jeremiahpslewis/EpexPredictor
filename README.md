@@ -24,12 +24,14 @@ Supported Countries:
 - Maybe package it directly as a Home Assistant Add-on
 
 ## The Model
-We sample multiple locations distributed across each region. We fetch [Weather data from Open-Meteo.com](https://open-meteo.com/) for those locations for the past n days (default n=180).
-This serves as the main data source.
+We sample multiple locations distributed across each region. We fetch [Weather data from Open-Meteo.com](https://open-meteo.com/) for those locations for the past n days (default n=540).
+This serves as the main data source. For Germany, a few additional locations in the North Sea are sampled, too.
 
 Price data is provided under CC BY 4.0 by smartd.de, retrieved via [api.energy-charts.info](https://api.energy-charts.info/) and [ENTSO-E transparency platform](https://transparency.entsoe.eu/). Optionally (see configuration below), prices can also be fetched from the [Nord Pool data portal API](https://dataportal-api.nordpoolgroup.com/api/DayAheadPrices) as a lowest-priority fallback.
 
 Grid load data is provided by [ENTSO-E transparency platform](https://transparency.entsoe.eu/).
+
+Natural gas prices are provided by the open [data export of Trading Hub Europe](https://api.tradinghub.eu/api/dataexport/manual/en), the German gas market area manager.
 
 ### Features
 
@@ -53,8 +55,9 @@ Time features:
 
 Other:
 - Entso-E load forecast (optional, but highly recommended, especially for DE and AT)
-- Natural gas day-ahead-price, forward filled (select regions only)
+- Natural gas price (daily average at the German virtual trading point), forward filled (select regions only)
 - Stage-1 price forecasts of all regions (stage-2 models only, see below)
+- Europe-wide weather: wind power potential, irradiance and temperature averaged over several zones, plus the wind power potential around the North Sea
 
 Output:
 - Electricity price
@@ -68,12 +71,17 @@ The prediction runs in **two stages**:
 
 The cross-region forecasts let the model pick up on price coupling between neighboring markets (e.g. a wind lull in one region pushing up prices in connected ones), which a single-region model cannot see.
 
+For regions that use the natural gas price, each stage consists of **two models**: one predicts the price itself, the other one predicts **price / natural gas price**, which is multiplied by the latest known gas price again. The forecast is the average of both. Whenever gas power plants set the price, electricity prices follow the gas price almost proportionally, and a tree-based model cannot predict a price level it has never seen during training - the second model can, and it keeps older training data comparable when gas prices move. But gas does not set the price all the time, so neither model is right on its own.
+
+A time for which one of the inputs is missing, for example because the weather service could not be reached for several days, gets no forecast, so the output of the API can end earlier than usual. The load forecast is the exception: where it is missing, a forecast is still made.
+
 ## Model performance
 For performance testing, see `predictor/performance_testing.py`. It runs a rolling backtest of the full 2-stage stack: stage-1 models for all regions, then stage-2 models using the stage-1 forecasts of all regions as cross-features (set `TWO_STAGE = False` to fall back to the original single-stage evaluation).
 
 Remarks:
 - Tests were run in 2026, with data from 2025-09-01 to 2026-09-01. The model is tuned for 15 minute pricing.
-- The model uses a 180-day rolling training window
+- The model uses a 540-day rolling training window
+- The table below was measured with the previous setup (180-day training window, no gas-relative model, no Europe-wide weather features) and still has to be regenerated
 - Tests were done with historical weather data. If the weather forecast is wrong, performance might be slightly worse in practice
 
 Results (1/2/3-day ahead prediction):
@@ -131,6 +139,16 @@ Without Entso-E API access
 | `EPEXPREDICTOR_DATADIR`         | *(unset)*    | Directory where the app persists its cached data. Unset by default (no persistence - the app re-fetches everything on startup). In the compose file this is set to the mounted `/data/` volume. |
 | `EPEXPREDICTOR_ENTSOE_API_KEY`  | *(unset)*    | Entso-E API key. Highly recommended: it acts as a fallback price source, is required for some regions (e.g. SE1-SE4), and provides the electrical load forecast which significantly improves model performance. |
 | `EPEXPREDICTOR_USE_NORDPOOL`    | *(disabled)* | Set to `true` (also `1`/`yes`/`on`) to additionally use the [Nord Pool data portal API](https://dataportal-api.nordpoolgroup.com/api/DayAheadPrices) as a price source. It is the lowest-priority source and only queried if energy-charts and ENTSO-E don't deliver. Nord Pool data is only available for ~4 weeks of history. **Note:** enabling this is up to you - make sure your use case complies with the Nord Pool terms of use / data license. |
+
+### Proxmox VE (LXC container)
+
+The two scripts in [`proxmox/`](proxmox/) create an LXC container on a Proxmox VE host and install EpexPredictor in it as a systemd service. They are written like the [community-scripts](https://community-scripts.org) and run on their engine, so the usual dialog with default and advanced settings appears. Run this in the shell of the Proxmox host:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/jeremiahpslewis/EpexPredictor/main/proxmox/ct/epexpredictor.sh)"
+```
+
+The container gets 2 cores, 4 GB of memory and 6 GB of disk by default, and the API listens on port 8000. It answers once the first download of price and weather data has finished, which takes a quarter of an hour or more. The ENTSO-E API key and other settings go into `/opt/epexpredictor/.env` (followed by `systemctl restart epexpredictor`), and `update` in the shell of the container pulls the latest code.
 
 # Home Assistant integration
 At some point, I might create a HA addon to run everything locally.

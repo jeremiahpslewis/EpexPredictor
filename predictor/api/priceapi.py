@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from predictor.model.priceregion import PriceRegion, PriceRegionName
 import predictor.model.pricepredictor as pp
+from predictor.model.europeweather import EuropeWeather
 from predictor.api.evalplotcache import EvalPlotCache
 
 
@@ -57,6 +58,8 @@ This is an open source project, feel free to host it yourself. [Source code and 
 Electricity prices provided under CC-BY-4.0 by [energy-charts.info](https://api.energy-charts.info/) and [ENTSO-E](https://www.entsoe.eu/)
 
 [Weather data by Open-Meteo.com](https://open-meteo.com/)
+
+Natural gas prices by [Trading Hub Europe](https://www.tradinghub.eu/)
 """)
 
 
@@ -106,7 +109,7 @@ def api_docs():
 
 USE_PERSISTENT_TESTDATA = os.getenv("USE_PERSISTENT_TEST_DATA", "false").lower() in ("yes", "true", "t", "1")
 EPEXPREDICTOR_DATADIR = os.getenv("EPEXPREDICTOR_DATADIR")
-TRAINING_DAYS = 180
+TRAINING_DAYS = 540
 DEFAULT_TIMEZONE = "Europe/Berlin"
 
 
@@ -195,6 +198,11 @@ class BaseModelCoordinator:
             region = name.to_region()
             p = pp.PricePredictor(region, storage_dir=EPEXPREDICTOR_DATADIR)
             self.base[name] = p
+        # Large-scale weather features, built from the weather of all base regions. Stage-2 models and the eval
+        # plot models inherit them through use_datastores_from().
+        europe_weather = EuropeWeather([p.weatherstore for p in self.base.values()])
+        for p in self.base.values():
+            p.europe_weather = europe_weather
         # Stage-2 models are wired to ALL available base models (incl. their own)
         self.cross_predictors: list[pp.PricePredictor] = [self.base[n] for n in AVAILABLE_REGIONS]
         self._last_retrain = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -427,7 +435,9 @@ class RegionPriceManager:
         prediction = self.cachedeval if evaluation else self.cachedprices
         if hourly:
             prediction = prediction.resample("1h").mean()
-        
+        # times without a price: neither known nor forecast (see PricePredictor.predict)
+        prediction = prediction.dropna()
+
         prediction = prediction.loc[start_ts:end_ts]
 
         prices = []
@@ -586,7 +596,7 @@ async def generate_evaluation_plot(
     width: int = Query(2048, description="image width in pixels", ge=300, le=10000),
     height: int = Query(1024, description="image height in pixels", ge=300, le=10000)):
     """
-    Trains a model just for you, training with 120 days before the given time range and providing a forecast for the given range.
+    Trains a model just for you, training with the 540 days before the given time range and providing a forecast for the given range.
     - If there is no cached weather or price data for the given time range, this request can take a while. Be patient.
     - This request is rather CPU intensive. Do not batch-call or you will be banned.
     """

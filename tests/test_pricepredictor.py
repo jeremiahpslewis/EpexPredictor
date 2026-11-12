@@ -6,7 +6,9 @@ from unittest.mock import AsyncMock
 import pandas as pd
 import pytest
 
+from predictor.model.europeweather import EuropeWeather
 from predictor.model.pricepredictor import PricePredictor
+from predictor.model.priceregion import PriceRegionName
 
 
 class TestPricePredictorInit:
@@ -81,7 +83,8 @@ class TestPricePredictorPrepareDataframe:
 
     @pytest.mark.asyncio
     async def test_prepare_dataframe_combines_data(
-        self, sample_region, sample_weather_data, sample_price_data, sample_aux_data, sample_entsoe_data
+        self, sample_region, sample_weather_data, sample_price_data, sample_aux_data, sample_entsoe_data,
+        sample_gas_data
     ):
         """Test that prepare_dataframe combines all data sources."""
         predictor = PricePredictor(sample_region)
@@ -91,6 +94,7 @@ class TestPricePredictorPrepareDataframe:
         predictor.pricestore.get_data = AsyncMock(return_value=sample_price_data)
         predictor.auxstore.get_data = AsyncMock(return_value=sample_aux_data)
         predictor.entsoestore.get_data = AsyncMock(return_value=sample_entsoe_data)
+        predictor.gasstore.get_data = AsyncMock(return_value=sample_gas_data)
 
         start = datetime(2025, 11, 1, tzinfo=timezone.utc)
         end = datetime(2025, 11, 2, tzinfo=timezone.utc)
@@ -99,6 +103,8 @@ class TestPricePredictorPrepareDataframe:
 
         assert result is not None
         assert not result.empty
+        assert "gasprice" in result.columns
+        assert not result.loc[start:end, "gasprice"].isna().any()
 
 
 class TestPricePredictorTrain:
@@ -148,6 +154,223 @@ class TestPricePredictorPredict:
 
         assert result is not None
         assert not result.empty
+
+
+class TestPricePredictorGasRelativeModel:
+    """Tests for the second model, which predicts price / gas price."""
+
+    def test_gas_scale_without_gas_price(self, sample_region, sample_weather_data):
+        """Test that there is nothing to divide by as long as no gas price is available."""
+        assert PricePredictor(sample_region).get_gas_scale(sample_weather_data) is None
+
+    def test_gas_scale_is_never_zero(self, sample_region, sample_gas_data):
+        """Test that the divisor has a lower bound."""
+        gas = sample_gas_data.copy()
+        gas["gasprice"] = 0.0
+        scale = PricePredictor(sample_region).get_gas_scale(gas)
+        assert scale is not None
+        assert (scale > 0).all()
+
+    def test_to_gas_relative_converts_cross_prices_only(self, sample_region, sample_gas_data):
+        """Test that only cross-region prices change their unit."""
+        predictor = PricePredictor(sample_region)
+        params = sample_gas_data.copy()
+        params["cross_price_FR"] = 12.0
+        params["wind_0"] = 5.0
+
+        result = predictor.to_gas_relative(params, predictor.get_gas_scale(params))
+
+        assert (result["cross_price_FR"] == 12.0 / 30.0).all()
+        assert (result["wind_0"] == 5.0).all()
+        assert (result["gasprice"] == 30.0).all()
+        assert (params["cross_price_FR"] == 12.0).all()  # input is left untouched
+
+    @pytest.mark.asyncio
+    async def test_trains_both_models_with_gas_price(self, mocked_predictor):
+        """Test that a region with gas price data gets the gas-relative model in addition."""
+        start = datetime(2025, 11, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 11, 2, tzinfo=timezone.utc)
+
+        await mocked_predictor.train(start, end)
+
+        assert mocked_predictor.predictor is not None
+        assert mocked_predictor.gas_predictor is not None
+
+    @pytest.mark.asyncio
+    async def test_trains_single_model_without_gas_price(
+        self, sample_weather_data, sample_price_data, sample_aux_data, sample_entsoe_data
+    ):
+        """Test that a region without gas price only models the price itself."""
+        region = PriceRegionName.FR.to_region()
+        assert not region.use_de_nat_gas_price
+        predictor = PricePredictor(region)
+        predictor.weatherstore.get_data = AsyncMock(return_value=sample_weather_data)
+        predictor.pricestore.get_data = AsyncMock(return_value=sample_price_data)
+        predictor.auxstore.get_data = AsyncMock(return_value=sample_aux_data)
+        predictor.entsoestore.get_data = AsyncMock(return_value=sample_entsoe_data)
+
+        start = datetime(2025, 11, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 11, 2, tzinfo=timezone.utc)
+        await predictor.train(start, end)
+        result = await predictor.predict(start, end, fill_known=False)
+
+        assert predictor.predictor is not None
+        assert predictor.gas_predictor is None
+        assert not result["price"].isna().any()
+
+    @pytest.mark.asyncio
+    async def test_prediction_follows_gas_price(self, mocked_predictor, sample_gas_data):
+        """Test that a gas price level unseen in training moves the forecast, but less than proportionally."""
+        start = datetime(2025, 11, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 11, 2, tzinfo=timezone.utc)
+
+        await mocked_predictor.train(start, end)
+        before = await mocked_predictor.predict(start, end, fill_known=False)
+
+        mocked_predictor.gasstore.get_data = AsyncMock(return_value=sample_gas_data * 2)
+        after = await mocked_predictor.predict(start, end, fill_known=False)
+
+        # the gas-relative half of the forecast doubles, the other half stays
+        assert (before["price"] > 0).all()
+        assert (after["price"] > before["price"]).all()
+        assert (after["price"] < before["price"] * 2).all()
+
+
+class TestPricePredictorCrossFeatures:
+    """Tests for the features a model gets from other regions."""
+
+    @staticmethod
+    def _weather(wind, irradiance, temp):
+        dates = pd.date_range(start="2025-11-01", end="2025-11-02", freq="15min", tz="UTC")
+        data = {}
+        for i, w in enumerate(wind):
+            data[f"wind_{i}"] = [w] * len(dates)
+            data[f"irradiance_{i}"] = [irradiance] * len(dates)
+            data[f"temp_{i}"] = [temp] * len(dates)
+        return pd.DataFrame(data, index=dates)
+
+    def _cross_predictor(self, name, weather, price=10.0):
+        cp = PricePredictor(name.to_region())
+        cp.weatherstore.get_data = AsyncMock(return_value=weather)
+        cp.predict = AsyncMock(return_value=pd.DataFrame({"price": [price] * len(weather)}, index=weather.index))
+        return cp
+
+    @pytest.mark.asyncio
+    async def test_stage2_dataframe(self, mocked_predictor):
+        """Test that a stage-2 model gets the price forecasts of the stage-1 models."""
+        mocked_predictor.cross_predictors = [
+            self._cross_predictor(PriceRegionName.FR, self._weather([22.5], 300.0, 20.0), price=12.0)
+        ]
+
+        start = datetime(2025, 11, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 11, 2, tzinfo=timezone.utc)
+        result = await mocked_predictor.prepare_dataframe(start, end)
+
+        assert result is not None
+        assert result["cross_price_FR"].iloc[0] == pytest.approx(12.0)
+
+    @pytest.mark.asyncio
+    async def test_dataframe_with_europe_weather(self, mocked_predictor):
+        """Test that the shared large-scale weather features are added, for stage-1 models too."""
+        other = self._cross_predictor(PriceRegionName.FR, self._weather([22.5], 300.0, 20.0))
+        mocked_predictor.europe_weather = EuropeWeather([other.weatherstore])
+        assert len(mocked_predictor.cross_predictors) == 0
+
+        start = datetime(2025, 11, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 11, 2, tzinfo=timezone.utc)
+        result = await mocked_predictor.prepare_dataframe(start, end)
+
+        assert result is not None
+        assert result["eu_wind"].iloc[0] == pytest.approx(0.125)
+        assert result["eu_irradiance"].iloc[0] == pytest.approx(300.0)
+
+    @pytest.mark.asyncio
+    async def test_dataframe_without_other_regions(self, mocked_predictor):
+        """Test that a standalone model only uses its own region's data."""
+        start = datetime(2025, 11, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 11, 2, tzinfo=timezone.utc)
+        result = await mocked_predictor.prepare_dataframe(start, end)
+
+        assert result is not None
+        assert not any(c.startswith(("eu_", "cross_price_")) for c in result.columns)
+
+    def test_use_datastores_from_shares_europe_weather(self, sample_region):
+        """Test that a stage-2 model inherits the large-scale weather features of its stage-1 model."""
+        base = PricePredictor(sample_region)
+        base.europe_weather = EuropeWeather([base.weatherstore])
+        stage2 = PricePredictor(sample_region)
+
+        stage2.use_datastores_from(base)
+
+        assert stage2.europe_weather is base.europe_weather
+
+
+class TestPricePredictorMissingInputs:
+    """Tests for forecasts when a part of a model's inputs is missing."""
+
+    START = datetime(2025, 11, 1, tzinfo=timezone.utc)
+    END = datetime(2025, 11, 2, tzinfo=timezone.utc)
+    NOON = pd.Timestamp("2025-11-01 12:00", tz="UTC")
+    AFTER_NOON = pd.Timestamp("2025-11-01 12:15", tz="UTC")
+
+    @pytest.mark.asyncio
+    async def test_no_forecast_without_weather(self, mocked_predictor, sample_weather_data):
+        """Test that times without weather data get no forecast, instead of one for calm and dark weather."""
+        await mocked_predictor.train(self.START, self.END)
+        mocked_predictor.weatherstore.get_data = AsyncMock(return_value=sample_weather_data[:self.NOON])
+
+        result = await mocked_predictor.predict(self.START, self.END, fill_known=False)
+
+        assert len(result) == len(sample_weather_data)
+        assert result["price"][:self.NOON].notna().all()
+        assert result["price"][self.AFTER_NOON:].isna().all()
+
+    @pytest.mark.asyncio
+    async def test_known_prices_without_weather(self, mocked_predictor, sample_weather_data, sample_price_data):
+        """Test that prices which are already known are still returned for times without weather data."""
+        await mocked_predictor.train(self.START, self.END)
+        mocked_predictor.weatherstore.get_data = AsyncMock(return_value=sample_weather_data[:self.NOON])
+
+        result = await mocked_predictor.predict(self.START, self.END, fill_known=True)
+
+        assert (result["price"] == sample_price_data["price"].reindex(result.index)).all()
+
+    @pytest.mark.asyncio
+    async def test_no_stage2_forecast_without_stage1_forecast(self, mocked_predictor, sample_weather_data):
+        """Test that a stage-2 model gives no forecast where the stage-1 model of another region gave none."""
+        index = sample_weather_data.index
+        other = PricePredictor(PriceRegionName.FR.to_region())
+        other.predict = AsyncMock(return_value=pd.DataFrame({"price": 10.0}, index=index))
+        mocked_predictor.cross_predictors = [other]
+        await mocked_predictor.train(self.START, self.END)
+
+        forecast = pd.DataFrame({"price": 10.0}, index=index)
+        forecast.loc[self.AFTER_NOON:, "price"] = float("nan")
+        other.predict = AsyncMock(return_value=forecast)
+        result = await mocked_predictor.predict(self.START, self.END, fill_known=False)
+
+        assert result["price"][:self.NOON].notna().all()
+        assert result["price"][self.AFTER_NOON:].isna().all()
+
+    @pytest.mark.asyncio
+    async def test_forecast_beyond_the_load_forecast(
+        self, sample_weather_data, sample_price_data, sample_aux_data, sample_gas_data
+    ):
+        """Test that the load forecast, which ends earlier than the other inputs, does not end the price forecast."""
+        predictor = PricePredictor(PriceRegionName.AT.to_region())
+        assert predictor.region.use_entsoe_load_forecast
+        load = pd.DataFrame({"load": 6000.0}, index=sample_weather_data.index)
+        predictor.weatherstore.get_data = AsyncMock(return_value=sample_weather_data)
+        predictor.pricestore.get_data = AsyncMock(return_value=sample_price_data)
+        predictor.auxstore.get_data = AsyncMock(return_value=sample_aux_data)
+        predictor.gasstore.get_data = AsyncMock(return_value=sample_gas_data)
+        predictor.entsoestore.get_data = AsyncMock(return_value=load)
+        await predictor.train(self.START, self.END)
+
+        predictor.entsoestore.get_data = AsyncMock(return_value=load[:self.NOON])
+        result = await predictor.predict(self.START, self.END, fill_known=False)
+
+        assert result["price"].notna().all()
 
 
 class TestPricePredictorCleanup:

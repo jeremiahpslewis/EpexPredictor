@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import os
 
 import model.pricepredictor as pred
+from model.europeweather import EuropeWeather
 from model.priceregion import PriceRegion, PriceRegionName
 
 
@@ -32,7 +33,7 @@ CROSS_REGIONS = [
 # Regions to evaluate (get metrics for). Usually a subset of CROSS_REGIONS for debugging.
 EVAL_REGIONS = CROSS_REGIONS
 
-LEARN_DAYS : int = 180
+LEARN_DAYS : int = 540
 
 PARALLELIZE = True
 
@@ -111,6 +112,11 @@ async def main():
     for name in CROSS_REGIONS:
         region = name.to_region()
         stage1[name] = await pred.PricePredictor(region, data_dir).load_from_persistence()
+
+    # Large-scale weather features, built from the weather of all regions (stage-2 inherits them with the stores)
+    europe_weather = EuropeWeather([p.weatherstore for p in stage1.values()])
+    for p in stage1.values():
+        p.europe_weather = europe_weather
 
     # Stage 2: only for eval regions, with stage-1 forecasts of ALL cross regions as features.
     # Each stage-2 predictor shares its data stores with its stage-1 counterpart.
