@@ -138,6 +138,23 @@ Without Entso-E API access
 | `EPEXPREDICTOR_ENTSOE_API_KEY`  | *(unset)*    | Entso-E API key. Highly recommended: it acts as a fallback price source, is required for some regions (e.g. SE1-SE4), and provides the electrical load forecast which significantly improves model performance. |
 | `EPEXPREDICTOR_USE_NORDPOOL`    | *(disabled)* | Set to `true` (also `1`/`yes`/`on`) to additionally use the [Nord Pool data portal API](https://dataportal-api.nordpoolgroup.com/api/DayAheadPrices) as a price source. It is the lowest-priority source and only queried if energy-charts and ENTSO-E don't deliver. Nord Pool data is only available for ~4 weeks of history. **Note:** enabling this is up to you - make sure your use case complies with the Nord Pool terms of use / data license. |
 
+### Proxmox VE (LXC container)
+
+[`scripts/proxmox-lxc-install.sh`](scripts/proxmox-lxc-install.sh) creates an unprivileged LXC container on a Proxmox VE host and installs EpexPredictor in it as a systemd service, without Docker. Run it as root on the Proxmox host:
+
+```bash
+wget https://raw.githubusercontent.com/jeremiahpslewis/EpexPredictor/main/scripts/proxmox-lxc-install.sh
+bash proxmox-lxc-install.sh
+```
+
+The script shows what it is about to create and asks before it does so. Its settings (container id, storage, network, size, ENTSO-E API key, ...) are environment variables, listed at the top of the script:
+
+```bash
+CTID=120 STORAGE=local-zfs IP=192.168.1.50/24 GATEWAY=192.168.1.1 ENTSOE_API_KEY=... bash proxmox-lxc-install.sh
+```
+
+The container gets 2 cores, 4 GB of memory and 8 GB of disk by default, and is based on Debian 13 (or Ubuntu 24.04 if Debian 13 is not on offer), because the code needs Python 3.12 or newer. On the first start, the service downloads its price and weather history before it answers, which takes a while. `pct exec <id> -- journalctl -u epexpredictor -f` shows the progress, `pct exec <id> -- /usr/local/bin/epexpredictor-update` updates to the latest code.
+
 # Home Assistant integration
 At some point, I might create a HA addon to run everything locally.
 For now, you have to either use my server, or run it yourself.
