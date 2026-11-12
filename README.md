@@ -73,6 +73,8 @@ The cross-region forecasts let the model pick up on price coupling between neigh
 
 For regions that use the natural gas price, each stage consists of **two models**: one predicts the price itself, the other one predicts **price / natural gas price**, which is multiplied by the latest known gas price again. The forecast is the average of both. Whenever gas power plants set the price, electricity prices follow the gas price almost proportionally, and a tree-based model cannot predict a price level it has never seen during training - the second model can, and it keeps older training data comparable when gas prices move. But gas does not set the price all the time, so neither model is right on its own.
 
+A time for which one of the inputs is missing, for example because the weather service could not be reached for several days, gets no forecast, so the output of the API can end earlier than usual. The load forecast is the exception: where it is missing, a forecast is still made.
+
 ## Model performance
 For performance testing, see `predictor/performance_testing.py`. It runs a rolling backtest of the full 2-stage stack: stage-1 models for all regions, then stage-2 models using the stage-1 forecasts of all regions as cross-features (set `TWO_STAGE = False` to fall back to the original single-stage evaluation).
 

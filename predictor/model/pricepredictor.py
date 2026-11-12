@@ -44,6 +44,9 @@ class PricePredictor:
     # large-scale weather features, shared by the models of all regions. Set by whoever creates the models
     europe_weather: EuropeWeather | None = None
 
+    # Inputs whose source does not reach as far as the others, so they may be missing for part of a forecast
+    optional_inputs: list[str]
+
     def __init__(self, region: PriceRegion, storage_dir: str | None = None, cross_predictors: list["PricePredictor"] | None = None):
         self.region = region
         self.weatherstore = WeatherStore(region, storage_dir)
@@ -56,6 +59,7 @@ class PricePredictor:
         # input features. Each cross predictor is responsible for delivering its own
         # forecast (and for any horizon handling of its data).
         self.cross_predictors = cross_predictors or []
+        self.optional_inputs = []
 
     async def load_from_persistence(self):
         await asyncio.gather(
@@ -130,6 +134,11 @@ class PricePredictor:
         if self.gas_predictor is not None and gas is not None:
             gas_relative = np.asarray(self.gas_predictor.predict(self.to_gas_relative(params, gas)))
             prediction = (prediction + gas_relative * gas.to_numpy()) / 2
+
+        # The models read a missing input as zero: no wind and no sun, or a price of zero in another region. A
+        # forecast made from that looks plausible and is wrong, so these rows get none.
+        required = [c for c in params.columns if c not in self.optional_inputs]
+        prediction[params[required].isna().any(axis=1).to_numpy()] = np.nan
 
         resultdf = pd.DataFrame(index=params.index)
         resultdf["price"] = prediction
@@ -209,6 +218,7 @@ class PricePredictor:
             entsoedata = await self.entsoestore.get_data(start, end)
             if len(entsoedata) > 0:
                 df = pd.concat([df, entsoedata], axis=1, sort=True)
+                self.optional_inputs = list(entsoedata.columns)
 
         if self.region.use_de_nat_gas_price:
             gasprices = await self.gasstore.get_data(start, end)

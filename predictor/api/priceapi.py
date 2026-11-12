@@ -435,7 +435,9 @@ class RegionPriceManager:
         prediction = self.cachedeval if evaluation else self.cachedprices
         if hourly:
             prediction = prediction.resample("1h").mean()
-        
+        # times without a price: neither known nor forecast (see PricePredictor.predict)
+        prediction = prediction.dropna()
+
         prediction = prediction.loc[start_ts:end_ts]
 
         prices = []
