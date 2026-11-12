@@ -11,6 +11,7 @@ import pandas as pd
 import lightgbm as lgb
 
 from .auxdatastore import AuxDataStore
+from .europeweather import EuropeWeather
 from .priceregion import PriceRegion
 from .pricestore import PriceStore
 from .weatherstore import WeatherStore
@@ -39,6 +40,9 @@ class PricePredictor:
 
     # 2-stage forecasting: stage-1 predictors whose price forecasts are added as extra features
     cross_predictors: list["PricePredictor"]
+
+    # large-scale weather features, shared by the models of all regions. Set by whoever creates the models
+    europe_weather: EuropeWeather | None = None
 
     def __init__(self, region: PriceRegion, storage_dir: str | None = None, cross_predictors: list["PricePredictor"] | None = None):
         self.region = region
@@ -72,6 +76,7 @@ class PricePredictor:
         self.auxstore = other.auxstore
         self.entsoestore = other.entsoestore
         self.gasstore = other.gasstore
+        self.europe_weather = other.europe_weather
 
     def is_trained(self) -> bool:
         return self.predictor is not None
@@ -209,6 +214,11 @@ class PricePredictor:
             gasprices = await self.gasstore.get_data(start, end)
             gasprices = gasprices.reindex(df.index).ffill()
             df = pd.concat([df, gasprices], axis=1, sort=True)
+
+        if self.europe_weather is not None:
+            europe_weather = await self.europe_weather.get_data(start, end)
+            if europe_weather is not None:
+                df = pd.concat([df, europe_weather], axis=1, sort=True)
 
         if len(self.cross_predictors) > 0:
             cross_features = await self.get_cross_features(start, end)

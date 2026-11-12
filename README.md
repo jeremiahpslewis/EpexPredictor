@@ -57,6 +57,7 @@ Other:
 - Entso-E load forecast (optional, but highly recommended, especially for DE and AT)
 - Natural gas price (daily average at the German virtual trading point), forward filled (select regions only)
 - Stage-1 price forecasts of all regions (stage-2 models only, see below)
+- Europe-wide weather: wind power potential, irradiance and temperature averaged over several zones, plus the wind power potential around the North Sea
 
 Output:
 - Electricity price
@@ -78,7 +79,7 @@ For performance testing, see `predictor/performance_testing.py`. It runs a rolli
 Remarks:
 - Tests were run in 2026, with data from 2025-09-01 to 2026-09-01. The model is tuned for 15 minute pricing.
 - The model uses a 540-day rolling training window
-- The table below was measured with the previous setup (180-day training window, no gas-relative model) and still has to be regenerated
+- The table below was measured with the previous setup (180-day training window, no gas-relative model, no Europe-wide weather features) and still has to be regenerated
 - Tests were done with historical weather data. If the weather forecast is wrong, performance might be slightly worse in practice
 
 Results (1/2/3-day ahead prediction):

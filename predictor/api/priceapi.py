@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from predictor.model.priceregion import PriceRegion, PriceRegionName
 import predictor.model.pricepredictor as pp
+from predictor.model.europeweather import EuropeWeather
 from predictor.api.evalplotcache import EvalPlotCache
 
 
@@ -197,6 +198,11 @@ class BaseModelCoordinator:
             region = name.to_region()
             p = pp.PricePredictor(region, storage_dir=EPEXPREDICTOR_DATADIR)
             self.base[name] = p
+        # Large-scale weather features, built from the weather of all base regions. Stage-2 models and the eval
+        # plot models inherit them through use_datastores_from().
+        europe_weather = EuropeWeather([p.weatherstore for p in self.base.values()])
+        for p in self.base.values():
+            p.europe_weather = europe_weather
         # Stage-2 models are wired to ALL available base models (incl. their own)
         self.cross_predictors: list[pp.PricePredictor] = [self.base[n] for n in AVAILABLE_REGIONS]
         self._last_retrain = datetime(1970, 1, 1, tzinfo=timezone.utc)

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pandas as pd
 import pytest
 
+from predictor.model.europeweather import EuropeWeather
 from predictor.model.pricepredictor import PricePredictor
 from predictor.model.priceregion import PriceRegionName
 
@@ -269,6 +270,21 @@ class TestPricePredictorCrossFeatures:
         assert result["cross_price_FR"].iloc[0] == pytest.approx(12.0)
 
     @pytest.mark.asyncio
+    async def test_dataframe_with_europe_weather(self, mocked_predictor):
+        """Test that the shared large-scale weather features are added, for stage-1 models too."""
+        other = self._cross_predictor(PriceRegionName.FR, self._weather([22.5], 300.0, 20.0))
+        mocked_predictor.europe_weather = EuropeWeather([other.weatherstore])
+        assert len(mocked_predictor.cross_predictors) == 0
+
+        start = datetime(2025, 11, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 11, 2, tzinfo=timezone.utc)
+        result = await mocked_predictor.prepare_dataframe(start, end)
+
+        assert result is not None
+        assert result["eu_wind"].iloc[0] == pytest.approx(0.125)
+        assert result["eu_irradiance"].iloc[0] == pytest.approx(300.0)
+
+    @pytest.mark.asyncio
     async def test_dataframe_without_other_regions(self, mocked_predictor):
         """Test that a standalone model only uses its own region's data."""
         start = datetime(2025, 11, 1, tzinfo=timezone.utc)
@@ -276,7 +292,18 @@ class TestPricePredictorCrossFeatures:
         result = await mocked_predictor.prepare_dataframe(start, end)
 
         assert result is not None
-        assert not any(c.startswith("cross_price_") for c in result.columns)
+        assert not any(c.startswith(("eu_", "cross_price_")) for c in result.columns)
+
+    def test_use_datastores_from_shares_europe_weather(self, sample_region):
+        """Test that a stage-2 model inherits the large-scale weather features of its stage-1 model."""
+        base = PricePredictor(sample_region)
+        base.europe_weather = EuropeWeather([base.weatherstore])
+        stage2 = PricePredictor(sample_region)
+
+        stage2.use_datastores_from(base)
+
+        assert stage2.europe_weather is base.europe_weather
+
 
 class TestPricePredictorCleanup:
     """Tests for cleanup method."""

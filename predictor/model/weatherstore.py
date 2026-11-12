@@ -22,6 +22,7 @@ class WeatherStore(DataStore):
     storage_dir: str|None
 
     update_lock: asyncio.Lock
+    fetch_lock: asyncio.Lock
 
     # Shared across all WeatherStore instances: OpenMeteo dislikes concurrent
     # requests, so we serialize every call to its API globally.
@@ -30,6 +31,7 @@ class WeatherStore(DataStore):
     def __init__(self, region : PriceRegion, storage_dir: str|None =None):
         super().__init__(region, storage_dir, "weather_v2")
         self.update_lock = asyncio.Lock()
+        self.fetch_lock = asyncio.Lock()
 
     @override
     def get_next_horizon_revalidation_time(self) -> datetime | None:
@@ -94,8 +96,11 @@ class WeatherStore(DataStore):
 
         updated = False
 
-        for rstart, rend in self.gen_missing_date_ranges(start, end):
-            updated = await self.refresh_range(rstart, rend) or updated
+        # The models of several regions read this store (see EuropeWeather). Let only one of them at a time look
+        # for missing data, or they would all fetch the same range.
+        async with self.fetch_lock:
+            for rstart, rend in self.gen_missing_date_ranges(start, end):
+                updated = await self.refresh_range(rstart, rend) or updated
 
         return updated
 
