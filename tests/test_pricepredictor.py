@@ -81,7 +81,8 @@ class TestPricePredictorPrepareDataframe:
 
     @pytest.mark.asyncio
     async def test_prepare_dataframe_combines_data(
-        self, sample_region, sample_weather_data, sample_price_data, sample_aux_data, sample_entsoe_data
+        self, sample_region, sample_weather_data, sample_price_data, sample_aux_data, sample_entsoe_data,
+        sample_gas_data
     ):
         """Test that prepare_dataframe combines all data sources."""
         predictor = PricePredictor(sample_region)
@@ -91,6 +92,7 @@ class TestPricePredictorPrepareDataframe:
         predictor.pricestore.get_data = AsyncMock(return_value=sample_price_data)
         predictor.auxstore.get_data = AsyncMock(return_value=sample_aux_data)
         predictor.entsoestore.get_data = AsyncMock(return_value=sample_entsoe_data)
+        predictor.gasstore.get_data = AsyncMock(return_value=sample_gas_data)
 
         start = datetime(2025, 11, 1, tzinfo=timezone.utc)
         end = datetime(2025, 11, 2, tzinfo=timezone.utc)
@@ -99,6 +101,8 @@ class TestPricePredictorPrepareDataframe:
 
         assert result is not None
         assert not result.empty
+        assert "gasprice" in result.columns
+        assert not result.loc[start:end, "gasprice"].isna().any()
 
 
 class TestPricePredictorTrain:

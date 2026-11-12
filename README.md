@@ -31,6 +31,8 @@ Price data is provided under CC BY 4.0 by smartd.de, retrieved via [api.energy-c
 
 Grid load data is provided by [ENTSO-E transparency platform](https://transparency.entsoe.eu/).
 
+Natural gas prices are provided by the open [data export of Trading Hub Europe](https://api.tradinghub.eu/api/dataexport/manual/en), the German gas market area manager.
+
 ### Features
 
 Weather features (per sample location):
@@ -53,7 +55,7 @@ Time features:
 
 Other:
 - Entso-E load forecast (optional, but highly recommended, especially for DE and AT)
-- Natural gas day-ahead-price, forward filled (select regions only)
+- Natural gas price (daily average at the German virtual trading point), forward filled (select regions only)
 - Stage-1 price forecasts of all regions (stage-2 models only, see below)
 
 Output:

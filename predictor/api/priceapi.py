@@ -57,6 +57,8 @@ This is an open source project, feel free to host it yourself. [Source code and 
 Electricity prices provided under CC-BY-4.0 by [energy-charts.info](https://api.energy-charts.info/) and [ENTSO-E](https://www.entsoe.eu/)
 
 [Weather data by Open-Meteo.com](https://open-meteo.com/)
+
+Natural gas prices by [Trading Hub Europe](https://www.tradinghub.eu/)
 """)
 
 

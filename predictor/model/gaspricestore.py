@@ -1,11 +1,11 @@
 import asyncio
-import json
 import logging
-import re
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from typing import override
 
 import aiohttp
+from aiohttp import ClientTimeout
 import pandas as pd
 
 from .datastore import DataStore
@@ -13,24 +13,89 @@ from .priceregion import PriceRegion
 
 log = logging.getLogger(__name__)
 
+THE_API_URL = "https://api.tradinghub.eu/api/dataexport/xmlexport"
+# THE asks every automated client to identify itself
+THE_USER_AGENT = "EpexPredictor (+https://github.com/b3nn0/EpexPredictor)"
+# A gas day runs from 06:00 to 06:00 German local time
+GASDAY_START_HOUR = 6
+
+
+def _parse_xml(xml: bytes) -> ET.Element:
+    # the export never contains a DTD - refuse anything that does, instead of letting the parser expand entities
+    if b"<!DOCTYPE" in xml or b"<!ENTITY" in xml:
+        raise ValueError("unexpected DTD in THE data export")
+    return ET.fromstring(xml)
+
+
+def _to_series(prices: dict[pd.Timestamp, float]) -> pd.Series:
+    index = pd.DatetimeIndex(list(prices.keys()), tz="UTC")
+    return pd.Series(list(prices.values()), index=index, dtype=float).sort_index()
+
+
+def parse_imbalance_prices(xml: bytes) -> pd.Series:
+    """
+    Parses a "PricesEnergyImbalance" export.
+    Returns the volume-weighted average price at the THE virtual trading point (EUR/MWh), indexed by gas day
+    """
+    prices = {}
+    for entry in _parse_xml(xml):
+        gasday = entry.findtext("Gasday")
+        price = entry.findtext("VTPDailyAveragePrice")
+        if gasday and price:
+            prices[pd.Timestamp(gasday[:10])] = float(price)
+    return _to_series(prices)
+
+
+def parse_preliminary_prices(xml: bytes) -> pd.Series:
+    """
+    Parses a "PricesEnergyImbalancePreliminary" export, which carries the gas day index of yesterday, of the running
+    gas day and (once trading for it started) of tomorrow. Same unit and index as parse_imbalance_prices.
+    """
+    prices = {}
+    for entry in _parse_xml(xml):
+        for day in ("Yesterday", "Today", "Tomorrow"):
+            price = entry.findtext(f"GasdayIndexPriceEEX{day}")
+            date = entry.findtext(f"GasdayIndexPriceEEX{day}Date")
+            if not price or not date:
+                continue
+            # timestamps are German local time. Values that are not available yet come as -1 / year 1900
+            ts = pd.Timestamp(date)
+            if float(price) <= 0 or ts.year < 2000:
+                continue
+            gasday = (ts - pd.Timedelta(hours=GASDAY_START_HOUR)).normalize()
+            prices[gasday] = float(price)
+    return _to_series(prices)
+
+
 class GasPriceStore(DataStore):
     """
-    Fetches and caches natural gas prices from bundesnetzagentur.de. Only German gas prices supported for now, but should serve as a 
-    rough indication for other markets, too.
-    https://www.bundesnetzagentur.de/DE/Gasversorgung/aktuelle_gasversorgung/_svg/Gaspreise/Gaspreise.html
+    Fetches and caches natural gas prices from the open data export of Trading Hub Europe, the German gas market
+    area manager: the average price at the virtual trading point per gas day.
+    Only German gas prices supported for now, but should serve as a rough indication for other markets, too.
+    https://api.tradinghub.eu/api/dataexport/manual/en
     """
+
+    # Preliminary values are replaced by final ones a day or two later, so always re-request the last few days
+    REFRESH_DAYS = 7
 
     data : pd.DataFrame
     region : PriceRegion
     storage_dir : str|None
 
     update_lock: asyncio.Lock
-    
+
 
     def __init__(self, region : PriceRegion, storage_dir=None):
-        super().__init__(region, storage_dir, "gasprices")
+        super().__init__(region, storage_dir, "gasprices_the_v1")
         self.update_lock = asyncio.Lock()
 
+
+    async def _fetch(self, session: aiohttp.ClientSession, report: str, params: dict[str, str] | None = None) -> bytes:
+        url = f"{THE_API_URL}/{report}"
+        log.info(f"{self.region.bidding_zone_entsoe}: Fetching natural gas price data: {url} {params or ''}")
+        async with session.get(url, params=params, headers={"User-Agent": THE_USER_AGENT}, timeout=ClientTimeout(total=120)) as resp:
+            resp.raise_for_status()
+            return await resp.read()
 
 
     async def fetch_missing_data(self, start: datetime, end: datetime) -> bool:
@@ -41,56 +106,36 @@ class GasPriceStore(DataStore):
             start = start.astimezone(timezone.utc)
             end = end.astimezone(timezone.utc)
 
+            missing = self.gen_missing_date_ranges(start, end)
+            if len(missing) == 0:
+                return False
+
+            qstart = min(rstart for rstart, _ in missing) - timedelta(days=self.REFRESH_DAYS)
+            qend = max(rend for _, rend in missing)
+
             updated = False
-
-            for rstart, rend in self.gen_missing_date_ranges(start, end):
-
-                #tzgerman = PriceRegionName.DE.to_region().get_timezone_info()
-                #qstart = rstart - timedelta(days=5) # sometimes a few days are missing - make sure we always try to cover the requested time range
-                #qend = rend + timedelta(days=5)
-                #start_formatted = qstart.astimezone(tzgerman).strftime("%d.%m.%Y")
-                #end_formatted = qend.astimezone(tzgerman).strftime("%d.%m.%Y")
-
-                #url = f"https://www.bundesnetzagentur.de/_tools/SVG/js2/_functions/json.html?view=json&id=870302&xMin={start_formatted}&xMax={end_formatted}&singleType=1"
-                url = "https://www.bundesnetzagentur.de/DE/Gasversorgung/aktuelle_gasversorgung/_svg/Gaspreise/Gaspreise.html"
-                log.info(f"{self.region.bidding_zone_entsoe}: Fetching natural gas price data: {url}")
-
+            try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(url) as resp:
-                        txt = await resp.text()
-                        try:
-                            # Super ugly: prices are directly embedded in the HTML as JS objects.. ugly hackery to extract the wanted data
-                            pattern = re.compile(r"data_myChartId_.*_export\s*= [\w\W]*?labels: (?P<labels>.*?\])[\w\W]*?THE Future \(M\+1\)[\w\W]*?data: (?P<data>.*?\])")
-                            for match in pattern.finditer(txt):
-                                timestamps = json.loads(match.group("labels").replace("'", "\""))
-                                prices = json.loads(match.group("data").replace(" ,", "null,"))
+                    final = parse_imbalance_prices(await self._fetch(session, "PricesEnergyImbalance", {
+                        "startDate": qstart.strftime("%Y-%m-%d"),
+                        "endDate": qend.strftime("%Y-%m-%d"),
+                    }))
+                    preliminary = parse_preliminary_prices(await self._fetch(session, "PricesEnergyImbalancePreliminary"))
 
-                            # data = json.loads(txt)
-                            # timestamps = data["labels"]
-                            # prices = data["datasets"][1]["data"]
-                            pricedict = {}
+                # final prices win, preliminary ones only cover the newest gas days
+                prices = final.combine_first(preliminary)
+                if len(prices) > 0:
+                    df = prices.to_frame("gasprice")
+                    df.index.name = "time"
+                    df = df.resample('15min').ffill()
+                    updated = self._update_data(df)
+            except Exception as e:
+                # A few days old gas prices are still good enough, so this is not fatal
+                log.warning(f"{self.region.bidding_zone_entsoe}: failed to update gas prices: {e}")
 
-                            for i, t in enumerate(timestamps):
-                                gasprice = prices[i]
-                                if isinstance(gasprice, float): # sometimes "null" ??
-                                    time = pd.to_datetime(datetime.strptime(t, "%d.%m.%Y").replace(tzinfo=timezone.utc))
-                                    pricedict[time] = gasprice
-                            
-                            df = pd.DataFrame.from_dict(pricedict, orient="index", columns=["gasprice"])
-                            df = df.resample('15min').ffill()
-
-                            updated = self._update_data(df) or updated
-                        except Exception as e:
-                            log.warning(f"{self.region.bidding_zone_entsoe}: failed to update gas prices. Probably no data available for given time range - ignoring error: {e}")
-
-                # gen_missing_date_ranges is only used to detect if there is anything missing at all. API only allows downloading all prices at once, so we break
-                # after one iteration
-                break
-                        
-
-        
             if updated:
                 log.info(f"{self.region.bidding_zone_entsoe}: gas price data updated")
+                self.data.sort_index(inplace=True)
                 await self.serialize()
 
             return updated
