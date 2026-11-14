@@ -27,12 +27,24 @@ class PriceRegion:
     # features, but not the sun position, which stays centered on latitudes/longitudes.
     extra_weather_latitudes: list[float] = field(default_factory=list)
     extra_weather_longitudes: list[float] = field(default_factory=list)
+    # Country whose day-ahead forecasts of wind power, solar power and load are published by energy-charts.info.
+    # When set (together with the generation_* locations), the price model gets a forecast of the residual load
+    # as input, see residualload.py.
+    generation_forecast_country: str | None = None
+    # Dense grid of sample locations for that forecast: onshore locations across the country, plus the sites of
+    # the offshore wind farms. Generation follows the wind at the turbines, which the few locations above miss.
+    generation_latitudes: list[float] = field(default_factory=list)
+    generation_longitudes: list[float] = field(default_factory=list)
+    generation_offshore_latitudes: list[float] = field(default_factory=list)
+    generation_offshore_longitudes: list[float] = field(default_factory=list)
     holidays: list[HolidayBase] = None # type:ignore # one entry for each regional holiday set, e.g. one for BW, one for BY, ...
     
 
     def __post_init__(self):
         assert len(self.latitudes) == len(self.longitudes)
         assert len(self.extra_weather_latitudes) == len(self.extra_weather_longitudes)
+        assert len(self.generation_latitudes) == len(self.generation_longitudes)
+        assert len(self.generation_offshore_latitudes) == len(self.generation_offshore_longitudes)
         self.holidays = []
         country_holidays = holidays.country_holidays(self.country_code)
         if country_holidays.subdivisions is None or len(country_holidays.subdivisions) == 0:
@@ -87,6 +99,23 @@ PRICE_REGIONS[PriceRegionName.DE] = PriceRegion(
     # North Sea: Dutch coast, Dogger Bank, German Bight, central and northern North Sea
     extra_weather_latitudes=[53.0, 54.7, 55.0, 56.5, 59.5],
     extra_weather_longitudes=[3.5, 2.0, 6.5, 3.0, 2.0],
+    generation_forecast_country="de",
+    # a grid of 0.8 degrees latitude by 1.2 degrees longitude over Germany
+    generation_latitudes=[
+        47.8, 47.8, 47.8, 47.8, 47.8, 48.6, 48.6, 48.6, 48.6, 48.6, 49.4, 49.4, 49.4, 49.4, 49.4,
+        50.2, 50.2, 50.2, 50.2, 50.2, 51.0, 51.0, 51.0, 51.0, 51.0, 51.0, 51.0,
+        51.8, 51.8, 51.8, 51.8, 51.8, 51.8, 51.8, 52.6, 52.6, 52.6, 52.6, 52.6, 52.6, 52.6,
+        53.4, 53.4, 53.4, 53.4, 53.4, 53.4, 54.2, 54.2, 54.2, 54.2, 54.7,
+    ],
+    generation_longitudes=[
+        8.0, 9.2, 10.4, 11.6, 12.8, 8.0, 9.2, 10.4, 11.6, 12.8, 6.8, 8.0, 9.2, 10.4, 11.6,
+        6.5, 7.7, 8.9, 10.1, 11.3, 6.3, 7.5, 8.7, 9.9, 11.1, 12.3, 13.5,
+        6.3, 7.5, 8.7, 9.9, 11.1, 12.3, 13.5, 7.0, 8.2, 9.4, 10.6, 11.8, 13.0, 14.2,
+        7.3, 8.5, 9.7, 10.9, 12.1, 13.3, 8.9, 10.1, 11.3, 12.5, 9.0,
+    ],
+    # German Bight (4) and Baltic Sea (2)
+    generation_offshore_latitudes=[54.0, 54.4, 54.3, 54.9, 54.6, 54.8],
+    generation_offshore_longitudes=[6.5, 7.7, 6.0, 7.2, 13.0, 14.0],
 )
 
 PRICE_REGIONS[PriceRegionName.AT] = PriceRegion(

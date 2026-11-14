@@ -31,6 +31,8 @@ Price data is provided under CC BY 4.0 by smartd.de, retrieved via [api.energy-c
 
 Grid load data is provided by [ENTSO-E transparency platform](https://transparency.entsoe.eu/).
 
+For Germany, the day-ahead forecasts of wind power, solar power and load of the transmission system operators are retrieved via [api.energy-charts.info](https://api.energy-charts.info/) (`public_power_forecast`), and hourly weather on a dense grid of 58 locations from [Open-Meteo.com](https://open-meteo.com/).
+
 Natural gas prices are provided by the open [data export of Trading Hub Europe](https://api.tradinghub.eu/api/dataexport/manual/en), the German gas market area manager.
 
 ### Features
@@ -58,6 +60,7 @@ Other:
 - Natural gas price (daily average at the German virtual trading point), forward filled (select regions only)
 - Stage-1 price forecasts of all regions (stage-2 models only, see below)
 - Europe-wide weather: wind power potential, irradiance and temperature averaged over several zones, plus the wind power potential around the North Sea
+- Residual load (Germany only, see below)
 
 Output:
 - Electricity price
@@ -73,6 +76,14 @@ The cross-region forecasts let the model pick up on price coupling between neigh
 
 For regions that use the natural gas price, each stage consists of **two models**: one predicts the price itself, the other one predicts **price / natural gas price**, which is multiplied by the latest known gas price again. The forecast is the average of both. Whenever gas power plants set the price, electricity prices follow the gas price almost proportionally, and a tree-based model cannot predict a price level it has never seen during training - the second model can, and it keeps older training data comparable when gas prices move. But gas does not set the price all the time, so neither model is right on its own.
 
+### Residual load (Germany)
+The day-ahead auction clears on what the market expects the **residual load** to be: load minus wind and solar power. The transmission system operators publish that expectation as day-ahead forecasts, but one day ahead only, which is too late for a price forecast. So three more LightGBM models learn the published wind power, solar power and load from the weather on a dense grid of locations across Germany and at its offshore wind farms. The price model gets the published residual load where there is one (all of its training data), and the forecast of these models for the days ahead. The few sample locations of the weather features above are too coarse for this: wind power follows the wind at the turbines.
+
+If the published forecasts or the grid weather cannot be fetched, the price model is trained without this input.
+
+### Timestral (optional, Germany)
+[Timestral](https://github.com/mistralai/timestral) is a pretrained time series model by Mistral. It forecasts the price from its recent course plus the weather forecast, without any training, and makes different mistakes than the tree models: it is best right after the last known price. When it is switched on (see configuration below), its forecast is averaged with the one of the tree models for the first 38 hours after the last known price, fading out until 48 hours. It needs PyTorch, about 2 GB more disk space and 1 GB more memory, and its weights are downloaded from Hugging Face on first use. The eval plot shows the tree models only.
+
 A time for which one of the inputs is missing, for example because the weather service could not be reached for several days, gets no forecast, so the output of the API can end earlier than usual. The load forecast is the exception: where it is missing, a forecast is still made.
 
 ## Model performance
@@ -83,6 +94,7 @@ Remarks:
 - The model uses a 540-day rolling training window
 - The table below was measured with the previous setup (180-day training window, no gas-relative model, no Europe-wide weather features) and still has to be regenerated
 - Tests were done with historical weather data. If the weather forecast is wrong, performance might be slightly worse in practice
+- The residual load input and Timestral are not part of the table either. In a backtest for Germany over ten weeks (66 forecasts made at 14:00 for the day after tomorrow, with the weather as it was forecast at that time), the mean absolute error of the first 14 hours of that day was 1.86 ct/kWh without them, 1.52 to 1.72 with the residual load input (depending on the age of the weather forecast), and 1.48 to 1.59 with Timestral-123M on top
 
 Results (1/2/3-day ahead prediction):
 | Region | 1d RMSE | 1d MAE | 2d RMSE | 2d MAE | 3d RMSE | 3d MAE |
@@ -138,6 +150,7 @@ Without Entso-E API access
 |---------------------------------|--------------|-------------|
 | `EPEXPREDICTOR_DATADIR`         | *(unset)*    | Directory where the app persists its cached data. Unset by default (no persistence - the app re-fetches everything on startup). In the compose file this is set to the mounted `/data/` volume. |
 | `EPEXPREDICTOR_ENTSOE_API_KEY`  | *(unset)*    | Entso-E API key. Highly recommended: it acts as a fallback price source, is required for some regions (e.g. SE1-SE4), and provides the electrical load forecast which significantly improves model performance. |
+| `EPEXPREDICTOR_TIMESTRAL_MODEL` | *(unset)*    | Name of a Timestral model on Hugging Face, e.g. `mistralai/Timestral-123M`, to average its forecast with the one of the tree models for Germany. Needs the packages of `requirements-timestral.txt` (`pip install -r requirements-timestral.txt`). The model weights have their own license, see the model page. |
 | `EPEXPREDICTOR_USE_NORDPOOL`    | *(disabled)* | Set to `true` (also `1`/`yes`/`on`) to additionally use the [Nord Pool data portal API](https://dataportal-api.nordpoolgroup.com/api/DayAheadPrices) as a price source. It is the lowest-priority source and only queried if energy-charts and ENTSO-E don't deliver. Nord Pool data is only available for ~4 weeks of history. **Note:** enabling this is up to you - make sure your use case complies with the Nord Pool terms of use / data license. |
 
 ### Proxmox VE (LXC container)
@@ -148,7 +161,23 @@ The two scripts in [`proxmox/`](proxmox/) create an LXC container on a Proxmox V
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/jeremiahpslewis/EpexPredictor/main/proxmox/ct/epexpredictor.sh)"
 ```
 
-The container gets 2 cores, 4 GB of memory and 6 GB of disk by default, and the API listens on port 8000. It answers once the first download of price and weather data has finished, which takes a quarter of an hour or more. The ENTSO-E API key and other settings go into `/opt/epexpredictor/.env` (followed by `systemctl restart epexpredictor`), and `update` in the shell of the container pulls the latest code.
+The container gets 2 cores, 4 GB of memory and 6 GB of disk by default, and the API listens on port 8000. It answers once the first download of price and weather data has finished, which takes a quarter of an hour or more. `update` in the shell of the container pulls the latest code.
+
+Settings go into `/opt/epexpredictor/.env`, one `NAME=value` per line. For the ENTSO-E API key, open a shell in the container (`pct enter <id>` on the host, or the console in the web interface) and run:
+
+```bash
+nano /opt/epexpredictor/.env      # remove the # in front of EPEXPREDICTOR_ENTSOE_API_KEY= and put the key after the =
+systemctl restart epexpredictor
+```
+
+For Timestral, also in the container:
+
+```bash
+cd /opt/epexpredictor
+uv pip install -r requirements-timestral.txt
+echo "EPEXPREDICTOR_TIMESTRAL_MODEL=mistralai/Timestral-123M" >> .env
+systemctl restart epexpredictor
+```
 
 # Home Assistant integration
 At some point, I might create a HA addon to run everything locally.

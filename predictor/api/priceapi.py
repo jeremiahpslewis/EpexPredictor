@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from predictor.model.priceregion import PriceRegion, PriceRegionName
 import predictor.model.pricepredictor as pp
 from predictor.model.europeweather import EuropeWeather
+from predictor.model.timestralblend import TimestralBlend
 from predictor.api.evalplotcache import EvalPlotCache
 
 
@@ -351,6 +352,11 @@ class BaseModelCoordinator:
 
 
 base_models = BaseModelCoordinator()
+
+# Optional second forecaster whose forecast is averaged with the one of the tree models (see timestralblend.py).
+# Backtested for Germany only, so it is used there only.
+timestral = TimestralBlend.from_env()
+TIMESTRAL_ZONES = ("DE_LU",)
 eval_plot_cache = EvalPlotCache(trainer=base_models.train_eval_plot_data)
 
 
@@ -484,6 +490,10 @@ class RegionPriceManager:
 
                 await self.predictor.train(train_start, train_end)
                 newprices, neweval = await self.predictor.predict(train_start, train_end), await self.predictor.predict(train_start, train_end, fill_known=False)
+                if timestral is not None and self.region.bidding_zone_entsoe in TIMESTRAL_ZONES:
+                    base = base_models.get_base(self.name)
+                    assert base is not None
+                    await timestral.blend(base, [newprices, neweval])
                 self.cachedprices = newprices
                 self.cachedeval = neweval
                 lastknown = self.predictor.pricestore.get_last_known()

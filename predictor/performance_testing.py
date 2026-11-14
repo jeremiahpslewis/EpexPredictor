@@ -151,8 +151,7 @@ async def main():
         # performance testing, but not for actual forecasts. Must cap ALL cross regions
         # since stage-2 queries their stores via cross-predictors.
         for name in CROSS_REGIONS:
-            stage1[name].pricestore.horizon_cutoff = learn_end
-            stage1[name].gasstore.horizon_cutoff = learn_end
+            stage1[name].set_horizon_cutoff(learn_end)
 
         # Stage 1: train every cross region's baseline model for this window
         await run_many([stage1[name].train(learn_start, learn_end - timedelta(minutes=15)) for name in CROSS_REGIONS])
@@ -174,11 +173,9 @@ async def main():
         # Fetch actuals (needs full data, so lift the cutoff)
         actuals = {}
         for name in EVAL_REGIONS:
-            stage1[name].pricestore.horizon_cutoff = None
-            stage1[name].gasstore.horizon_cutoff = None
+            stage1[name].set_horizon_cutoff(None)
             actuals[name] = await stage1[name].pricestore.get_data(d0, d3)
-            stage1[name].pricestore.horizon_cutoff = learn_end
-            stage1[name].gasstore.horizon_cutoff = learn_end
+            stage1[name].set_horizon_cutoff(learn_end)
 
         for name in EVAL_REGIONS:
             s1[name].add(actuals[name], preds1[name], d0, d1, d2, d3)

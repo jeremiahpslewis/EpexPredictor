@@ -28,10 +28,31 @@ class WeatherStore(DataStore):
     # requests, so we serialize every call to its API globally.
     _openmeteo_lock: asyncio.Lock = asyncio.Lock()
 
+    # What is fetched, and under which column prefix it is stored. Subclasses fetch something else.
+    STORAGE_PREFIX = "weather_v2"
+    RESOLUTION = "minutely_15"
+    VARIABLES = {
+        "wind_speed_80m": "wind",
+        "temperature_2m": "temp",
+        "global_tilted_irradiance": "irradiance",
+        "pressure_msl": "pressure",
+        "relative_humidity_2m": "humidity",
+    }
+    # longest range fetched with one request (OpenMeteo allows 90 days)
+    MAX_RANGE_DAYS = 90
+    # pause after a request, for stores whose requests weigh heavily on OpenMeteo's rate limit
+    REQUEST_PAUSE_SECONDS = 0.0
+
     def __init__(self, region : PriceRegion, storage_dir: str|None =None):
-        super().__init__(region, storage_dir, "weather_v2")
+        super().__init__(region, storage_dir, self.STORAGE_PREFIX)
         self.update_lock = asyncio.Lock()
         self.fetch_lock = asyncio.Lock()
+
+    def latitudes(self) -> list[float]:
+        return self.region.weather_latitudes
+
+    def longitudes(self) -> list[float]:
+        return self.region.weather_longitudes
 
     @override
     def get_next_horizon_revalidation_time(self) -> datetime | None:
@@ -40,8 +61,8 @@ class WeatherStore(DataStore):
     def expected_columns(self) -> set[str]:
         return {
             f"{name}_{i}"
-            for i in range(len(self.region.weather_latitudes))
-            for name in ("wind", "temp", "irradiance", "pressure", "humidity")
+            for i in range(len(self.latitudes()))
+            for name in self.VARIABLES.values()
         }
 
     @override
@@ -58,8 +79,8 @@ class WeatherStore(DataStore):
 
     async def refresh_range(self, rstart: datetime, rend: datetime) -> bool:
         async with self.update_lock:
-            lats = ",".join(map(str, self.region.weather_latitudes))
-            lons = ",".join(map(str, self.region.weather_longitudes))
+            lats = ",".join(map(str, self.latitudes()))
+            lons = ",".join(map(str, self.longitudes()))
 
             updated = False
             if self.needs_history_query(rstart):
@@ -67,7 +88,7 @@ class WeatherStore(DataStore):
             else:
                 host = "api.open-meteo.com"
 
-            url = f"https://{host}/v1/forecast?latitude={lats}&longitude={lons}&azimuth=0&tilt=0&start_date={rstart.date().isoformat()}&end_date={rend.date().isoformat()}&minutely_15=wind_speed_80m,temperature_2m,global_tilted_irradiance,pressure_msl,relative_humidity_2m&timezone=UTC"
+            url = f"https://{host}/v1/forecast?latitude={lats}&longitude={lons}&azimuth=0&tilt=0&start_date={rstart.date().isoformat()}&end_date={rend.date().isoformat()}&{self.RESOLUTION}={",".join(self.VARIABLES)}&timezone=UTC"
             log.info(f"{self.region.bidding_zone_entsoe}: Fetching weather data: {url}")
 
             try:
@@ -78,16 +99,18 @@ class WeatherStore(DataStore):
                             data = await resp.text()
 
                             data = json.loads(data)
+                            if isinstance(data, dict):
+                                # one location is returned as an object instead of a list, and so is an error
+                                if "error" in data:
+                                    raise RuntimeError(data.get("reason", "OpenMeteo reported an error"))
+                                data = [data]
                             frames = []
                             for i, fc in enumerate(data):
                                 df = pd.DataFrame()
 
-                                df["time"] = fc["minutely_15"]["time"]
-                                df[f"wind_{i}"] = fc["minutely_15"]["wind_speed_80m"]
-                                df[f"temp_{i}"] = fc["minutely_15"]["temperature_2m"]
-                                df[f"irradiance_{i}"] = fc["minutely_15"]["global_tilted_irradiance"]
-                                df[f"pressure_{i}"] = fc["minutely_15"]["pressure_msl"]
-                                df[f"humidity_{i}"] = fc["minutely_15"]["relative_humidity_2m"]
+                                df["time"] = fc[self.RESOLUTION]["time"]
+                                for variable, name in self.VARIABLES.items():
+                                    df[f"{name}_{i}"] = fc[self.RESOLUTION][variable]
 
                                 df.set_index("time", inplace=True)
                                 df = df.dropna()
@@ -96,6 +119,9 @@ class WeatherStore(DataStore):
                             df = pd.concat(frames, axis=1).reset_index()
                             df["time"] = pd.to_datetime(df["time"], utc=True)
                             df.set_index("time", inplace=True)
+
+                    if self.REQUEST_PAUSE_SECONDS > 0:
+                        await asyncio.sleep(self.REQUEST_PAUSE_SECONDS)
 
                 updated = self._update_data(df) or updated
             except Exception as e:
@@ -140,8 +166,8 @@ class WeatherStore(DataStore):
             apiswitch = rangestart is not None and self.needs_history_query(rangestart) != self.needs_history_query(next_day)
 
 
-            if rangestart is not None and (next_day in self.data.index or next_day > end or apiswitch or (curr - rangestart).total_seconds() > 60 * 60 * 24 * 90):
-                # We have the next timeslot already OR its the last timeslot OR the current range exceeds 90 days (max for openmeteo) OR we need to change APIs
+            if rangestart is not None and (next_day in self.data.index or next_day > end or apiswitch or (curr - rangestart).total_seconds() > 60 * 60 * 24 * self.MAX_RANGE_DAYS):
+                # We have the next timeslot already OR its the last timeslot OR the current range exceeds the maximum (90 days for openmeteo) OR we need to change APIs
                 result.append((pd.to_datetime(rangestart), pd.to_datetime(curr)))
                 rangestart = None
 
