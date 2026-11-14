@@ -32,6 +32,13 @@ def disable_nordpool(monkeypatch):
     monkeypatch.delenv("EPEXPREDICTOR_USE_NORDPOOL", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def disable_residual_load(monkeypatch):
+    """Create price predictors without residual load forecast, so tests don't hit the live APIs for it."""
+    from predictor.model.residualload import ResidualLoad
+    monkeypatch.setattr(ResidualLoad, "is_configured", staticmethod(lambda region: False))
+
+
 @pytest.fixture
 def sample_region():
     """Return a sample price region for testing."""

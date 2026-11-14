@@ -17,6 +17,7 @@ from .pricestore import PriceStore
 from .weatherstore import WeatherStore
 from .entsoedatastore import EntsoeDataStore
 from .gaspricestore import GasPriceStore
+from .residualload import ResidualLoad
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +45,9 @@ class PricePredictor:
     # large-scale weather features, shared by the models of all regions. Set by whoever creates the models
     europe_weather: EuropeWeather | None = None
 
+    # forecast of the residual load, for regions with a generation grid (see residualload.py)
+    residual_load: ResidualLoad | None = None
+
     # Inputs whose source does not reach as far as the others, so they may be missing for part of a forecast
     optional_inputs: list[str]
 
@@ -54,6 +58,8 @@ class PricePredictor:
         self.auxstore = AuxDataStore(region)
         self.entsoestore = EntsoeDataStore(region, storage_dir)
         self.gasstore = GasPriceStore(region, storage_dir)
+        if ResidualLoad.is_configured(region):
+            self.residual_load = ResidualLoad(region, storage_dir, self.auxstore)
 
         # When set, the price forecasts of these (stage-1) predictors are added as extra
         # input features. Each cross predictor is responsible for delivering its own
@@ -68,10 +74,15 @@ class PricePredictor:
             self.entsoestore.load(),
             self.gasstore.load()
         )
+        if self.residual_load is not None:
+            await self.residual_load.load()
         return self
     
     def last_data_update(self) -> datetime:
-        return max(self.weatherstore.last_updated, self.pricestore.last_updated, self.entsoestore.last_updated, self.gasstore.last_updated)
+        updates = [self.weatherstore.last_updated, self.pricestore.last_updated, self.entsoestore.last_updated, self.gasstore.last_updated]
+        if self.residual_load is not None:
+            updates.append(self.residual_load.last_data_update())
+        return max(updates)
 
     def use_datastores_from(self, other: "PricePredictor"):
         assert self.region.bidding_zone_entsoe == other.region.bidding_zone_entsoe
@@ -81,12 +92,26 @@ class PricePredictor:
         self.entsoestore = other.entsoestore
         self.gasstore = other.gasstore
         self.europe_weather = other.europe_weather
+        self.residual_load = other.residual_load.with_shared_stores() if other.residual_load is not None else None
+
+    def set_horizon_cutoff(self, cutoff: datetime | None):
+        """
+        Hide everything after the cutoff that would not be known yet at that time (for backtests): prices, gas
+        prices and the generation forecasts published by the TSOs
+        """
+        self.pricestore.horizon_cutoff = cutoff
+        self.gasstore.horizon_cutoff = cutoff
+        if self.residual_load is not None:
+            self.residual_load.generation.horizon_cutoff = cutoff
 
     def is_trained(self) -> bool:
         return self.predictor is not None
 
 
     async def train(self, start: datetime, end: datetime):
+        if self.residual_load is not None:
+            await self.residual_load.train(start, end)
+
         self.traindata = await self.prepare_dataframe(start, end)
         if self.traindata is None:
             return
@@ -230,6 +255,11 @@ class PricePredictor:
             if europe_weather is not None:
                 df = pd.concat([df, europe_weather], axis=1, sort=True)
 
+        if self.residual_load is not None:
+            residual_load = await self.residual_load.get_data(start, end)
+            if residual_load is not None:
+                df = pd.concat([df, residual_load], axis=1, sort=True)
+
         if len(self.cross_predictors) > 0:
             cross_features = await self.get_cross_features(start, end)
             if cross_features is not None:
@@ -246,6 +276,8 @@ class PricePredictor:
         """
         await self.weatherstore.refresh_range(start, end)
         await self.entsoestore.refresh_range(start, end)
+        if self.residual_load is not None:
+            await self.residual_load.refresh_forecasts(start, end)
 
 
     def cleanup(self):
@@ -258,6 +290,8 @@ class PricePredictor:
         self.auxstore.drop_before(cutoff)
         self.entsoestore.drop_before(cutoff)
         self.gasstore.drop_before(cutoff)
+        if self.residual_load is not None:
+            self.residual_load.drop_before(cutoff)
 
 
 
