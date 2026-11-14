@@ -239,9 +239,18 @@ class ResidualLoad:
         self.gridweather.drop_before(cutoff)
         self.generation.drop_before(cutoff)
 
+    async def get_grid_weather(self, start: datetime, end: datetime) -> pd.DataFrame:
+        try:
+            return await self.gridweather.get_data(start, end)
+        except Exception as e:
+            # The price forecast must not fail with this input: carry on with what is there. Times without weather
+            # get no residual load, and too little of it leaves the price model without this input altogether.
+            log.warning(f"{self.region.bidding_zone_entsoe}: failed to fetch grid weather, using what is stored: {e}")
+            return self.gridweather.data.loc[start.astimezone(timezone.utc):end.astimezone(timezone.utc)]
+
     async def get_features(self, start: datetime, end: datetime) -> pd.DataFrame:
         weather, aux = await asyncio.gather(
-            self.gridweather.get_data(start, end),
+            self.get_grid_weather(start, end),
             self.auxstore.get_data(start, end),
         )
         return generation_features(self.region, weather, aux)

@@ -58,6 +58,7 @@ def published_figures(weather: pd.DataFrame) -> pd.DataFrame:
 
 def forecaster(region, weather: pd.DataFrame, published: pd.DataFrame) -> ResidualLoad:
     residual_load = ResidualLoad(region, None, AuxDataStore(region))
+    residual_load.LGB_ROUNDS = 60  # enough for the simple relations of the test data, and much faster
     residual_load.gridweather.get_data = AsyncMock(side_effect=lambda start, end: weather.loc[start:end])
     residual_load.generation.get_data = AsyncMock(side_effect=lambda start, end: published.loc[start:end])
     return residual_load
@@ -257,6 +258,34 @@ class TestResidualLoad:
 
         assert residual_load.models is None
         assert await residual_load.get_data(START, START + timedelta(days=10)) is None
+
+    @pytest.mark.asyncio
+    async def test_weather_service_down_leaves_the_price_model_without_this_input(self, region):
+        weather = grid_weather(region)
+        residual_load = forecaster(region, weather, published_figures(weather))
+        residual_load.gridweather.get_data = AsyncMock(side_effect=RuntimeError("Daily API request limit exceeded."))
+
+        await residual_load.train(START, START + timedelta(days=DAYS))
+
+        assert residual_load.models is None
+        assert await residual_load.get_data(START, START + timedelta(days=DAYS)) is None
+
+    @pytest.mark.asyncio
+    async def test_weather_service_down_after_training_uses_stored_weather(self, region):
+        weather = grid_weather(region)
+        truth = published_figures(weather)
+        last_published = START + timedelta(days=DAYS - 2)
+        residual_load = forecaster(region, weather, truth.loc[:last_published].copy())
+        end = START + timedelta(days=DAYS + 1)
+        await residual_load.train(START, end)
+
+        residual_load.gridweather.data = weather
+        residual_load.gridweather.get_data = AsyncMock(side_effect=RuntimeError("no connection"))
+        result = await residual_load.get_data(START, end)
+
+        assert result is not None
+        assert not result.loc[:START + timedelta(days=DAYS), "residual_load"].isna().any()
+        assert result.loc[START + timedelta(days=DAYS, hours=1):, "residual_load"].isna().all()
 
     @pytest.mark.asyncio
     async def test_shared_stores_but_own_models(self, region):

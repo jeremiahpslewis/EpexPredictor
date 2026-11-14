@@ -1,0 +1,5 @@
+# Optional: the Timestral foundation model as second forecaster for Germany.
+# Install on top of requirements.txt, then set EPEXPREDICTOR_TIMESTRAL_MODEL (see README).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+timestral @ git+https://github.com/mistralai/timestral
