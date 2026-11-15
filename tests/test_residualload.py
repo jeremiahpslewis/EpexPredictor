@@ -392,3 +392,65 @@ class TestRefreshFailures:
         await coordinator._do_update()
 
         assert all(p.train.await_count == 1 for p in coordinator.base.values())
+
+
+class TestFallbackWithoutResidualLoad:
+    def price_predictor(self, monkeypatch, region, weather_days=DAYS + 2):
+        monkeypatch.undo()
+        weather = grid_weather(region)
+        truth = published_figures(weather)
+        end = START + timedelta(days=weather_days)
+        index = pd.date_range(START, end, freq="15min", name="time")
+        predictor = PricePredictor(region)
+        predictor.residual_load = forecaster(region, weather, truth)
+        predictor.residual_load.auxstore = predictor.auxstore
+        region_weather = pd.DataFrame({"wind_0": 5.0, "temp_0": 10.0}, index=index)
+        residual = (truth["tso_load"] - truth["tso_wind"] - truth["tso_solar"]).reindex(index).ffill()
+        prices = pd.DataFrame({"price": residual / 5}, index=index)
+        gas = pd.DataFrame({"gasprice": 30.0}, index=index)
+        predictor.weatherstore.get_data = AsyncMock(side_effect=lambda s, e: region_weather.loc[s:e])
+        predictor.pricestore.get_data = AsyncMock(side_effect=lambda s, e: prices.loc[s:e])
+        predictor.gasstore.get_data = AsyncMock(side_effect=lambda s, e: gas.loc[s:e])
+        return predictor
+
+    @pytest.mark.asyncio
+    async def test_forecast_without_grid_weather_where_the_rest_is_there(self, monkeypatch, region):
+        predictor = self.price_predictor(monkeypatch, region)
+        await predictor.train(START, START + timedelta(days=DAYS - 1))
+        assert predictor.fallback_predictor is not None
+
+        # grid weather and published figures end, the region's weather goes on for two more days
+        end = START + timedelta(days=DAYS + 2)
+        predicted = await predictor.predict(START + timedelta(days=DAYS - 2), end, fill_known=False)
+
+        residual_load = await predictor.residual_load.get_data(START + timedelta(days=DAYS - 2), end)
+        assert residual_load is not None
+        without = residual_load["residual_load"].isna()
+        assert without.any()
+        assert predicted["price"].notna().all()
+
+    @pytest.mark.asyncio
+    async def test_no_forecast_where_other_inputs_are_missing_too(self, monkeypatch, region):
+        predictor = self.price_predictor(monkeypatch, region, weather_days=DAYS)
+        await predictor.train(START, START + timedelta(days=DAYS - 1))
+
+        predicted = await predictor.predict(START + timedelta(days=DAYS - 2), START + timedelta(days=DAYS + 2), fill_known=False)
+
+        assert predicted.loc[START + timedelta(days=DAYS, hours=1):, "price"].isna().all()
+        assert predicted.loc[:START + timedelta(days=DAYS - 1), "price"].notna().all()
+
+    @pytest.mark.asyncio
+    async def test_no_fallback_models_without_residual_load(self, sample_region, sample_weather_data, sample_price_data,
+                                                           sample_aux_data, sample_entsoe_data, sample_gas_data):
+        predictor = PricePredictor(sample_region)
+        assert predictor.residual_load is None
+        predictor.weatherstore.get_data = AsyncMock(return_value=sample_weather_data)
+        predictor.pricestore.get_data = AsyncMock(return_value=sample_price_data)
+        predictor.auxstore.get_data = AsyncMock(return_value=sample_aux_data)
+        predictor.entsoestore.get_data = AsyncMock(return_value=sample_entsoe_data)
+        predictor.gasstore.get_data = AsyncMock(return_value=sample_gas_data)
+
+        await predictor.train(datetime(2025, 11, 1, tzinfo=timezone.utc), datetime(2025, 11, 2, tzinfo=timezone.utc))
+
+        assert predictor.predictor is not None
+        assert predictor.fallback_predictor is None

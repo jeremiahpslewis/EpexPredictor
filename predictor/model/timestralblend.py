@@ -3,7 +3,9 @@ Optional second opinion: the Timestral time series foundation model (https://git
 
 It forecasts the price from its recent course plus the weather as known-future covariates, without any training.
 Where the tree models read the price off the weather, it continues the last known prices, so it is best right
-after them, and the two make different mistakes. Their average was better than either one in backtests.
+after them, and the two make different mistakes. In backtests for Germany, their average improved on the tree models
+for the night hours in autumn and in spring/summer, and for the whole first day in autumn only; on its own,
+Timestral was not better than the tree models.
 
 Switched on with EPEXPREDICTOR_TIMESTRAL_MODEL (e.g. mistralai/Timestral-123M) and needs the packages of
 requirements-timestral.txt.

@@ -39,6 +39,12 @@ class PricePredictor:
     # second model for regions with a gas price, trained on price / gas price (see train())
     gas_predictor: lgb.Booster | None = None
 
+    # Inputs whose source can fail independently of the others, and the same two models trained without them. They
+    # forecast the times for which only these inputs are missing, so such a failure costs accuracy, not the forecast.
+    FALLBACK_INPUTS = ("residual_load",)
+    fallback_predictor: lgb.Booster | None = None
+    fallback_gas_predictor: lgb.Booster | None = None
+
     # 2-stage forecasting: stage-1 predictors whose price forecasts are added as extra features
     cross_predictors: list["PricePredictor"]
 
@@ -120,19 +126,25 @@ class PricePredictor:
         params = self.traindata.drop(columns=["price"])
         output = self.traindata["price"]
 
-        lgb_dataset = lgb.Dataset(params, label=output)
+        self.predictor, self.gas_predictor = await self.train_models(params, output)
+
+        self.fallback_predictor, self.fallback_gas_predictor = None, None
+        fallback_inputs = [c for c in self.FALLBACK_INPUTS if c in params.columns]
+        if len(fallback_inputs) > 0:
+            self.fallback_predictor, self.fallback_gas_predictor = await self.train_models(params.drop(columns=fallback_inputs), output)
+
+    async def train_models(self, params: pd.DataFrame, output: pd.Series) -> tuple[lgb.Booster, lgb.Booster | None]:
         params_lgb = {
             "force_col_wise": True,
             "verbosity": -1,
         }
-
-        self.predictor = await asyncio.to_thread(lgb.train, params=params_lgb, train_set=lgb_dataset)
+        predictor = await asyncio.to_thread(lgb.train, params=params_lgb, train_set=lgb.Dataset(params, label=output))
 
         # Whenever gas power plants set the price, it follows the gas price almost proportionally. But a tree model
         # cannot predict a price level it has not seen in its training data, so it lags behind when gas prices
         # move. A second model therefore predicts price / gas price, which also keeps older training data comparable.
         # Neither view is right all the time (and for every region), so predict() averages both models.
-        self.gas_predictor = None
+        gas_predictor = None
         gas = self.get_gas_scale(params)
         if gas is not None:
             lgb_dataset = lgb.Dataset(
@@ -140,8 +152,16 @@ class PricePredictor:
                 label=output / gas,
                 weight=gas.to_numpy() ** 2, # keeps the objective a squared error in price units
             )
-            self.gas_predictor = await asyncio.to_thread(lgb.train, params=params_lgb, train_set=lgb_dataset)
+            gas_predictor = await asyncio.to_thread(lgb.train, params=params_lgb, train_set=lgb_dataset)
+        return predictor, gas_predictor
 
+    def predict_with(self, predictor: lgb.Booster, gas_predictor: lgb.Booster | None, params: pd.DataFrame) -> np.ndarray:
+        prediction = np.asarray(predictor.predict(params))
+        gas = self.get_gas_scale(params)
+        if gas_predictor is not None and gas is not None:
+            gas_relative = np.asarray(gas_predictor.predict(self.to_gas_relative(params, gas)))
+            prediction = (prediction + gas_relative * gas.to_numpy()) / 2
+        return prediction
 
 
     async def predict(self, start: datetime, end: datetime, fill_known=True) -> pd.DataFrame:
@@ -154,16 +174,22 @@ class PricePredictor:
 
         params = df.drop(columns=["price"])
 
-        prediction = np.asarray(self.predictor.predict(params))
-        gas = self.get_gas_scale(params)
-        if self.gas_predictor is not None and gas is not None:
-            gas_relative = np.asarray(self.gas_predictor.predict(self.to_gas_relative(params, gas)))
-            prediction = (prediction + gas_relative * gas.to_numpy()) / 2
+        prediction = self.predict_with(self.predictor, self.gas_predictor, params)
 
         # The models read a missing input as zero: no wind and no sun, or a price of zero in another region. A
-        # forecast made from that looks plausible and is wrong, so these rows get none.
+        # forecast made from that looks plausible and is wrong, so these rows get none - unless only an input is
+        # missing that the fallback models do without.
         required = [c for c in params.columns if c not in self.optional_inputs]
-        prediction[params[required].isna().any(axis=1).to_numpy()] = np.nan
+        missing = params[required].isna()
+        fallback_inputs = [c for c in self.FALLBACK_INPUTS if c in required]
+        if self.fallback_predictor is not None and len(fallback_inputs) > 0:
+            others = [c for c in required if c not in fallback_inputs]
+            use_fallback = (missing[fallback_inputs].any(axis=1) & ~missing[others].any(axis=1)).to_numpy()
+            if use_fallback.any():
+                fallback_params = params.loc[use_fallback].drop(columns=fallback_inputs)
+                prediction[use_fallback] = self.predict_with(self.fallback_predictor, self.fallback_gas_predictor, fallback_params)
+                missing = missing.drop(columns=fallback_inputs)
+        prediction[missing.any(axis=1).to_numpy()] = np.nan
 
         resultdf = pd.DataFrame(index=params.index)
         resultdf["price"] = prediction

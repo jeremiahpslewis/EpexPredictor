@@ -79,7 +79,7 @@ For regions that use the natural gas price, each stage consists of **two models*
 ### Residual load (Germany)
 The day-ahead auction clears on what the market expects the **residual load** to be: load minus wind and solar power. The transmission system operators publish that expectation as day-ahead forecasts, but one day ahead only, which is too late for a price forecast. So three more LightGBM models learn the published wind power, solar power and load from the weather on a dense grid of locations across Germany and at its offshore wind farms. The price model gets the published residual load where there is one (all of its training data), and the forecast of these models for the days ahead. The few sample locations of the weather features above are too coarse for this: wind power follows the wind at the turbines.
 
-If the published forecasts or the grid weather cannot be fetched, the price model is trained without this input.
+If the published forecasts or the grid weather cannot be fetched, the price model is trained without this input. Times for which only this input is missing (for example when the grid weather could not be updated) are forecast by a second set of models trained without it.
 
 ### Timestral (optional, Germany)
 [Timestral](https://github.com/mistralai/timestral) is a pretrained time series model by Mistral. It forecasts the price from its recent course plus the weather forecast, without any training, and makes different mistakes than the tree models: it is best right after the last known price. When it is switched on (see configuration below), its forecast is averaged with the one of the tree models for the first 38 hours after the last known price, fading out until 48 hours. It needs PyTorch, about 2 GB more disk space and 1 GB more memory, and its weights are downloaded from Hugging Face on first use. The eval plot shows the tree models only.
@@ -94,7 +94,7 @@ Remarks:
 - The model uses a 540-day rolling training window
 - The table below was measured with the previous setup (180-day training window, no gas-relative model, no Europe-wide weather features) and still has to be regenerated
 - Tests were done with historical weather data. If the weather forecast is wrong, performance might be slightly worse in practice
-- The residual load input and Timestral are not part of the table either. In a backtest for Germany over ten weeks (66 forecasts made at 14:00 for the day after tomorrow, with the weather as it was forecast at that time), the mean absolute error of the first 14 hours of that day was 1.86 ct/kWh without them, 1.72 with the residual load input, and 1.59 with Timestral-123M on top. The weather used was forecast at least 48 hours before the time it is valid for, which is what is available at 14:00 for the day after tomorrow
+- The residual load input and Timestral are not part of the table either. They were backtested for Germany with forecasts made at 14:00 for the day after tomorrow, using the weather as it was forecast at that time (at least 48 hours ahead). Mean absolute error of the first 14 hours of that day, autumn 2026 (66 forecasts) / spring-summer 2026 (50 forecasts): 1.86 / 1.50 ct/kWh without them, 1.72 / 1.30 with the residual load input, and 1.59 / 1.30 with Timestral-123M on top. For 00:00-08:00 alone: 1.65 / 1.06, 1.49 / 0.87 and 1.30 / 0.80. Timestral on its own was not better than the tree models
 
 Results (1/2/3-day ahead prediction):
 | Region | 1d RMSE | 1d MAE | 2d RMSE | 2d MAE | 3d RMSE | 3d MAE |
