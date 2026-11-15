@@ -1,6 +1,7 @@
 """Tests for the residual load forecast."""
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
@@ -171,6 +172,38 @@ class TestGenerationForecastStore:
         store.fetch_forecast.reset_mock()
         assert await store.fetch_missing_data(START, START + timedelta(hours=1)) is False
         store.fetch_forecast.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_stale_stored_data_is_updated_right_after_a_restart(self, region, temp_storage_dir):
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        old = pd.date_range(now - timedelta(days=5), now - timedelta(days=3), freq="15min", name="time")
+        store = GenerationForecastStore(region, temp_storage_dir)
+        store.data = pd.DataFrame({"tso_wind": 1.0, "tso_solar": 1.0, "tso_load": 1.0}, index=old)
+        await store.serialize()
+        three_days_ago = (now - timedelta(days=3)).timestamp()
+        os.utime(store.get_storage_file(), (three_days_ago, three_days_ago))
+
+        restarted = await GenerationForecastStore(region, temp_storage_dir).load()
+        new = pd.date_range(now - timedelta(days=3), now, freq="15min")
+        restarted.fetch_forecast = AsyncMock(side_effect=lambda kind, start, end: pd.Series(1000.0, index=new))
+        result = await restarted.get_data(now - timedelta(days=5), now)
+
+        restarted.fetch_forecast.assert_called()
+        assert result.index.max() == now
+
+    @pytest.mark.asyncio
+    async def test_fresh_stored_data_is_not_fetched_again_before_the_next_check(self, region, temp_storage_dir):
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        index = pd.date_range(now - timedelta(days=2), now, freq="15min", name="time")
+        store = GenerationForecastStore(region, temp_storage_dir)
+        store.data = pd.DataFrame({"tso_wind": 1.0, "tso_solar": 1.0, "tso_load": 1.0}, index=index)
+        await store.serialize()
+
+        restarted = await GenerationForecastStore(region, temp_storage_dir).load()
+        restarted.fetch_forecast = AsyncMock()
+        await restarted.get_data(now - timedelta(days=1), now + timedelta(days=2))
+
+        restarted.fetch_forecast.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_does_nothing_for_a_region_without_forecasts(self):

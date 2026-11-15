@@ -76,7 +76,13 @@ class GenerationForecastStore(DataStore):
     }
     MAX_RANGE_DAYS = 180
 
+    # The forecasts for the next day appear some time during the day (wind and solar in the evening), so look for
+    # them this often
+    CHECK_INTERVAL = timedelta(hours=1)
+
     update_lock: asyncio.Lock
+    # when the source was last asked for data. After a restart: when the stored data was written
+    last_checked: datetime | None = None
 
     def __init__(self, region: PriceRegion, storage_dir: str | None = None):
         super().__init__(region, storage_dir, "generation_v1")
@@ -84,8 +90,9 @@ class GenerationForecastStore(DataStore):
 
     @override
     def get_next_horizon_revalidation_time(self) -> datetime | None:
-        # The forecasts for the next day appear some time during the day
-        return datetime.now(timezone.utc) + timedelta(hours=1)
+        # Counted from the last request, not from now: stored data that is older than the interval is brought up
+        # to date right after a restart instead of an hour later
+        return (self.last_checked or self.last_updated) + self.CHECK_INTERVAL
 
     @override
     async def fetch_missing_data(self, start: datetime, end: datetime) -> bool:
@@ -95,6 +102,7 @@ class GenerationForecastStore(DataStore):
         async with self.update_lock:
             updated = False
             for rstart, rend in self.gen_missing_date_ranges(start, end):
+                self.last_checked = datetime.now(timezone.utc)
                 while rstart <= rend:
                     chunk_end = min(rend, rstart + timedelta(days=self.MAX_RANGE_DAYS))
                     df = await self.fetch_range(rstart, chunk_end)
