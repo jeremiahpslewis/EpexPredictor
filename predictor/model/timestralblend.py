@@ -24,6 +24,13 @@ log = logging.getLogger(__name__)
 
 SLOT = timedelta(minutes=15)
 
+# Model weights the backtests were run with. Other models, or other revisions, are loaded as published now.
+TESTED_REVISIONS = {
+    "mistralai/Timestral-28M": "49b26409ac87b5935539a5d8ffe7f397b720db47",
+    "mistralai/Timestral-123M": "5a147287addda85f6acd8da3fb8858fe9af7e8f7",
+    "mistralai/Timestral-209M": "9874d252ab0aae16f7f7c999f98f98d6ad7d8365",
+}
+
 
 class TimestralBlend:
     # Quarter hours of price history the model looks at (about 85 days)
@@ -35,10 +42,12 @@ class TimestralBlend:
     WEIGHT = 0.5
 
     model_name: str
+    revision: str | None
     forecaster = None
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, revision: str | None = None):
         self.model_name = model_name
+        self.revision = revision if revision else TESTED_REVISIONS.get(model_name)
 
     @staticmethod
     def from_env() -> "TimestralBlend | None":
@@ -51,7 +60,7 @@ class TimestralBlend:
             log.error("EPEXPREDICTOR_TIMESTRAL_MODEL is set, but the timestral package is not installed "
                       "(see requirements-timestral.txt). Continuing without it.")
             return None
-        return TimestralBlend(model_name)
+        return TimestralBlend(model_name, os.getenv("EPEXPREDICTOR_TIMESTRAL_REVISION", "").strip() or None)
 
     @classmethod
     def weights(cls) -> np.ndarray:
@@ -83,8 +92,8 @@ class TimestralBlend:
         from timestral import TimestralForecaster
 
         if self.forecaster is None:
-            log.info(f"loading {self.model_name}")
-            self.forecaster = TimestralForecaster.from_pretrained(self.model_name)
+            log.info(f"loading {self.model_name}, revision {self.revision or 'latest'}")
+            self.forecaster = TimestralForecaster.from_pretrained(self.model_name, revision=self.revision)
         with torch.no_grad():
             forecast = self.forecaster.forecast(
                 prices[None, None, :],
@@ -118,7 +127,8 @@ class TimestralBlend:
             return None
 
         rows = len(history) + horizon
-        covariates = np.nan_to_num(covariates[:, :rows])
+        # gaps in the history stay NaN: Timestral masks them (a zero would read as no wind, no sun, ...)
+        covariates = covariates[:, :rows]
         values = await asyncio.to_thread(
             self._forecast,
             history["price"].to_numpy(dtype=float),

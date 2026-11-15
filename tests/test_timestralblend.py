@@ -141,3 +141,32 @@ class TestTimestralBlend:
 
         assert await blend.blend(predictor, [prediction]) is False
         assert (prediction["price"] == 10.0).all()
+
+    @pytest.mark.asyncio
+    async def test_gaps_in_the_history_are_passed_as_missing(self):
+        df = input_frame(TimestralBlend.HORIZON)
+        df.loc[LAST_KNOWN - 50 * SLOT:LAST_KNOWN - 40 * SLOT, "wind_0"] = np.nan
+        blend, predictor, calls = blend_with_stand_in(df)
+
+        assert await blend.forecast(predictor) is not None
+
+        covariates = calls[0][1]
+        assert np.isnan(covariates).any()
+        assert not np.isnan(covariates[:, TimestralBlend.CONTEXT:]).any()
+
+
+class TestRevisions:
+    def test_tested_revision_by_default(self):
+        assert TimestralBlend("mistralai/Timestral-123M").revision == "5a147287addda85f6acd8da3fb8858fe9af7e8f7"
+
+    def test_revision_from_setting(self, monkeypatch):
+        monkeypatch.setenv("EPEXPREDICTOR_TIMESTRAL_MODEL", "mistralai/Timestral-123M")
+        monkeypatch.setenv("EPEXPREDICTOR_TIMESTRAL_REVISION", "main")
+        monkeypatch.setitem(__import__("sys").modules, "timestral", object())
+
+        blend = TimestralBlend.from_env()
+
+        assert blend is not None and blend.revision == "main"
+
+    def test_unknown_model_loads_the_latest_revision(self):
+        assert TimestralBlend("someone/other-model").revision is None
