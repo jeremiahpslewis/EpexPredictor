@@ -150,7 +150,7 @@ Without Entso-E API access
 |---------------------------------|--------------|-------------|
 | `EPEXPREDICTOR_DATADIR`         | *(unset)*    | Directory where the app persists its cached data. Unset by default (no persistence - the app re-fetches everything on startup). In the compose file this is set to the mounted `/data/` volume. |
 | `EPEXPREDICTOR_ENTSOE_API_KEY`  | *(unset)*    | Entso-E API key. Highly recommended: it acts as a fallback price source, is required for some regions (e.g. SE1-SE4), and provides the electrical load forecast which significantly improves model performance. |
-| `EPEXPREDICTOR_TIMESTRAL_MODEL` | *(unset)*    | Name of a Timestral model on Hugging Face, e.g. `mistralai/Timestral-123M`, to average its forecast with the one of the tree models for Germany. Needs the packages of `requirements-timestral.txt` (`pip install -r requirements-timestral.txt`). The model weights have their own license, see the model page. |
+| `EPEXPREDICTOR_TIMESTRAL_MODEL` | *(unset)*    | Name of a Timestral model on Hugging Face, e.g. `mistralai/Timestral-123M`, to average its forecast with the one of the tree models for Germany. Needs the packages of `requirements-timestral.txt` with the CPU build of PyTorch (`uv pip install --torch-backend cpu -r requirements-timestral.txt`, or see the file for pip). The model weights have their own license, see the model page. |
 | `EPEXPREDICTOR_TIMESTRAL_REVISION` | *(tested revision)* | Revision of the Timestral model weights on Hugging Face. Defaults to the revision the backtests were run with for the published Timestral models, `main` loads the latest. |
 | `EPEXPREDICTOR_USE_NORDPOOL`    | *(disabled)* | Set to `true` (also `1`/`yes`/`on`) to additionally use the [Nord Pool data portal API](https://dataportal-api.nordpoolgroup.com/api/DayAheadPrices) as a price source. It is the lowest-priority source and only queried if energy-charts and ENTSO-E don't deliver. Nord Pool data is only available for ~4 weeks of history. **Note:** enabling this is up to you - make sure your use case complies with the Nord Pool terms of use / data license. |
 
@@ -175,7 +175,7 @@ For Timestral, also in the container:
 
 ```bash
 cd /opt/epexpredictor
-uv pip install -r requirements-timestral.txt
+uv pip install --torch-backend cpu -r requirements-timestral.txt
 echo "EPEXPREDICTOR_TIMESTRAL_MODEL=mistralai/Timestral-123M" >> .env
 systemctl restart epexpredictor
 ```
