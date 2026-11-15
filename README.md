@@ -171,7 +171,13 @@ nano /opt/epexpredictor/.env      # remove the # in front of EPEXPREDICTOR_ENTSO
 systemctl restart epexpredictor
 ```
 
-For Timestral, also in the container:
+To try another branch of the repository, for example of a pull request, run in the container (`--timestral` also installs and switches on Timestral; running it again updates, and `main` switches back):
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/jeremiahpslewis/EpexPredictor/<branch>/proxmox/switch-branch.sh)" _ <branch> --timestral
+```
+
+For Timestral by hand, also in the container:
 
 ```bash
 cd /opt/epexpredictor
