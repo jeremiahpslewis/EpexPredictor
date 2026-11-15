@@ -233,7 +233,11 @@ class ResidualLoad:
         return max(self.gridweather.last_updated, self.generation.last_updated)
 
     async def refresh_forecasts(self, start: datetime, end: datetime):
-        await self.gridweather.refresh_range(start, end)
+        # An optional input: its failure must not stop the refresh of the other inputs or the training after it
+        try:
+            await self.gridweather.refresh_range(start, end)
+        except Exception as e:
+            log.warning(f"{self.region.bidding_zone_entsoe}: failed to refresh grid weather, keeping what is stored: {e}")
 
     def drop_before(self, cutoff: datetime):
         self.gridweather.drop_before(cutoff)

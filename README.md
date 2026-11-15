@@ -94,7 +94,7 @@ Remarks:
 - The model uses a 540-day rolling training window
 - The table below was measured with the previous setup (180-day training window, no gas-relative model, no Europe-wide weather features) and still has to be regenerated
 - Tests were done with historical weather data. If the weather forecast is wrong, performance might be slightly worse in practice
-- The residual load input and Timestral are not part of the table either. In a backtest for Germany over ten weeks (66 forecasts made at 14:00 for the day after tomorrow, with the weather as it was forecast at that time), the mean absolute error of the first 14 hours of that day was 1.86 ct/kWh without them, 1.52 to 1.72 with the residual load input (depending on the age of the weather forecast), and 1.48 to 1.59 with Timestral-123M on top
+- The residual load input and Timestral are not part of the table either. In a backtest for Germany over ten weeks (66 forecasts made at 14:00 for the day after tomorrow, with the weather as it was forecast at that time), the mean absolute error of the first 14 hours of that day was 1.86 ct/kWh without them, 1.72 with the residual load input, and 1.59 with Timestral-123M on top. The weather used was forecast at least 48 hours before the time it is valid for, which is what is available at 14:00 for the day after tomorrow
 
 Results (1/2/3-day ahead prediction):
 | Region | 1d RMSE | 1d MAE | 2d RMSE | 2d MAE | 3d RMSE | 3d MAE |

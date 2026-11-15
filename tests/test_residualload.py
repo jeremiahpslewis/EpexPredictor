@@ -357,3 +357,38 @@ class TestPricePredictorWithResidualLoad:
         predicted = await predictor.predict(check_start, end, fill_known=False)
         error = (predicted["price"] - prices.loc[check_start:end, "price"]).abs().mean()
         assert error < 0.5
+
+
+class TestRefreshFailures:
+    @pytest.mark.asyncio
+    async def test_grid_weather_failure_does_not_stop_the_refresh(self, monkeypatch):
+        monkeypatch.undo()
+        predictor = PricePredictor(PriceRegionName.DE.to_region())
+        predictor.weatherstore.refresh_range = AsyncMock(return_value=True)
+        predictor.entsoestore.refresh_range = AsyncMock(return_value=True)
+        predictor.residual_load.gridweather.refresh_range = AsyncMock(side_effect=RuntimeError("Daily API request limit exceeded."))
+
+        await predictor.refresh_forecasts(START, START + timedelta(days=1))
+
+        predictor.weatherstore.refresh_range.assert_awaited_once()
+        predictor.entsoestore.refresh_range.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_grid_weather_failure_does_not_stop_the_base_model_update(self, monkeypatch):
+        monkeypatch.undo()
+        from predictor.api import priceapi
+
+        coordinator = priceapi.BaseModelCoordinator()
+        for p in coordinator.base.values():
+            p.pricestore.get_data = AsyncMock(return_value=pd.DataFrame())
+            p.gasstore.get_data = AsyncMock(return_value=pd.DataFrame())
+            p.weatherstore.refresh_range = AsyncMock(return_value=False)
+            p.entsoestore.refresh_range = AsyncMock(return_value=False)
+            p.train = AsyncMock()
+            if p.residual_load is not None:
+                p.residual_load.gridweather.refresh_range = AsyncMock(side_effect=RuntimeError("no connection"))
+        monkeypatch.setattr(priceapi.asyncio, "sleep", AsyncMock())
+
+        await coordinator._do_update()
+
+        assert all(p.train.await_count == 1 for p in coordinator.base.values())

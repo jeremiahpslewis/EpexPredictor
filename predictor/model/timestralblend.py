@@ -125,6 +125,11 @@ class TimestralBlend:
             covariates,
             df["weekday"].to_numpy(dtype=float)[:rows],
         )
+        values = np.asarray(values, dtype=float)
+        if values.shape != (horizon,) or not np.isfinite(values).all():
+            log.warning(f"{predictor.region.bidding_zone_entsoe}: Timestral returned an unusable forecast "
+                        f"(shape {values.shape}, {int(np.size(values) - np.isfinite(values).sum())} non-finite values) - not used")
+            return None
         return pd.Series(values, index=future.index[:horizon], name="price")
 
     async def blend(self, predictor: PricePredictor, predictions: list[pd.DataFrame]) -> bool:

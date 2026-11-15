@@ -123,3 +123,21 @@ class TestTimestralBlend:
 
         assert await blend.blend(predictor, [prediction]) is False
         assert (prediction["price"] == 10.0).all()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", [np.nan, np.inf])
+    async def test_non_finite_output_leaves_the_forecast_alone(self, value):
+        blend, predictor, _ = blend_with_stand_in(input_frame(TimestralBlend.HORIZON), value=value)
+        prediction = pd.DataFrame({"price": 10.0}, index=pd.date_range(LAST_KNOWN, periods=300, freq="15min"))
+
+        assert await blend.blend(predictor, [prediction]) is False
+        assert (prediction["price"] == 10.0).all()
+
+    @pytest.mark.asyncio
+    async def test_output_of_wrong_length_leaves_the_forecast_alone(self):
+        blend, predictor, _ = blend_with_stand_in(input_frame(TimestralBlend.HORIZON))
+        blend._forecast = lambda prices, covariates, weekday: np.full(10, 20.0)
+        prediction = pd.DataFrame({"price": 10.0}, index=pd.date_range(LAST_KNOWN, periods=300, freq="15min"))
+
+        assert await blend.blend(predictor, [prediction]) is False
+        assert (prediction["price"] == 10.0).all()
