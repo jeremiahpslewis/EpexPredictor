@@ -6,6 +6,7 @@ aiohttp
 astral
 fastapi[standard]
 lightgbm
+scipy
 entsoe-py>=0.7.10
 
 
