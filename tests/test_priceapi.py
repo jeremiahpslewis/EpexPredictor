@@ -378,3 +378,84 @@ class TestRegionPriceManagerUpdateDataIfNeeded:
         # The stage-2 model should have been retrained
         assert manager.predictor.train.called
         assert manager.predictor.predict.called
+
+
+class TestRegionPriceManagerThreeForecasters:
+    """The forecast update with Timestral and the market model switched on."""
+
+    @pytest.mark.asyncio
+    async def test_update_mixes_three_forecasters_and_logs_them(self, sample_region, tmp_path, monkeypatch):
+        import pandas as pd
+
+        from predictor.api import priceapi
+        from predictor.model.forecastlog import ForecastLog
+        from predictor.model.timestralblend import SLOT, TimestralBlend
+
+        last_known = pd.Timestamp("2025-11-01T22:45:00Z")
+        index = pd.date_range(last_known - 8 * SLOT, periods=9 + 192, freq="15min")
+        future = index[index > last_known]
+
+        def trees():
+            return pd.DataFrame({"price": 12.0}, index=index)
+
+        timestral = TimestralBlend("some-model")
+        timestral.forecast = AsyncMock(return_value=pd.Series(18.0, index=future, name="price"))
+        market = MagicMock()
+        market.forecast = AsyncMock(return_value=pd.Series(24.0, index=future, name="price"))
+        monkeypatch.setattr(priceapi, "timestral", timestral)
+        monkeypatch.setattr(priceapi, "market_route", market)
+
+        manager = RegionPriceManager(PriceRegionName.DE, sample_region)
+        manager.forecastlog = ForecastLog(str(tmp_path), "DE_LU")
+        monkeypatch.setattr(priceapi.base_models, "get_base", MagicMock(return_value=MagicMock()))
+        manager.predictor.last_data_update = MagicMock(return_value=datetime.now(timezone.utc))
+        manager.predictor.train = AsyncMock()
+        manager.predictor.predict = AsyncMock(side_effect=lambda *args, **kwargs: trees())
+        manager.predictor.pricestore.get_last_known = MagicMock(return_value=last_known)
+        manager.predictor.cleanup = MagicMock()
+
+        await manager.update_data_if_needed()
+
+        # a third each right after the last known price, the tree models alone before it
+        assert manager.cachedprices.loc[future[0], "price"] == pytest.approx(18.0)
+        assert manager.cachedprices.loc[last_known, "price"] == pytest.approx(12.0)
+        assert manager.cachedeval.loc[future[0], "price"] == pytest.approx(18.0)
+
+        logged = ForecastLog.read(manager.forecastlog.path)
+        assert len(logged) == ForecastLog.HORIZON
+        assert (logged["last_known"] == last_known).all()
+        first = logged.iloc[0]
+        assert (first["trees"], first["timestral"], first["market"], first["price"]) == pytest.approx((12.0, 18.0, 24.0, 18.0))
+
+    @pytest.mark.asyncio
+    async def test_update_without_the_market_model(self, sample_region, tmp_path, monkeypatch):
+        import pandas as pd
+
+        from predictor.api import priceapi
+        from predictor.model.forecastlog import ForecastLog
+        from predictor.model.timestralblend import SLOT, TimestralBlend
+
+        last_known = pd.Timestamp("2025-11-01T22:45:00Z")
+        index = pd.date_range(last_known - 8 * SLOT, periods=9 + 192, freq="15min")
+        future = index[index > last_known]
+
+        timestral = TimestralBlend("some-model")
+        timestral.forecast = AsyncMock(return_value=pd.Series(18.0, index=future, name="price"))
+        monkeypatch.setattr(priceapi, "timestral", timestral)
+        monkeypatch.setattr(priceapi, "market_route", None)
+
+        manager = RegionPriceManager(PriceRegionName.DE, sample_region)
+        manager.forecastlog = ForecastLog(str(tmp_path), "DE_LU")
+        monkeypatch.setattr(priceapi.base_models, "get_base", MagicMock(return_value=MagicMock()))
+        manager.predictor.last_data_update = MagicMock(return_value=datetime.now(timezone.utc))
+        manager.predictor.train = AsyncMock()
+        manager.predictor.predict = AsyncMock(side_effect=lambda *args, **kwargs: pd.DataFrame({"price": 12.0}, index=index))
+        manager.predictor.pricestore.get_last_known = MagicMock(return_value=last_known)
+        manager.predictor.cleanup = MagicMock()
+
+        await manager.update_data_if_needed()
+
+        assert manager.cachedprices.loc[future[0], "price"] == pytest.approx(15.0)
+        first = ForecastLog.read(manager.forecastlog.path).iloc[0]
+        assert (first["trees"], first["timestral"], first["price"]) == pytest.approx((12.0, 18.0, 15.0))
+        assert pd.isna(first["market"])

@@ -36,6 +36,10 @@ log = logging.getLogger(__name__)
 CARBON_PRICE = 75.0
 OTHER_PLANT = 8.0
 
+# The gas price is used as it was two days before [quarter hours]: so it is known for all of the forecast, and the
+# supply shift of the past is worked out the same way as the forecast is cleared
+GAS_PRICE_LAG = 192
+
 # Prices of the application are in ct/kWh, the market model works in EUR/MWh
 EUR_PER_MWH = 10.0
 
@@ -60,12 +64,20 @@ class MarketRoute:
         return MarketRoute(timestral)
 
     @staticmethod
+    def gas_price(df: pd.DataFrame) -> np.ndarray:
+        """The gas price of two days before for every row of df; the first two days get the earliest one there is"""
+        gas = df[MarketRoute.GAS_PRICE]
+        lagged = gas.copy()
+        lagged.index = lagged.index + GAS_PRICE_LAG * SLOT
+        return lagged.reindex(df.index).fillna(gas.dropna().iloc[0] if gas.notna().any() else np.nan).to_numpy(dtype=float)
+
+    @staticmethod
     def supply_shift(df: pd.DataFrame) -> np.ndarray:
         """Supply shift [GW] for every row with a known price, residual load and gas price - NaN elsewhere"""
         return marketmodel.supply_shift(
             df[MarketRoute.RESIDUAL_LOAD].to_numpy(dtype=float) - OTHER_PLANT,
             df["price"].to_numpy(dtype=float) * EUR_PER_MWH,
-            df[MarketRoute.GAS_PRICE].to_numpy(dtype=float),
+            MarketRoute.gas_price(df),
             CARBON_PRICE,
         )
 
@@ -86,10 +98,10 @@ class MarketRoute:
         history, future = df.loc[:last_known], df.loc[first:]
 
         demand = df[self.RESIDUAL_LOAD].to_numpy(dtype=float) - OTHER_PLANT
-        gas = df[self.GAS_PRICE].to_numpy(dtype=float)
+        gas = self.gas_price(df)
         inputs = np.vstack([demand, gas])
         horizon = TimestralBlend.known_horizon(inputs, len(history))
-        shift = self.supply_shift(history)
+        shift = self.supply_shift(df)[:len(history)]
         if horizon < 96 or len(history) < self.CONTEXT // 2 or np.isnan(shift).mean() > 0.1:
             log.warning(f"{predictor.region.bidding_zone_entsoe}: not enough data for a market model forecast "
                         f"({len(history)} quarter hours of history, {np.isnan(shift).mean():.0%} of them without supply shift, "

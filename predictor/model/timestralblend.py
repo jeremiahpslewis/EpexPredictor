@@ -50,8 +50,10 @@ class TimestralBlend:
     # the forecasts of the last blend, by name
     last_forecasts: dict[str, pd.Series] = {}
 
-    def __init__(self, model_name: str, revision: str | None = None):
+    def __init__(self, model_name: str, revision: str | None = None, residual_load: bool = True):
         self.model_name = model_name
+        # whether the residual load is one of the inputs known for the future
+        self.residual_load = residual_load
         self.revision = revision if revision else TESTED_REVISIONS.get(model_name)
 
     @staticmethod
@@ -65,7 +67,8 @@ class TimestralBlend:
             log.error("EPEXPREDICTOR_TIMESTRAL_MODEL is set, but the timestral package is not installed "
                       "(see requirements-timestral.txt). Continuing without it.")
             return None
-        return TimestralBlend(model_name, os.getenv("EPEXPREDICTOR_TIMESTRAL_REVISION", "").strip() or None)
+        residual_load = os.getenv("EPEXPREDICTOR_TIMESTRAL_RESIDUAL_LOAD", "true").strip().lower() not in ("no", "false", "f", "0")
+        return TimestralBlend(model_name, os.getenv("EPEXPREDICTOR_TIMESTRAL_REVISION", "").strip() or None, residual_load)
 
     @classmethod
     def weights(cls) -> np.ndarray:
@@ -136,9 +139,9 @@ class TimestralBlend:
             return None
         history, future = df.loc[:last_known], df.loc[first:]
         # needs all of the future it is asked for, and most of the history (it copes with gaps in there)
-        covariates = self.covariates(predictor, df)
+        covariates = self.covariates(predictor, df, residual_load=self.residual_load)
         horizon = self.known_horizon(covariates, len(history))
-        if self.RESIDUAL_LOAD in df.columns:
+        if self.residual_load and self.RESIDUAL_LOAD in df.columns:
             # an optional input: where it ends earlier than the others, the forecast is made without it
             without = self.covariates(predictor, df, residual_load=False)
             if self.known_horizon(without, len(history)) > horizon:

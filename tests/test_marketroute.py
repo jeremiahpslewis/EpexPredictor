@@ -49,6 +49,18 @@ class TestMarketRoute:
         monkeypatch.setenv("EPEXPREDICTOR_MARKET_MODEL", "false")
         assert MarketRoute.from_env(TimestralBlend("stand-in")) is None
 
+    def test_gas_price_is_the_one_of_two_days_before(self):
+        df = input_frame()
+        df["gasprice"] = np.arange(len(df), dtype=float)
+        gas = MarketRoute.gas_price(df)
+        assert (gas[192:] == np.arange(len(df) - 192)).all()
+        # nothing older in the first two days: the earliest price there is
+        assert (gas[:192] == 0.0).all()
+
+        # a gas price that ends at the last known price still covers all of the forecast
+        df.loc[LAST_KNOWN + SLOT:, "gasprice"] = np.nan
+        assert np.isfinite(MarketRoute.gas_price(df)).all()
+
     def test_supply_shift_is_read_off_the_known_prices(self):
         df = input_frame()
         shift = MarketRoute.supply_shift(df.loc[:LAST_KNOWN])

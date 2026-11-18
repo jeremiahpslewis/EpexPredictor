@@ -101,6 +101,25 @@ class TestTimestralBlend:
         assert (covariates[-1] == 40.0).all()
 
     @pytest.mark.asyncio
+    async def test_residual_load_can_be_switched_off(self, monkeypatch):
+        df = input_frame(TimestralBlend.HORIZON)
+        blend, predictor, calls = blend_with_stand_in(df)
+        await blend.forecast(predictor)
+        without = calls[0][1].shape[0]
+
+        df["residual_load"] = 40.0
+        blend, predictor, calls = blend_with_stand_in(df)
+        blend.residual_load = False
+        assert await blend.forecast(predictor) is not None
+        assert calls[0][1].shape[0] == without
+
+        monkeypatch.setenv("EPEXPREDICTOR_TIMESTRAL_MODEL", "some-model")
+        monkeypatch.setitem(__import__("sys").modules, "timestral", object())
+        assert TimestralBlend.from_env().residual_load is True
+        monkeypatch.setenv("EPEXPREDICTOR_TIMESTRAL_RESIDUAL_LOAD", "false")
+        assert TimestralBlend.from_env().residual_load is False
+
+    @pytest.mark.asyncio
     async def test_residual_load_that_ends_early_is_left_out(self):
         """It is an optional input: the forecast is as long as it would be without it"""
         df = input_frame(TimestralBlend.HORIZON)
