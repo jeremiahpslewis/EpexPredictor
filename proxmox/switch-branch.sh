@@ -61,7 +61,7 @@ if [[ "$TIMESTRAL" == "--timestral" ]]; then
   fi
   mem_mb=$(awk '/^MemTotal:/ {print int($2 / 1024)}' /proc/meminfo)
   if (( mem_mb < 5500 )); then
-    echo "Note: ${mem_mb} MB memory. With Timestral the service peaked at 2.7 GB with 8 regions, more with an ENTSO-E key;"
+    echo "Note: ${mem_mb} MB memory. With Timestral, the market model and the residual load forecast the service peaked at 3.1 GB with 8 regions, more with an ENTSO-E key;"
     echo "      consider 6 GB (on the host: pct set <id> --memory 6144)."
   fi
 else

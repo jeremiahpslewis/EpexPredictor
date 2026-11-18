@@ -3190,3 +3190,21 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   target day is the first day after the last published figure.
   Reading: the load change is worth about 3% of the app's whole-day error on these days, most of it by day and in the evening, little at
   night. It stays the default.
+
+21.116 Live run (user: "Try other weather provider?"). Open-Meteo was not refusing the sandbox as such: its answer was "Daily API request
+  limit exceeded. Please try again tomorrow" (the backfills of this session and the shared address). api.brightsky.dev (DWD open data,
+  no key) was allowed through an approval card. apprun/fetch_bs.py: hourly wind (10 m), sun and temperature, pressure, humidity for the 96
+  locations the app uses, 1-27 Nov, one request each. apprun/fill_bs.py: only the hours AFTER each store's last value were appended to a
+  copy of the stores (live_data), scaled to the store's own history on the overlap (wind and radiation by a factor through the origin,
+  median 1.3-1.65 for German wind; the others by an offset; a field missing at a station = mean of the other locations). Correlation with
+  the stores' history on the overlap: radiation 0.75-0.9, pressure 0.9-1.0, wind 0.2-0.8. So this is a stand-in for the plumbing, not
+  weather of forecast quality: the forecasts of this run are not to be scored.
+  apprun/run_live.py: the real service (uvicorn, all 8 regions, real clock 18 Nov 21:15 UTC) with only the weather download switched off.
+  It fetched prices and published figures itself (both to 19 Nov 22:45), trained, and answered /prices in 71 s. Log: "Timestral forecast
+  of the residual load for 240 quarter hours after 2026-11-19T22:45", "blended timestral (192 quarter hours), market (192 quarter hours)".
+  forecastlog: 192 rows, all four columns filled, first quarter hour 18.7455 / 17.6606 / 17.6369 -> issued 18.0143 = a third each.
+  loadforecastlog: 192 rows, trees and timestral. Peak memory of the service 3.1 GB. No error, no warning beyond the missing ENTSO-E key.
+  This is the first run of the whole new path through the real service loop at the real time, including the second forecast day from
+  the tree load forecast on future weather. A first attempt showed a harness artefact, not a defect: a freshly copied store counts as
+  up to date for an hour, so the published figures were not refreshed until the file was marked as old.
+  Hygiene: prices of 10-19 Nov are in that store; none was printed or scored.
