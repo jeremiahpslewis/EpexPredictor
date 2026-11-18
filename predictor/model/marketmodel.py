@@ -12,8 +12,10 @@ number per quarter hour is what a forecaster continues into the future, and `cle
 back into a price. Uncertainty stated in GW becomes a price range the same way, because the clearing price falls
 steadily as the shift grows.
 
-The parameters are the medians of a Bayesian fit to hourly German data from March 2024 to November 2025 (price,
-output by fuel, net imports, storage, published residual loads of Germany and its neighbours). In backtests of the
+The parameters are the medians of a Bayesian fit to hourly German data from March 2024 to November 2025: the price,
+the output by fuel, net imports, storage, the residual load as it turned out, and the neighbours' published
+residual loads. The shift and the forecasts are worked out with the published residual load instead, which is
+what the auction has; the difference between the two ends up in the shift. In backtests of the
 next day's quarter-hour prices from midnight, this model with its shift forecast by Timestral was level with
 Timestral forecasting the price directly, and the average of the two was better than Timestral alone over the
 whole day.
