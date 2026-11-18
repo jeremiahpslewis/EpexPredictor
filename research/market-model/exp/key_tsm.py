@@ -1,0 +1,8 @@
+"""Key metric with Timestral's price forecast given the midnight load forecast (notes 21.38). usage: key_tsm.py period..."""
+import sys, numpy as np
+SP = "/tmp/claude-0/-home-user-EpexPredictor/d6125cc0-c431-5b93-a06f-0110cd871ab6/scratchpad"; rng = np.random.default_rng(0); TS = {"winter": ("win_ts", "median"), "summer": ("ssn_ts", "median"), "autumn": ("tsl_123_8k", "vint")}; CM = {"winter": "cmw", "summer": "cms", "autumn": "cma"}
+def ci(e1, e0, blk):
+    n = len(e1); r = [100 * (e1[i].mean() / e0[i].mean() - 1) for i in (np.concatenate([(s + np.arange(blk)) % n for s in rng.integers(0, n, n // blk + 1)])[:n] for _ in range(3000))]; return f"{100 * (e1.mean() / e0.mean() - 1):+.0f}% [{np.percentile(r, 2.5):+.0f}..{np.percentile(r, 97.5):+.0f}]"
+for per in sys.argv[1:]:
+    I = np.load(f"{SP}/out/inputs_{per}.npz"); a = I["actual"].astype(float); e = lambda v: np.abs(v - a)[:, :24].mean(1); blk = 7 if per == "autumn" else 3; ld = lambda f, k="vint": np.load(f"{SP}/out/{f}.npz")[k].astype(float); t0 = ld(*TS[per]); t1 = ld(f"tsm_rl_{per}", "median"); cc = ld(f"structfc_{CM[per]}_ts_dyn2xxh"); m1 = ld(f"structfc_m1m_{per}_price", "vint_ts")
+    print(f"{per}: KEY METRIC ct | Timestral price {e(t0).mean():.2f} -> with the midnight load forecast {e(t1).mean():.2f} ({ci(e(t1), e(t0), blk)}) | candidate (curve + Timestral) {e(0.5 * (cc + t0)).mean():.2f} -> {e(0.5 * (cc + t1)).mean():.2f} ({ci(e(0.5 * (cc + t1)), e(0.5 * (cc + t0)), blk)}) | merit order + Timestral {e(0.5 * (m1 + t0)).mean():.2f} -> {e(0.5 * (m1 + t1)).mean():.2f} | all three equally {e((cc + m1 + t1) / 3).mean():.2f} | first 14 h: Timestral {np.abs(t0 - a)[:, :56].mean():.2f} -> {np.abs(t1 - a)[:, :56].mean():.2f}")

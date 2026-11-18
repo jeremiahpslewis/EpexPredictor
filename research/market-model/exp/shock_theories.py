@@ -1,0 +1,37 @@
+"""Three theories for the shocks of the fuel blocks (notes 21.34): availability, cost, commitment / must-run. M1 shocks, fitting period."""
+import numpy as np, pandas as pd, warnings; warnings.filterwarnings("ignore")
+import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
+SP = "/tmp/claude-0/-home-user-EpexPredictor/d6125cc0-c431-5b93-a06f-0110cd871ab6/scratchpad"; BLUE, ORANGE, AQUA, INK, MUTED, SURF, GRID, NEUT = "#2a78d6", "#eb6834", "#1baf7a", "#0b0b0b", "#52514e", "#fcfcfb", "#e9e8e3", "#a8a79f"
+plt.rcParams.update({"font.size": 9, "axes.edgecolor": "#c9c8c2", "axes.labelcolor": MUTED, "xtick.color": MUTED, "ytick.color": MUTED, "figure.facecolor": SURF, "axes.facecolor": SURF, "savefig.facecolor": SURF, "font.family": "DejaVu Sans"})
+def fin(ax, t):
+    ax.grid(True, color=GRID, linewidth=0.6); ax.set_axisbelow(True); [ax.spines[s].set_visible(False) for s in ("top", "right")]; ax.set_title(t, loc="left", fontsize=9.3, fontweight="bold", color=INK)
+rng = np.random.default_rng(0); R = pd.read_parquet(f"{SP}/out/market1_rows.parquet"); z = np.load(f"{SP}/out/avail_states.npz"); AV = pd.DataFrame(z["av"], index=pd.DatetimeIndex(z["index"]).tz_localize("UTC"), columns=["solid", "gasav", "nuc"]).resample("1h").mean(); AV.index = AV.index.tz_convert(R.index.tz)
+R = R.join(AV, how="left").join(pd.read_parquet(f"{SP}/out/zoom1_rows.parquet")[["teff"]], how="left"); R = R[R.tr]; NAME = dict(l="Lignite", c="Hard coal", g="Gas"); AVC = dict(l="solid", c="solid", g="gasav")
+print("available capacity GW (5-50-95%): lignite + hard coal", R.solid.quantile([.05, .5, .95]).round(1).tolist(), "gas", R.gasav.quantile([.05, .5, .95]).round(1).tolist())
+Dd = R.groupby(R.index.normalize()).agg(**{f"d_{f}": (f"d_{f}", "mean") for f in "lcg"}, **{f"rc_{f}": (f"rc_{f}", "mean") for f in "lcg"}, solid=("solid", "mean"), gasav=("gasav", "mean"), teff=("teff", "mean")).dropna(); Dd["dow"] = Dd.index.dayofweek
+def binmed(x, y, e, minn=25): b = np.digitize(x, e) - 1; return np.array([np.median(y[b == i]) if (b == i).sum() >= minn else np.nan for i in range(len(e) - 1)])
+def env(x, y, e, shift=7, nrep=200): A = np.array([binmed(x, np.roll(y, int(k) * shift), e) for k in rng.integers(3, len(y) // shift - 3, nrep)]); return np.nanpercentile(A, [5, 95], axis=0)
+fig, axs = plt.subplots(3, 4, figsize=(19, 12.6), gridspec_kw=dict(hspace=0.5, wspace=0.27)); eb = np.r_[-0.5, 0.3, 0.6, 0.8, 1.0, 1.2, 1.5, 3.5]; cb = np.arange(7); lab = ["<0.3", "0.3-0.6", "0.6-0.8", "0.8-1", "1-1.2", "1.2-1.5", ">1.5"]; out = {}
+for i, f in enumerate("lcg"):
+    d = R[f"d_{f}"].values; rc = R[f"rc_{f}"].values; b = np.digitize(rc, eb) - 1; sd = np.array([np.std(d[b == k]) if (b == k).sum() > 150 else np.nan for k in cb]); q = np.array([np.percentile(d[b == k], [10, 50, 90]) if (b == k).sum() > 150 else [np.nan] * 3 for k in cb])
+    ax = axs[i, 0]; ax.fill_between(cb, q[:, 0], q[:, 2], color=BLUE, alpha=0.18, linewidth=0, label="10-90% of the shock"); ax.plot(cb, q[:, 1], "-o", color=BLUE, linewidth=1.8, markersize=4, label="median"); ax.axhline(0, color=INK, linewidth=0.6); ax.set_xticks(cb); ax.set_xticklabels(lab, fontsize=8); ax.set_xlabel(f"price / {NAME[f].lower()}'s own cost"); ax.set_ylabel("output minus block, GW")
+    if i == 0: ax.legend(frameon=False, fontsize=8, loc="upper left")
+    w = q[:, 2] - q[:, 0]; k_ = int(np.nanargmax(w)); sk = (q[:, 2] - q[:, 1]) - (q[:, 1] - q[:, 0]); out[(f, "widest")] = lab[k_]; fin(ax, f"{NAME[f]}: shock widest at price / cost {lab[k_]}\n({w[k_]:.1f} GW); bottom {np.nanmean(w[:2]):.1f}, top {w[-1]:.1f}")
+    # availability
+    ax = axs[i, 1]; x = Dd[AVC[f]].values; y = Dd[f"d_{f}"].values; e = np.quantile(x, np.linspace(0, 1, 8)); e[-1] += 1e-6; cen = 0.5 * (e[:-1] + e[1:]); md = binmed(x, y, e); lo, hi = env(x, y, e); ax.fill_between(cen, lo, hi, color=NEUT, alpha=0.3, linewidth=0, label="no relation (whole-week shifts)"); ax.plot(cen, md, "-o", color=ORANGE, linewidth=1.8, markersize=4, label="daily mean shock"); ax.axhline(0, color=INK, linewidth=0.6)
+    sl = np.polyfit(x, y, 1)[0]; r2 = np.corrcoef(x, y)[0, 1] ** 2; out[(f, "avail")] = (sl, r2); ax.set_xlabel("published available capacity, GW (" + ("lignite + hard coal" if f != "g" else "gas") + ")"); ax.set_ylabel("daily mean shock, GW")
+    if i == 0: ax.legend(frameon=False, fontsize=8, loc="upper left")
+    fin(ax, f"Availability: {sl:+.2f} GW per GW available;\nexplains {100 * r2:.0f}% of the daily shock")
+    # temperature, split by position on the block
+    ax = axs[i, 2]; e = np.r_[-6, 0, 3, 6, 9, 12, 15, 18, 21, 28.0]; cen = 0.5 * (e[:-1] + e[1:]); x = Dd.teff.values; y = Dd[f"d_{f}"].values; lowp = Dd[f"rc_{f}"].values < np.median(Dd[f"rc_{f}"].values)
+    for m_, col, lb in ((lowp, BLUE, "days with low price / cost"), (~lowp, ORANGE, "days with high price / cost")): ax.plot(cen, binmed(x[m_], y[m_], e, 12), "-o", color=col, linewidth=1.8, markersize=4, label=lb)
+    lo, hi = env(x, y, e); ax.fill_between(cen, lo, hi, color=NEUT, alpha=0.3, linewidth=0); ax.axhline(0, color=INK, linewidth=0.6); r2t = np.corrcoef(x, y)[0, 1] ** 2; out[(f, "temp")] = (np.polyfit(x, y, 1)[0], r2t); ax.set_xlabel("temperature, C (daily mean)"); ax.set_ylabel("daily mean shock, GW")
+    if i == 0: ax.legend(frameon=False, fontsize=8, loc="upper right")
+    fin(ax, f"Must-run for heat: {out[(f, 'temp')][0]:+.2f} GW per degree;\nexplains {100 * r2t:.0f}% of the daily shock")
+    # commitment: yesterday's price at a given price today, and weekday
+    ax = axs[i, 3]; y = Dd[f"d_{f}"].values[1:]; today = Dd[f"rc_{f}"].values[1:]; yest = Dd[f"rc_{f}"].values[:-1]; chg = yest - today; e = np.r_[-1.0, -0.3, -0.15, -0.05, 0.05, 0.15, 0.3, 1.0]; cen = 0.5 * (e[:-1] + e[1:]); md = binmed(chg, y, e, 12); lo, hi = env(chg, y, e); ax.fill_between(cen, lo, hi, color=NEUT, alpha=0.3, linewidth=0); ax.plot(cen, md, "-o", color=AQUA, linewidth=1.8, markersize=4); ax.axhline(0, color=INK, linewidth=0.6)
+    r2c = np.corrcoef(chg, y)[0, 1] ** 2; ac = [float(pd.Series(Dd[f"d_{f}"].values).autocorr(k)) for k in (1, 7, 28)]; wk = Dd.groupby("dow")[f"d_{f}"].mean(); out[(f, "commit")] = (np.polyfit(chg, y, 1)[0], r2c, ac, float(wk[5:].mean() - wk[:5].mean())); ax.set_xlabel("yesterday's price / cost minus today's"); ax.set_ylabel("daily mean shock, GW")
+    fin(ax, f"Commitment: yesterday's price explains {100 * r2c:.0f}%;\nmemory 1 / 7 / 28 d: {ac[0]:.2f} / {ac[1]:.2f} / {ac[2]:.2f}; weekend {out[(f, 'commit')][3]:+.1f} GW")
+    X = np.column_stack([Dd[AVC[f]].values[1:], Dd.teff.values[1:], chg, (Dd.dow.values[1:] >= 5).astype(float), np.ones(len(y))]); be = np.linalg.lstsq(X, y, rcond=None)[0]; res = y - X @ be; out[(f, "joint")] = (1 - res.var() / y.var(), float(pd.Series(res).autocorr(1)), float(pd.Series(res).autocorr(7)), y.std(), res.std())
+    print(f"{NAME[f]}: daily shock sd {y.std():.2f} GW; availability + temperature + yesterday's price + weekend explain {100 * out[(f, 'joint')][0]:.0f}% (left sd {res.std():.2f} GW); memory of what is left 1 / 7 days: {out[(f, 'joint')][1]:.2f} / {out[(f, 'joint')][2]:.2f}")
+fig.suptitle("Three theories for the shocks of the fuel blocks: where on the block they are largest, and what they move with (merit-order model, fitting period, daily means)", x=0.125, ha="left", fontsize=11, fontweight="bold", color=INK, y=0.94); fig.savefig(f"{SP}/out/shock_theories.png", dpi=100, bbox_inches="tight"); print("figure ok")

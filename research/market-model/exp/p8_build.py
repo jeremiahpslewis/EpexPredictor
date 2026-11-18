@@ -1,0 +1,9 @@
+"""gen_p8_<period>.npz from the panel load forecast (notes 21.50): wind, solar, load forecast jointly with the eight neighbours' residual loads."""
+import numpy as np
+SP = "/tmp/claude-0/-home-user-EpexPredictor/d6125cc0-c431-5b93-a06f-0110cd871ab6/scratchpad"; rng = np.random.default_rng(0)
+for per in ("winter", "summer", "autumn"):
+    I = np.load(f"{SP}/out/inputs_{per}.npz"); tags = [str(c)[:10] for c in I["cutoffs"]]; Z = [np.load(f"{SP}/out/tsgen_mid_p8_{per}/{t}.npz") for t in tags]; names = [str(x) for x in Z[0]["names"]]; T = {n: np.stack([z["median"][i] for z in Z]).astype(float) for i, n in enumerate(names)}; TR = {n: np.stack([z["true"][i] for z in Z]).astype(float) for i, n in enumerate(names)}
+    for X in (T, TR): X["rl"] = X["load"] - X["wind"] - X["solar"]
+    old = np.load(f"{SP}/out/gen_mid_{per}.npz"); e0 = np.abs(old["rl_pes"].astype(float) - TR["rl"])[:, :24].mean(1); e1 = np.abs(T["rl"] - TR["rl"])[:, :24].mean(1); d = e1 - e0; blk = 7 if per == "autumn" else 3; nb = len(d) // blk; x = d[:nb * blk].reshape(nb, blk).mean(1); lo, hi = np.percentile([x[rng.integers(0, nb, nb)].mean() for _ in range(4000)], [5, 95])
+    print(f"{per}: night residual-load error GW: midnight forecast {e0.mean():.2f}, with the neighbours in the panel {e1.mean():.2f}; difference {d.mean():+.3f} ({lo:+.3f} .. {hi:+.3f}); check of target series {np.abs(TR['rl'] - old['rl_true']).max():.3f}; parts wind {np.abs(T['wind'] - TR['wind'])[:, :24].mean():.2f} load {np.abs(T['load'] - TR['load'])[:, :24].mean():.2f} (before: wind {np.abs(old['wind_pes'] - TR['wind'])[:, :24].mean():.2f} load {np.abs(old['load_pes'] - TR['load'])[:, :24].mean():.2f})")
+    np.savez_compressed(f"{SP}/out/gen_p8_{per}.npz", cutoffs=I["cutoffs"], **{f"{n}_pes": T[n].astype(np.float32) for n in ("wind", "solar", "load", "rl")}, **{f"{n}_true": TR[n].astype(np.float32) for n in ("wind", "solar", "load", "rl")})

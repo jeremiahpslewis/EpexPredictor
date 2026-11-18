@@ -1,0 +1,15 @@
+SP=/tmp/claude-0/-home-user-EpexPredictor/d6125cc0-c431-5b93-a06f-0110cd871ab6/scratchpad; cd $SP/exp; ../venv/bin/python - <<'EOF' 2>&1 | grep -v -i "warn"
+import numpy as np, pandas as pd
+SP="/tmp/claude-0/-home-user-EpexPredictor/d6125cc0-c431-5b93-a06f-0110cd871ab6/scratchpad"
+D = pd.read_parquet(f"{SP}/out/star_data.parquet"); H = D[["p_de","rl_de","rlreal_de","gas","g_de_lignite","g_de_coal","g_de_gas","g_de_pump","g_de_psgen","g_de_trade","g_de_other"]].resample("1h").mean(); H.columns = ["p","rl","rlreal","gas","lig","coal","gasg","pump","psgen","trade","other"]
+H["T"] = H.lig + H.coal + H.gasg
+for lab, tr in (("trade counted as a source (+ = net import)", H.trade), ("trade counted with the opposite sign", -H.trade)):
+    gap = H.rlreal - (H["T"] + H.other + H.psgen + H.pump + tr); print(f"{lab}: realised residual load minus (thermal + other + storage + trade): mean {gap.mean():+.2f} GW, sd {gap.std():.2f}, 5-95% {gap.quantile(.05):+.1f}..{gap.quantile(.95):+.1f}; by year " + " ".join(f"{y}: {gap[gap.index.year==y].mean():+.2f}" for y in (2024,2025,2026)))
+gap = H.rlreal - (H["T"] + H.other + H.psgen + H.pump + H.trade)
+print("gap by hour of day: " + " ".join(f"{gap[gap.index.hour==h].mean():+.1f}" for h in range(0,24,3)) + " | correlation of the gap with residual load %.2f, with solar-ish midday dummy %.2f" % (gap.corr(H.rlreal), gap.corr(pd.Series(((H.index.hour>=9)&(H.index.hour<=14)).astype(float), index=H.index))))
+print("\nsizes [GW]: " + ", ".join(f"{c} mean {H[c].mean():.1f} sd {H[c].std():.1f}" for c in ("rlreal","T","lig","coal","gasg","other","psgen","pump","trade")))
+print("published minus realised residual load: mean %+.2f sd %.2f" % ((H.rl-H.rlreal).mean(), (H.rl-H.rlreal).std()))
+print("share of hours with price <= 0: %.1f%%, <= 5 EUR/MWh: %.1f%%; thermal output in those hours: mean %.1f GW (min %.1f)" % (100*(H.p<=0).mean(), 100*(H.p<=5).mean(), H["T"][H.p<=5].mean(), H["T"].min()))
+print("correlations with the thermal total: residual load %.2f, trade %.2f, storage %.2f, other %.2f; of trade with residual load %.2f, with price %.2f" % (H["T"].corr(H.rlreal), H["T"].corr(H.trade), H["T"].corr(H.psgen+H.pump), H["T"].corr(H.other), H.trade.corr(H.rlreal), H.trade.corr(H.p)))
+H.to_parquet(f"{SP}/out/market_hourly.parquet")
+EOF

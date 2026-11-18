@@ -1,0 +1,29 @@
+"""Figure for notes 21.53: the market model with the supply shift forecast by Timestral, against the kernel layer and Timestral price."""
+import numpy as np, matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
+SP = "/tmp/claude-0/-home-user-EpexPredictor/d6125cc0-c431-5b93-a06f-0110cd871ab6/scratchpad"; BLUE, ORANGE, AQUA, YEL, INK, MUTED, SURF, GRID, NEUT = "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#0b0b0b", "#52514e", "#fcfcfb", "#e9e8e3", "#a8a79f"
+plt.rcParams.update({"font.size": 9, "axes.edgecolor": "#c9c8c2", "axes.labelcolor": MUTED, "xtick.color": MUTED, "ytick.color": MUTED, "figure.facecolor": SURF, "axes.facecolor": SURF, "savefig.facecolor": SURF, "font.family": "DejaVu Sans"})
+def clean(a):
+    a.grid(True, color=GRID, linewidth=0.6); a.set_axisbelow(True); [a.spines[s].set_visible(False) for s in ("top", "right")]
+def ttl(a, t): a.set_title(t, loc="left", fontsize=9.5, fontweight="bold", color=INK)
+PER = ("winter", "summer", "autumn"); D = {}
+for per in PER:
+    a = np.load(f"{SP}/out/inputs_{per}.npz")["actual"].astype(float)[:, :24]; s = np.load(f"{SP}/out/shiftfc_mid_{per}.npz"); t = np.load(f"{SP}/out/tsm_rl_{per}.npz"); D[per] = dict(a=a, s=s["median"].astype(float)[:, :24], lo=np.minimum(s["q05"], s["q95"]).astype(float)[:, :24], hi=np.maximum(s["q05"], s["q95"]).astype(float)[:, :24], t=t["median"].astype(float)[:, :24], k=np.load(f"{SP}/out/structfc_m1nf2_{per}_price.npz")["vint_ts"].astype(float)[:, :24], t8=np.load(f"{SP}/out/tsm_rl8_{per}.npz")["median"].astype(float)[:, :24])
+m = lambda v, a: float(np.abs(v - a).mean()); ROWS = (("Market model, kernel layer on the shift", "k", NEUT), ("Market model, Timestral on the shift", "s", BLUE), ("Timestral on the price", "t", ORANGE), ("Timestral on the price, given the neighbours", "t8", YEL), ("Blend: market model (Timestral shift) + Timestral price", "b", AQUA))
+for per in PER: D[per]["b"] = 0.5 * (D[per]["s"] + D[per]["t"])
+fig = plt.figure(figsize=(19.5, 9.2)); gs = fig.add_gridspec(2, 3, hspace=0.42, wspace=0.24, height_ratios=[1, 1.05])
+for i, per in enumerate(PER):
+    ax = fig.add_subplot(gs[0, i]); v = [m(D[per][k], D[per]["a"]) for _, k, _ in ROWS]; y = np.arange(len(ROWS))[::-1]
+    for yy, (lab, k, col), x in zip(y, ROWS, v): ax.barh(yy, x, 0.62, color=col, linewidth=0); ax.text(x + max(v) * 0.012, yy, f"{x:.2f}", va="center", fontsize=8.5, color=INK, fontweight="bold" if x == min(v) else "normal")
+    ax.set_yticks(y); ax.set_yticklabels([r[0] for r in ROWS] if i == 0 else [], fontsize=8.5); ax.set_xlim(0, max(v) * 1.12); ax.set_xlabel("MAE 00:00-06:00, ct/kWh"); ax.grid(True, axis="x", color=GRID, linewidth=0.6); ax.set_axisbelow(True); [ax.spines[s_].set_visible(False) for s_ in ("top", "right")]
+    ttl(ax, f"{per.capitalize()}: shift by Timestral {v[1]:.2f} against {v[0]:.2f} with\nthe kernel layer and {v[2]:.2f} for Timestral on the price")
+a = D["autumn"]; n0, n1 = 38, 52; ax = fig.add_subplot(gs[1, :2]); x = np.arange((n1 - n0) * 24)
+for j in range(n1 - n0):
+    sl = slice(j * 24, (j + 1) * 24); r = n0 + j; ax.fill_between(x[sl], a["lo"][r], a["hi"][r], color=BLUE, alpha=0.16, linewidth=0); ax.plot(x[sl], a["a"][r], color=INK, linewidth=1.5, label="actual" if j == 0 else None); ax.plot(x[sl], a["s"][r], color=BLUE, linewidth=1.5, label="market model, Timestral on the shift (band: 5-95% of the shift)" if j == 0 else None); ax.plot(x[sl], a["t"][r], color=ORANGE, linewidth=1.2, label="Timestral on the price" if j == 0 else None)
+    if j: ax.axvline(j * 24, color=GRID, linewidth=0.8)
+ax.set_xticks(np.arange(n1 - n0) * 24 + 12); ax.set_xticklabels([f"night {n0 + j + 1}" for j in range(n1 - n0)], fontsize=7.5); ax.tick_params(length=0); ax.set_ylabel("ct/kWh"); ax.legend(frameon=False, loc="upper left", fontsize=8, ncol=3); clean(ax); ax.grid(False, axis="x")
+cov = np.mean([((D[p]["a"] >= D[p]["lo"]) & (D[p]["a"] <= D[p]["hi"])).mean() for p in PER]); ttl(ax, f"Fourteen autumn nights, 00:00-06:00 in quarter-hours: the two forecasts miss on the\nsame nights; the 90% band covers {cov:.0%} of slots over all periods (too narrow)")
+ax = fig.add_subplot(gs[1, 2]); es = np.concatenate([(D[p]["s"] - D[p]["a"]).mean(1) for p in PER]); et = np.concatenate([(D[p]["t"] - D[p]["a"]).mean(1) for p in PER]); c = np.concatenate([[col] * len(D[p]["a"]) for p, col in zip(PER, (BLUE, YEL, ORANGE))])
+for p, col in zip(PER, (BLUE, YEL, ORANGE)): ax.plot((D[p]["t"] - D[p]["a"]).mean(1), (D[p]["s"] - D[p]["a"]).mean(1), "o", color=col, markersize=4, alpha=0.7, markeredgewidth=0, label=p)
+lim = (-4.5, 4.5); ax.plot(lim, lim, color=INK, linewidth=0.7); ax.axhline(0, color=INK, linewidth=0.5); ax.axvline(0, color=INK, linewidth=0.5); ax.set_xlim(*lim); ax.set_ylim(*lim); ax.set_xlabel("night-level error, Timestral on the price, ct"); ax.set_ylabel("night-level error, market model\nwith Timestral shift, ct"); ax.legend(frameon=False, loc="upper left", fontsize=8); clean(ax)
+cc = [np.corrcoef((D[p]["s"] - D[p]["a"]).mean(1), (D[p]["t"] - D[p]["a"]).mean(1))[0, 1] for p in PER]; ttl(ax, f"Night-level errors of the two correlate {cc[0]:.2f} / {cc[1]:.2f} / {cc[2]:.2f}\nby period: the same surprises, so blending adds little")
+fig.suptitle("The market model with its supply shift forecast by Timestral instead of the kernel layer (key metric: price 00:00-06:00, forecast at midnight one day ahead, 146 nights)", x=0.06, ha="left", fontsize=11, fontweight="bold", color=INK, y=0.96); fig.text(0.06, 0.03, "Autumn bars use a load forecast built on weather forecasts up to 6 h fresher than a midnight issue has. On the strict basis (2-day-old weather): market model with Timestral shift 1.10, Timestral on the price 1.18.", fontsize=8.5, color=MUTED); fig.savefig(f"{SP}/out/shift_timestral.png", dpi=100, bbox_inches="tight"); print("figure ok", {p: [round(m(D[p][k], D[p]["a"]), 2) for _, k, _ in ROWS] for p in PER}, round(float(np.corrcoef(es, et)[0, 1]), 2), round(float(cov), 2))

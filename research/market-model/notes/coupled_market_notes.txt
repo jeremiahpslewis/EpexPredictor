@@ -1,0 +1,28 @@
+Coupled-market model (exp/star.py), state after 2026-11-17. Research harness only; nothing in the repo.
+
+Model: 9 zones (DE + FR NL BE AT PL CZ CH DK). Each zone: supply stack of logistic blocks (low-cost, non-gas A, non-gas B, gas
+combined cycle, peakers, curtailment), marginal cost = alpha + heat rate * gas + emission rate * common cost level (one latent
+weekly state). German lignite, hard coal, gas and French nuclear and gas capacity follow measured availability (trailing
+14-day maximum of realised output, one day late). German must-run floors per fuel. Pumped storage: P * tanh((price - day
+mean) / kappa). Exchange Germany -> neighbour: -Ci + (Ce + Ci) * sigmoid((price difference - m) / kappa). Hour/day-type shift
+of German demand. Full-support priors (lognormal capacities, normal gas links); capacity centres from realised output.
+Likelihood (version 9): generative = shocks to every part -> clearing of all zones -> observed prices and quantities.
+  Terms: German output by fuel, pumped storage, scheduled exchange per border (uncoupled hours), balance of each zone in GW at
+  the observed price, and the Jacobian of the clearing system (closed form; hours with equal prices treated as one market).
+  No price-space fitting; the price is what the estimated parts imply when the market is cleared (nested bisection).
+
+What each check showed (fit date 2026-09-18, 540 days; second date 2026-02-02):
+  v1 prices only:                 price MAE 1.43/1.34 ct; exchange capacities < 1 GW (data 2-3.5), a 29 GW fictitious peaker, lignite at half its level.
+  prior predictive, first priors: simulated markets too cheap above 10 GW, no floor at zero (installed power is not available power).
+  prior predictive, corrected:    floor at zero, quantities in realised ranges; data at the upper edge of the prior band.
+  v3 quantities as data:          parts match; price MAE 1.60; 34 GW catch-all block of width 97.
+  energy balance by source:       price response of German supply = net imports 18 GW, pumped storage 9.8, lignite 7.9, gas 6.2, hard coal 4.0; rest constant.
+  v4 + pumped storage:            storage fits (corr 0.88); catch-all unchanged -> not the cause.
+  v5 balance in quantity space:   catch-all gone (12.9 GW must-run); cleared price 12 ct too high above 45 GW (simultaneity).
+  v6 gas availability measured:   gas output corr 0.84 -> 0.91; winter shortage smaller, not gone.
+  v7 + Jacobian:                  bias by load mostly gone; a Polish block diverged (neighbours' terms were down-weighted).
+  v8 coherent weights:            price MAE 1.43/1.30; bias by load within 0.5 ct; two starts agree; exchange functions degenerate to steps.
+  v9 coupled hours as one market: price MAE 1.44/1.30; bias by load within 0.2 ct (0.7 at the top on the winter date); net exports -10.4..+8.7 vs -10.8..+10.0 (corr 0.89).
+Open misfits: model 1.2-2.2 ct too low in the high-gas months of 2026; 0.4-0.8 ct too low at 16-24 h; Dutch exchange curve too large and steep;
+  Nordic and Luxembourg borders absent; simulate-and-refit check not yet run on this version; no forecasts made with it yet.
+For comparison, in-sample German price MAE of the free-form curve: 1.31/1.24 ct (no neighbours), 1.20/1.17 (neighbours as a shift).

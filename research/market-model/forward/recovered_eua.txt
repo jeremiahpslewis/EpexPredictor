@@ -1,0 +1,10 @@
+SP=/tmp/claude-0/-home-user-EpexPredictor/d6125cc0-c431-5b93-a06f-0110cd871ab6/scratchpad; cd $SP/exp; grep -n "D1F\b.*=\|D1FILE" smodel.py | cut -c1-200 | head -5; ../venv/bin/python - <<'EOF' 2>&1 | grep -v -i "warn\|def hourly\|sp = lambda"
+import numpy as np, pandas as pd, os
+SP="/tmp/claude-0/-home-user-EpexPredictor/d6125cc0-c431-5b93-a06f-0110cd871ab6/scratchpad"
+for p, r in (("winter","hw2"),("summer","hs2"),("autumn","ha")):
+    I=np.load(f"{SP}/out/inputs_{p}.npz"); tags=sorted(f[:-4] for f in os.listdir(f"{SP}/out/struct_{r}") if f[0]=="2"); print(p, len(tags), "origins; first", tags[:2], "... around", [t for t in tags if t[:7] in ("2026-01",)][:4], "last", tags[-1], "| gas at the origins", round(float(I["gas"].min())), "..", round(float(I["gas"].max())))
+import oc
+ix = pd.DatetimeIndex(oc.S.idx[: oc.n15 // 4 * 4: 4]); e = pd.Series(oc.EUA, index=ix); print("carbon by quarter:", e.resample("QS").mean().round(0).to_dict().__repr__()[:400])
+n15 = oc.n15; eua15 = np.full(n15, np.nan); eua15[: len(oc.EUA) * 4] = np.repeat(oc.EUA, 4); np.savez_compressed(f"{SP}/out/eua_15min.npz", eua=eua15); print("saved carbon on the 15-minute index:", eua15.shape, "finite", int(np.isfinite(eua15).sum()))
+z=np.load(f"{SP}/out/struct_ha/2026-09-18.npz"); print("stored candidate fit 2026-09-18: gref %.1f; at x = 20 / 30 / 42.5 / 60: b %s, h %s, gas share at gref %s" % (float(z["gref"]), np.round(np.interp([20,30,42.5,60], z["grid"], z["b_curve"]),0), np.round(np.interp([20,30,42.5,60], z["grid"], z["h_curve"]),2), np.round(float(z["gref"])*np.interp([20,30,42.5,60], z["grid"], z["h_curve"])/(np.interp([20,30,42.5,60], z["grid"], z["b_curve"])+float(z["gref"])*np.interp([20,30,42.5,60], z["grid"], z["h_curve"])),2)))
+EOF

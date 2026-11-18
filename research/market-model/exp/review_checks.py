@@ -1,0 +1,35 @@
+"""Checks asked for by the external review (notes 21.63): indicator comparison, reversed attribution order, sensitivity to one event, path dependence on the fitting nights."""
+import numpy as np, pandas as pd, warnings; warnings.filterwarnings("ignore")
+import market1 as M
+SP = M.SP; D = pd.read_csv(f"{SP}/out/miss_look_da.csv"); R = pd.read_parquet(f"{SP}/out/da_rows.parquet")
+def nm(date, col, shift=1):
+    t0 = (pd.Timestamp(date, tz="Europe/Berlin") - pd.Timedelta(days=shift)).tz_convert("UTC"); return float(R[col].reindex(pd.date_range(t0, periods=6, freq="1h")).mean())
+D["p_disp"] = [nm(d, "disp_da") for d in D.date]; D["imp1"] = D.p_disp + D.dx_fc; D["imp04"] = D.p_disp + 0.4 * D.dx_fc; D["dfc"] = D.act + D.err - D.prev
+def ols(y, X, names):
+    X = np.column_stack([X, np.ones(len(y))]); b = np.linalg.lstsq(X, y, rcond=None)[0]; r = y - X @ b; n, k = X.shape; cov = np.linalg.inv(X.T @ X) @ (X.T * r ** 2) @ X @ np.linalg.inv(X.T @ X) * n / (n - k); se = np.sqrt(np.diag(cov)); return "  ".join(f"{nm_} {b_:+.3f} ±{s_:.3f}" for nm_, b_, s_ in zip(names, b, se)) + f"  | R2 {1 - r.var() / y.var():.2f}"
+print("a) indicators, all 146 nights. correlation with the price error / with the shift-forecast error (forecast - true, GW):")
+for f in ("dx_fc", "p_disp", "imp1", "imp04"): print(f"   {f:7s} {D.err.corr(D[f]):+.2f} / {D.du.corr(D[f]):+.2f}   | forecast falls only (28): {D.err[D.dfc <= -2].corr(D[f][D.dfc <= -2]):+.2f} / {D.du[D.dfc <= -2].corr(D[f][D.dfc <= -2]):+.2f}")
+for tgt in ("err", "du"):
+    print(f"   {tgt} on fall and previous schedule (robust se):", ols(D[tgt].values, D[["dx_fc", "p_disp"]].values, ["fall", "prev schedule"])); F = D[D.dx_fc < 0]; print(f"   same, nights with a forecast fall of demand ({len(F)}):", ols(F[tgt].values, F[["dx_fc", "p_disp"]].values, ["fall", "prev schedule"]))
+for lab, m in (("fall of demand > 15 GW", D.dx_fc < -15), ("imp1 < 14", D.imp1 < 14), ("imp04 < 20", D.imp04 < 20), ("imp04 < 18", D.imp04 < 18), ("prev schedule > 26", D.p_disp > 26)): print(f"   {lab:24s} n={int(m.sum()):3d}  mean err {D.err[m].mean():+.2f} ±{D.err[m].std() / np.sqrt(m.sum()):.2f}  abs {D.err[m].abs().mean():.2f} | rest mean {D.err[~m].mean():+.2f} abs {D.err[~m].abs().mean():.2f}")
+ev = D.date.isin(["2026-09-18", "2026-09-19", "2026-09-20"]); print("c) without 18-20 September:"); 
+for lab, m in (("imp1 < 14", D.imp1 < 14), ("fall > 15 GW", D.dx_fc < -15)): mm = m & ~ev; print(f"   {lab}: n={int(mm.sum())} mean err {D.err[mm].mean():+.2f} ±{D.err[mm].std() / np.sqrt(mm.sum()):.2f} abs {D.err[mm].abs().mean():.2f}")
+big = D.err.abs() > 1.5; print(f"   misses >1.5 ct: {int(big.sum())} carrying {D.err.abs()[big].sum() / D.err.abs().sum():.2f}; without the event {int((big & ~ev).sum())} carrying {D.err.abs()[big & ~ev].sum() / D.err.abs()[~ev].sum():.2f}; autumn MAE of night-level error with / without the event: {D.err.abs()[D.per == 'autumn'].mean():.2f} / {D.err.abs()[(D.per == 'autumn') & ~ev].mean():.2f}; Timestral price {D.err_ts.abs()[D.per == 'autumn'].mean():.2f} / {D.err_ts.abs()[(D.per == 'autumn') & ~ev].mean():.2f}")
+# b) reversed order of substitution
+P = np.load(f"{SP}/out/market1n_post.npz"); th = {k: float(np.median(P[k])) for k in M.PN}; Z = np.load(f"{SP}/out/shift15.npz"); Rh = pd.read_parquet(f"{SP}/out/market_hourly.parquet"); E = np.load(f"{SP}/out/eua_15min.npz")["eua"]; E = np.r_[E, np.full(max(0, len(Rh) * 4 - len(E)), np.nan)]; co2f = pd.Series(np.nanmean(E[: len(Rh) * 4].reshape(-1, 4), 1), index=Rh.index.tz_convert("UTC")).ffill(); rows = []
+for per in ("winter", "summer", "autumn"):
+    I = np.load(f"{SP}/out/inputs_{per}.npz"); a = I["actual"].astype(float)[:, :24]; V = "v2" if per == "autumn" else "mid"; T = np.load(f"{SP}/out/tsshift_{V}_{per}.npz"); G = np.load(f"{SP}/out/gen_{V}_{per}.npz")
+    for j, c in enumerate(I["cutoffs"]):
+        d0 = int(I["cuts"][j]); t0 = pd.Timestamp(str(c)).tz_localize("UTC"); cj = float(co2f.asof(t0 - pd.Timedelta(hours=34))); Lj = 1.85 * float(I["gas"][j]) + 0.37 * cj; sl = slice(d0, d0 + 24); Lv, cv = np.full(24, Lj), np.full(24, cj); xh = T["xh"][j].astype(float)[:24]; nbh = T["nbh"][j].astype(float)[:24]; uh = T["median"][j].astype(float)[:24]; rlt = Z["rl"][sl]; x2 = rlt - Z["other"][sl]; nbt = Z["nbterm"][sl]; ut = x2 - Z["Sp"][sl] - nbt; dl = rlt - G["rl_pes"][j].astype(float)[:24]
+        cl = lambda x, e: float(np.mean(np.asarray(M.clear(th, x, Lv, cv, eps=e)) / 10)); p0 = cl(xh, uh + nbh); pA = cl(xh + dl, uh + nbh); pB = cl(xh, ut + nbh); pAB = cl(xh + dl, ut + nbh); act = a[j].mean(); rows.append(dict(err=p0 - act, load_first=p0 - pA, shift_after=pA - pAB, shift_first=p0 - pB, load_after=pB - pAB, rest=pAB - act))
+A = pd.DataFrame(rows); sg = np.sign(A.err); tot = A.err.abs().sum(); big = A.err.abs() > 1.5; sh = lambda c, m: (sg * A[c])[m].sum() / A.err.abs()[m].sum(); al = np.ones(len(A), bool)
+print("b) signed share of the night-level error, two orders (load first | shift first):"); 
+for lab, m in (("all nights", al), ("misses > 1.5 ct", big.values)): print(f"   {lab}: load {sh('load_first', m):.2f} | {sh('load_after', m):.2f};  shift {sh('shift_after', m):.2f} | {sh('shift_first', m):.2f};  rest (other plant, neighbours, fuel) {sh('rest', m):.2f}")
+# d) path dependence on the fitting nights
+R.index = R.index.tz_convert("Europe/Berlin"); N = R[R.index.hour < 6].copy(); N["Dp"] = N.rl - N.other; g = N.groupby(N.index.normalize()).agg(Dp=("Dp", "mean"), disp=("disp_da", "mean"), sh=("sh_da", "mean"), np_=("np", "mean"), p=("p", "mean"), L=("L", "mean"), tr=("tr", "first")).dropna(); g = g.asfreq("1D"); g["Dm1"] = g.Dp.shift(1); g["Dp1"] = g.Dp.shift(-1); g["dispm1"] = g.disp.shift(1); g["r"] = g.p / g.L; g = g.dropna()
+print("d) path dependence, scheduled dispatchable at night (GW) given the night's own demand (cubic) plus: demand the night before minus tonight (arrival from above), demand the night after minus tonight (short trough):")
+for lab, S in (("fitting, all nights", g[g.tr]), ("fitting, demand < 15 GW", g[g.tr & (g.Dp < 15)]), ("after Dec 2025, demand < 15 GW", g[~g.tr & (g.Dp < 15)])):
+    base = np.column_stack([S.Dp, S.Dp ** 2, S.Dp ** 3]); X = np.column_stack([base, S.Dm1 - S.Dp, S.Dp1 - S.Dp]); nmz = ["D", "D2", "D3", "before-minus-tonight", "after-minus-tonight"]
+    for tgt, tl in (("disp", "dispatchable"), ("np_", "net exports"), ("r", "price / cost"), ("sh", "dispatchable minus curves at the price")): o = ols(S[tgt].values, X, nmz); print(f"   {lab:32s} n={len(S):3d} {tl:38s}", "  ".join(o.split("  ")[3:]))
+S = g[g.tr & (g.Dp < 15)]; hi = S.Dp1 - S.Dp > 8; lo_ = S.Dp1 - S.Dp < 3; print(f"   low-demand fitting nights: short trough (next night > 8 GW higher) n={int(hi.sum())}: demand {S.Dp[hi].mean():.1f}, dispatchable {S.disp[hi].mean():.1f}, net exports {S.np_[hi].mean():.1f}, price/cost {S.r[hi].mean():.2f} | sustained (next night < 3 GW higher) n={int(lo_.sum())}: demand {S.Dp[lo_].mean():.1f}, dispatchable {S.disp[lo_].mean():.1f}, net exports {S.np_[lo_].mean():.1f}, price/cost {S.r[lo_].mean():.2f}")
+g.to_csv(f"{SP}/out/path_nights.csv")
