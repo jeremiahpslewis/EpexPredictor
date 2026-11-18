@@ -3158,3 +3158,35 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   before looking; the hand-over was shipped first (5134e56); the reviewer pointed out the weather-age flaw of that test; the research set
   then favoured the average, which had also passed the first test. Three forms were looked at on two sets. One season only.
   The live log (loadforecastlog_DE_LU.csv.gz) keeps both raw forecasts, so any weighting can be scored later without a new backtest.
+
+21.114 User: "yep keep going, test the price effect". Test on the research autumn set (66 days, midnight issue, target day = first day after
+  the last published figure; used set, descriptive). Three load forecasts as input of the two Timestral price routes:
+    T  = the app's tree forecast on 1-day-old weather (gen_appO_autumn)            -> the app before the load change
+    AV = average of T and the Timestral load forecast on 2-day-old weather (gen_v2) -> the app now (gen_avgA_autumn; strict vintage
+         for Timestral, the favourable one for the trees - so if anything this understates the gain)
+    TS = Timestral load forecast alone, 2-day-old weather (gen_v2)                  -> reference
+  Runs: slim route ts_shift.py MOD=lite with AV (T and TS exist: tsshift_appO_lite, tsshift_v2_lite); price route ts_live3m.py rl with
+  T and AV (TS exists: tsm_rlv2_autumn; same settings, FIXCTX=0). Scored: each route, and the app's mix (trees with residual-load input
+  + price route + slim route) / 3, night and whole day, AV against T, paired block bootstrap (blocks of 7).
+  Residual-load error on this set, day 1: T 2.48, TS 2.33, AV 2.01 GW (-19%).
+  EXPECTED before running: slim route with AV better than with T by 3-6% over the whole day (clear), night 2-5%; price route by 1-3%
+  (not necessarily clear); the three-way mix by 1-3% over the whole day (clear at the lower end at best), night 1-2%. AV at least as
+  good as TS in each. If the mix does not improve, the load change stays in (it is not worse and the load forecast itself is better),
+  and the README says so.
+
+21.115 Price effect, result (exp/price_av_score.py; out/price_av.npz; runs tsshift_avgA_lite_autumn, tsm_rlappO_autumn, tsm_rlavgA_autumn).
+  66 autumn days, MAE ct, load input T / AV / TS:
+    slim route          night 1.207 / 1.161 / 1.204   whole day 1.955 / 1.868 / 2.000   evening 3.074 / 2.792 / 2.835
+    price route         night 1.186 / 1.142 / 1.180   whole day 1.805 / 1.732 / 1.815   evening 2.722 / 2.620 / 2.652
+    mix (trees+P+slim)/3  night 1.136 / 1.128 / 1.151   whole day 1.777 / 1.724 / 1.764   evening 2.773 / 2.654 / 2.637
+  (trees alone 1.384 / 2.077.) AV against T, paired, 5-95%: slim whole day -4.5% (-0.107 .. -0.012), evening -9.2% (clear), night -3.8%
+  (not clear); price route whole day -4.1% (-0.123 .. -0.009), night -3.7% (-0.072 .. -0.019); MIX whole day -3.0% (-0.071 .. -0.010),
+  better on 41 of 66 days, evening -4.3% (clear), night -0.7% (not clear). AV against TS: better or level everywhere, clear over the whole
+  day for both routes.
+  Against 21.114: slim 3-6% clear: MET (-4.5%). Price route 1-3%: better (-4.1%, clear). Mix 1-3% over the day: MET at the upper end
+  (-3.0%, clear). Mix night 1-2%: NOT MET (-0.7%, not clear). AV at least as good as TS: MET.
+  Caveats: used set, one season, descriptive; the trees had 1-day-old weather and Timestral 2-day-old; the price route here is the research
+  form (weather, gas and residual load as covariates), close to but not the app's run; midnight issue only, i.e. the state in which the
+  target day is the first day after the last published figure.
+  Reading: the load change is worth about 3% of the app's whole-day error on these days, most of it by day and in the evening, little at
+  night. It stays the default.
