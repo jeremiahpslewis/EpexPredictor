@@ -86,6 +86,36 @@ class TestTimestralBlend:
         assert len(forecast) == 119
 
     @pytest.mark.asyncio
+    async def test_residual_load_is_passed_as_covariate(self):
+        df = input_frame(TimestralBlend.HORIZON)
+        blend, predictor, calls = blend_with_stand_in(df)
+        await blend.forecast(predictor)
+        without = calls[0][1].shape[0]
+
+        df["residual_load"] = 40.0
+        blend, predictor, calls = blend_with_stand_in(df)
+        forecast = await blend.forecast(predictor)
+        assert forecast is not None and len(forecast) == TimestralBlend.HORIZON
+        covariates = calls[0][1]
+        assert covariates.shape[0] == without + 1
+        assert (covariates[-1] == 40.0).all()
+
+    @pytest.mark.asyncio
+    async def test_residual_load_that_ends_early_is_left_out(self):
+        """It is an optional input: the forecast is as long as it would be without it"""
+        df = input_frame(TimestralBlend.HORIZON)
+        blend, predictor, calls = blend_with_stand_in(df)
+        await blend.forecast(predictor)
+        without = calls[0][1].shape[0]
+
+        df["residual_load"] = 40.0
+        df.loc[LAST_KNOWN + 50 * SLOT:, "residual_load"] = np.nan
+        blend, predictor, calls = blend_with_stand_in(df)
+        forecast = await blend.forecast(predictor)
+        assert forecast is not None and len(forecast) == TimestralBlend.HORIZON
+        assert calls[0][1].shape[0] == without
+
+    @pytest.mark.asyncio
     async def test_no_forecast_without_weather_forecast(self):
         df = input_frame(TimestralBlend.HORIZON)
         df.loc[LAST_KNOWN + 10 * SLOT:, "wind_0"] = np.nan

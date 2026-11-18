@@ -20,4 +20,8 @@ services:
       # only queried when energy-charts and ENTSO-E don't deliver). Enable only if your use case
       # complies with the Nord Pool terms of use / data license.
       # - EPEXPREDICTOR_USE_NORDPOOL=true
+      # Optionally average the forecast for Germany with Timestral and the market model. Needs the packages of
+      # requirements-timestral.txt in the image (see README).
+      # - EPEXPREDICTOR_TIMESTRAL_MODEL=mistralai/Timestral-123M
+      # - EPEXPREDICTOR_MARKET_MODEL=false
 

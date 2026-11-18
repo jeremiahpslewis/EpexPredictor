@@ -1,7 +1,8 @@
 """
 Optional second opinion: the Timestral time series foundation model (https://github.com/mistralai/timestral).
 
-It forecasts the price from its recent course plus the weather as known-future covariates, without any training.
+It forecasts the price from its recent course plus the weather and the residual load as known-future covariates,
+without any training.
 Where the tree models read the price off the weather, it continues the last known prices, so it is best right
 after them, and the two make different mistakes. In backtests for Germany, their average improved on the tree models
 for the night hours in autumn and in spring/summer, and for the whole first day in autumn only; on its own,
@@ -46,6 +47,8 @@ class TimestralBlend:
     model_name: str
     revision: str | None
     forecaster = None
+    # the forecasts of the last blend, by name
+    last_forecasts: dict[str, pd.Series] = {}
 
     def __init__(self, model_name: str, revision: str | None = None):
         self.model_name = model_name
@@ -70,8 +73,12 @@ class TimestralBlend:
         fade = np.linspace(1.0, 0.0, cls.HORIZON - cls.FULL_WEIGHT_SLOTS + 1)[1:]
         return cls.WEIGHT * np.concatenate([np.ones(cls.FULL_WEIGHT_SLOTS), fade])
 
+    # The residual load [GW] as published and forecast (see residualload.py). In backtests of the next day from
+    # midnight, Timestral with it was better than without by a fifth over the whole day.
+    RESIDUAL_LOAD = "residual_load"
+
     @staticmethod
-    def covariates(predictor: PricePredictor, df: pd.DataFrame) -> np.ndarray:
+    def covariates(predictor: PricePredictor, df: pd.DataFrame, residual_load: bool = True) -> np.ndarray:
         """What is known about the future, one row per covariate"""
         wind = df.filter(regex=r"^wind_\d+$")
         onshore = len(predictor.region.latitudes)
@@ -87,7 +94,15 @@ class TimestralBlend:
         for column in ("eu_wind", "eu_wind_northsea", "eu_irradiance", "gasprice"):
             if column in df.columns:
                 rows.append(df[column])
+        if residual_load and TimestralBlend.RESIDUAL_LOAD in df.columns:
+            rows.append(df[TimestralBlend.RESIDUAL_LOAD])
         return np.vstack([row.to_numpy(dtype=float) for row in rows])
+
+    @staticmethod
+    def known_horizon(covariates: np.ndarray, history: int) -> int:
+        """Quarter hours after the history for which every covariate is known"""
+        known = ~np.isnan(covariates[:, history:]).any(axis=0)
+        return int(np.argmin(known)) if not known.all() else int(known.size)
 
     def _forecast(self, prices: np.ndarray, covariates: np.ndarray, weekday: np.ndarray) -> np.ndarray:
         import torch
@@ -120,12 +135,20 @@ class TimestralBlend:
         if df is None:
             return None
         history, future = df.loc[:last_known], df.loc[first:]
-        covariates = self.covariates(predictor, df)
-        known = ~np.isnan(covariates).any(axis=0)
         # needs all of the future it is asked for, and most of the history (it copes with gaps in there)
-        horizon = int(np.argmin(known[len(history):])) if not known[len(history):].all() else len(future)
+        covariates = self.covariates(predictor, df)
+        horizon = self.known_horizon(covariates, len(history))
+        if self.RESIDUAL_LOAD in df.columns:
+            # an optional input: where it ends earlier than the others, the forecast is made without it
+            without = self.covariates(predictor, df, residual_load=False)
+            if self.known_horizon(without, len(history)) > horizon:
+                log.info(f"{predictor.region.bidding_zone_entsoe}: residual load is not known far enough - Timestral forecast without it")
+                covariates = without
+                horizon = self.known_horizon(without, len(history))
         if horizon < 96 or len(history) < self.CONTEXT // 2 or history["price"].isna().mean() > 0.1:
-            log.warning(f"{predictor.region.bidding_zone_entsoe}: not enough data for a Timestral forecast")
+            log.warning(f"{predictor.region.bidding_zone_entsoe}: not enough data for a Timestral forecast "
+                        f"({len(history)} quarter hours of history, {history['price'].isna().mean():.0%} of them without price, "
+                        f"inputs known for {horizon} quarter hours ahead)")
             return None
 
         rows = len(history) + horizon
@@ -144,22 +167,47 @@ class TimestralBlend:
             return None
         return pd.Series(values, index=future.index[:horizon], name="price")
 
-    async def blend(self, predictor: PricePredictor, predictions: list[pd.DataFrame]) -> bool:
-        """
-        Mix the Timestral forecast into the price forecasts (in place). Returns whether it did.
-        A failure only costs the second opinion, never the forecast itself.
-        """
+    async def _forecast_or_none(self, name: str, forecaster, predictor: PricePredictor) -> pd.Series | None:
         try:
-            forecast = await self.forecast(predictor)
+            return await forecaster.forecast(predictor)
         except Exception:
-            log.exception(f"{predictor.region.bidding_zone_entsoe}: Timestral forecast failed - continuing without it")
-            return False
-        if forecast is None:
+            log.exception(f"{predictor.region.bidding_zone_entsoe}: {name} forecast failed - continuing without it")
+            return None
+
+    async def blend(self, predictor: PricePredictor, predictions: list[pd.DataFrame], others: dict | None = None) -> bool:
+        """
+        Mix the Timestral forecast into the price forecasts (in place). Returns whether anything was mixed in.
+        A failure only costs the second opinion, never the forecast itself.
+
+        others: further forecasters by name (objects with the same forecast method, e.g. the market model). Each
+                one that delivers gets the same weight as Timestral and the tree models.
+
+        What was mixed is kept in last_forecasts, by name, for the forecast log.
+        """
+        forecasts: dict[str, pd.Series] = {}
+        for name, forecaster in {"timestral": self, **(others or {})}.items():
+            forecast = await self._forecast_or_none(name, forecaster, predictor)
+            if forecast is not None:
+                forecasts[name] = forecast
+        self.last_forecasts = forecasts
+        if len(forecasts) == 0:
             return False
 
-        weight = pd.Series(self.weights()[:len(forecast)], index=forecast.index)
+        # a quarter hour with k further forecasts: each of them and the tree models count 1 / (k + 1) while the weight
+        # is full, and the tree models take over as it fades out
+        full = self.weights() / self.WEIGHT
         for prediction in predictions:
-            common = forecast.index.intersection(prediction.index[prediction["price"].notna()])
-            prediction.loc[common, "price"] = (1 - weight[common]) * prediction.loc[common, "price"] + weight[common] * forecast[common]
-        log.info(f"{predictor.region.bidding_zone_entsoe}: blended Timestral forecast for {len(forecast)} quarter hours")
+            wanted = prediction.index[prediction["price"].notna()]
+            total = pd.Series(0.0, index=wanted)
+            count = pd.Series(0.0, index=wanted)
+            fade = pd.Series(0.0, index=wanted)
+            for forecast in forecasts.values():
+                common = forecast.index.intersection(wanted)
+                total[common] += forecast[common]
+                count[common] += 1.0
+                fade[common] = np.maximum(fade[common], pd.Series(full[:len(forecast)], index=forecast.index)[common])
+            mixed = count > 0
+            share = fade[mixed] * count[mixed] / (count[mixed] + 1.0)
+            prediction.loc[mixed[mixed].index, "price"] = (1.0 - share) * prediction.loc[mixed[mixed].index, "price"] + share * total[mixed] / count[mixed]
+        log.info(f"{predictor.region.bidding_zone_entsoe}: blended " + ", ".join(f"{name} ({len(forecast)} quarter hours)" for name, forecast in forecasts.items()))
         return True

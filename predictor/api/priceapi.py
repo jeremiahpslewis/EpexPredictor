@@ -22,6 +22,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from predictor.model.priceregion import PriceRegion, PriceRegionName
 import predictor.model.pricepredictor as pp
 from predictor.model.europeweather import EuropeWeather
+from predictor.model.forecastlog import ForecastLog
+from predictor.model.marketroute import MarketRoute
 from predictor.model.timestralblend import TimestralBlend
 from predictor.api.evalplotcache import EvalPlotCache
 
@@ -357,6 +359,8 @@ base_models = BaseModelCoordinator()
 # Backtested for Germany only, so it is used there only.
 timestral = TimestralBlend.from_env()
 TIMESTRAL_ZONES = ("DE_LU",)
+# Optional third forecaster, run with the same Timestral model (see marketroute.py)
+market_route = MarketRoute.from_env(timestral)
 eval_plot_cache = EvalPlotCache(trainer=base_models.train_eval_plot_data)
 
 
@@ -401,6 +405,8 @@ class RegionPriceManager:
         # Stage-2 model: same region, wired to all base models, sharing stores with its own base
         self.predictor = pp.PricePredictor(region, storage_dir=EPEXPREDICTOR_DATADIR, cross_predictors=base_models.get_cross_predictors())
         self.predictor.use_datastores_from(base)
+        # what was issued, to be scored later (only written where further forecasters are mixed in)
+        self.forecastlog = ForecastLog(EPEXPREDICTOR_DATADIR, region.bidding_zone_entsoe)
 
     async def ensure_loaded(self) -> Self:
         async with self.init_lock:
@@ -493,7 +499,12 @@ class RegionPriceManager:
                 if timestral is not None and self.region.bidding_zone_entsoe in TIMESTRAL_ZONES:
                     base = base_models.get_base(self.name)
                     assert base is not None
-                    await timestral.blend(base, [newprices, neweval])
+                    trees = newprices["price"].copy()
+                    others = {"market": market_route} if market_route is not None else None
+                    if await timestral.blend(base, [newprices, neweval], others):
+                        lastknown = self.predictor.pricestore.get_last_known()
+                        if lastknown is not None:
+                            self.forecastlog.append(lastknown, {"trees": trees, **timestral.last_forecasts, "price": newprices["price"]})
                 self.cachedprices = newprices
                 self.cachedeval = neweval
                 lastknown = self.predictor.pricestore.get_last_known()

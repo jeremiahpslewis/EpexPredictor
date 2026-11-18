@@ -20,8 +20,9 @@ next day's quarter-hour prices from midnight, this model with its shift forecast
 Timestral forecasting the price directly, and the average of the two was better than Timestral alone over the
 whole day.
 
-This module holds the model only. It is not used by the forecast yet: that needs the output of the other plant,
-the carbon price and the neighbours' forecasts as inputs, which the application does not fetch so far.
+This module holds the model only. marketroute.py uses it for the forecast, in a slim form: without the neighbours,
+and with constants for the carbon price and the output of the other plant, so that nothing has to be fetched that
+the application does not fetch already.
 """
 
 import numpy as np
