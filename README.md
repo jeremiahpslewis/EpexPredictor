@@ -101,6 +101,8 @@ Timestral on the price and the market model use this forecast; the tree models o
 ### Forecast log
 With Timestral switched on and a data directory set, every forecast that is issued for Germany is also written to `forecastlog_DE_LU.csv.gz` in the data directory: for the two days after the last known price, what the tree models, Timestral and the market model each said and what was issued, once per hour at most. With the prices that follow, this shows how good each of them was. The file is only ever added to (about 30 MB a year). The two forecasts of the residual load are written to `loadforecastlog_DE_LU.csv.gz` in the same way, for the time after the last published figure.
 
+`python -m predictor.scorelog <data directory>` scores both logs against the prices and published figures that followed: the mean absolute error of each forecaster in the first six hours, the first day and the second day after the last known value, and its difference to the tree models with a range from resampling days. With docker: `docker compose exec epexpredictor python -m predictor.scorelog /data`. A few weeks of log are needed before the ranges mean much.
+
 A time for which one of the inputs is missing, for example because the weather service could not be reached for several days, gets no forecast, so the output of the API can end earlier than usual. The load forecast is the exception: where it is missing, a forecast is still made.
 
 ## Model performance
