@@ -2994,3 +2994,85 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   Forward test: a log kept by the app tests the APP's implementation, with its own inputs; it needs its own freeze before its first logged
   day. The research specification frozen in 21.97 can only be scored later if the research scripts and builders are kept somewhere durable;
   they live in the temporary scratchpad (exp/, forward/) and in the archive file there.
+
+21.102 User's decisions (card): the market-model route enters the app as a THIRD forecaster, after a comparison with the app's current forecast
+  on days already scored; point forecast only (no bands in the interface); research scripts committed to the branch. Done: research/
+  market-model/ on claude/eager-fermat-vyfgf0 (commit e35eff5: 420 scripts, the two recovered commands, both notes files, a README; code and
+  text only; re-scanned for the key and personal details; hashes of sealed_score.py and ts_shift.py match the freeze).
+  Comparison, expectation written BEFORE computing (exp/app_cmp.py). Stored forecasts on the three used sets, same target days: the tree
+  models (win_trees, ssn_trees, compact_trees; autumn also with the residual-load input as the app now has it, rl_E_pes_T), the app's kind
+  of Timestral run on weather covariates without a load forecast (win_ts, ssn_ts, tsl_123_8k). The app's forecast = average of the two.
+  Caveats: those were issued at 14:00 the day before the day before (same price knowledge, since prices to the start of the target day are
+  known in both; no published figures for the day before the target); winter and summer trees are without the residual-load input; all
+  three sets are used sets. Descriptive.
+  EXPECTED: the app's average is clearly worse than average(A, P) at night (by 10-25%) and over the whole day (5-15%), mainly because the
+  trees are much worse than either Timestral route near the last known price; adding A as a third forecaster to the app's two improves the
+  app's forecast by 5-10% over the day; the best three-way mix is no better than average(A, P).
+
+21.103 App comparison, results (exp/app_cmp.py, app_fig.py; out/app_third.png). Used sets, MAE ct, night / whole day:
+                                                     winter          summer          autumn
+    tree models alone                                0.708 / 1.125   1.013 / 1.906   1.707 / 2.426 (with residual-load input 1.384 / 2.077)
+    app's Timestral run S (weather covariates)       0.541 / 1.179   0.727 / 1.946   1.268 / 2.131
+    APP NOW: average(trees, S)                       0.551 / 1.006   0.778 / 1.786   1.274 / 1.998 (with residual load 1.197 / 1.912)
+    A                                                0.545 / 0.865   0.682 / 1.479   1.105 / 1.937
+    P                                                0.507 / 0.979   0.651 / 1.519   1.180 / 1.815
+    CONFIRMED: average(A, P)                         0.509 / 0.897   0.656 / 1.454   1.111 / 1.782
+    THIRD FORECASTER: (trees + S + A) / 3            0.512 / 0.881   0.704 / 1.602   1.170 / 1.848 (with residual load 1.129 / 1.792)
+    (trees + S + A + P) / 4                          0.494 / 0.864   0.679 / 1.539   1.144 / 1.783
+  Against the app now, whole day (5-95%): third forecaster -12.4% (-0.184 .. -0.058 ct), -10.3% (-0.225 .. -0.129), -6.3% (-0.180 ..
+  -0.079; autumn with the residual-load trees) - all clear; night -7.2%, -9.5%, -5.7%, all clear. Confirmed average(A, P): -10.8% (not
+  clear), -18.6% (clear), -6.8% (clear). Four-way against the confirmed average: -0.033, +0.085, +0.001, none clear.
+  Against 21.102: "the app is clearly worse than average(A, P), night 10-25%, day 5-15%": the size is about right (7-16% and 7-19%), clear
+  in summer and for the autumn day only. "A as third forecaster improves the app by 5-10% over the day": 6-12%, clear in all three: MET.
+  "No three-way mix beats average(A, P)": about right (winter slightly better, summer worse).
+  Also visible: the app's own Timestral run is much weaker by day than P (1.18 / 1.95 / 2.13 against 0.98 / 1.52 / 1.82) - giving it the
+  load forecast as a covariate is worth as much as adding the market model.
+  Caveats: used sets; the stored app forecasts were issued 10 hours earlier (same prices known, no published figures for the day before the
+  target); winter and summer trees lack the residual-load input the app now has.
+  Reading for the build: the third forecaster is worth building. Order: (1) the three data feeds (other plant, carbon price, neighbours'
+  forecasts), (2) shift history and its Timestral forecast, (3) clearing in the forecast path with equal weights over the first 152
+  quarter-hours as the existing blend does, (4) a log of issued forecasts. Separately and cheaply: give the app's Timestral run the
+  residual-load forecast as a covariate.
+
+21.104 User: "Ok go. And get things so I can deploy a version." Before building three new data feeds, a test of whether the app needs them.
+  Version "lite" of route A, using only what the app already fetches (price, published / forecast residual load, gas price): no neighbour
+  term, other plant a constant 8 GW, carbon price a constant 75 EUR/t, same M1n curve parameters. The shift is rebuilt with these
+  simplifications (it absorbs what they leave out) and forecast by the same Timestral call (exp/shift_build.py LITE=1, ts_shift.py MOD=lite).
+  EXPECTED before running: lite is level with A at night and over the whole day (within +-0.02 ct, no interval clear of zero) - the
+  neighbours were already shown not to matter with this forecaster (21.55), other plant varies by 0.8 GW, and carbon moves slowly against
+  an 85-day context. A second run for autumn takes the app's own residual-load forecast (rl_E_pes_T) in place of the Timestral load
+  forecast; expected slightly worse (by up to 0.05 ct over the day).
+
+21.105 Slim route, results (exp/lite_score.py; out/lite_fc.npz). Slim minus A, whole day, ct: +0.025 / +0.082 / +0.063 / +0.026 / +0.034
+  over the five sets, none clear (autumn night +0.099 clear). As third forecaster the slim route does what the full one does: against the
+  app now -13.1% / -9.6% / -7.5% (winter / summer / autumn). With the APP'S OWN residual-load forecast (autumn only): from weather 2-3 days
+  old (RL error 2.75 / 3.52 GW night / day) the third forecaster gives +0.9%, no gain; from weather one day old (1.59 / 2.48 GW) -3.6% over
+  the day (-0.109 .. -0.052 ct) and -2.7% at night, both clear. The research Timestral load forecast has 1.52 / 2.33 GW.
+  Reading: no new data feeds are needed. The gain depends on the quality of the load forecast; the next lever in the app would be a
+  Timestral load forecast (not built).
+
+21.106 App build (branch claude/eager-fermat-vyfgf0, commits 4f269c7 and b33c1bb).
+  predictor/model/marketroute.py: slim route as third forecaster (constants: carbon 75 EUR/t, other plant 8 GW; no neighbours; gas price of
+  two days before; second Timestral run on the supply shift with the residual load less 8 GW as known covariate). timestralblend.py: the
+  residual load as further covariate of the price run (left out when it ends before the weather; EPEXPREDICTOR_TIMESTRAL_RESIDUAL_LOAD=false
+  switches it off), blend generalised to k extra forecasters with 1/(k+1) each at full weight, same fade. forecastlog.py: every issue for
+  Germany appended to forecastlog_DE_LU.csv.gz (trees, timestral, market, price; fixed columns). priceapi.py wires them.
+  EPEXPREDICTOR_MARKET_MODEL=false switches the route off. 212 tests pass; the one failure (Nord Pool live fetch) is old and needs network.
+  NOT backtested in the app's form: the residual load as covariate of the price run with the app's own load forecast. The evidence is
+  indirect (P with the research load forecast against S with weather only, 21.103).
+
+21.107 End-to-end check in the real app (scratchpad apprun/debug_run.py, shift_cmp.py, shift_cmp2.py).
+  The live run could not exercise the new path: in this sandbox the Open-Meteo forecast host answered 429 and then reset the connection, the
+  grid-weather backfill was not finished when the run was stopped, so there was no weather after the last known price and no residual load
+  after 10 Nov. No fetch failure was logged, so the 429 as cause is likely, not proven. Instead the app's own objects were driven at a
+  pretend cut-off of 7 Nov 22:45 UTC, where the published residual load covers all 192 future quarter hours: both Timestral runs returned
+  192 finite values, the three-way mix gave exactly a third each, and the log was written and read back. Live, the second day comes from
+  the tree forecast of the residual load on grid weather, which was not exercised here.
+  Two defects found by this run and fixed: (a) the forecast log wrote rows of different width when a forecaster was missing in one issue and
+  present in the next, and could not be read back - now fixed columns; (b) the app's supply shift differed from the research one by 0.65 GW
+  mean absolute, although prices, residual load and the daily gas price were identical: the research code uses the cost index of two days
+  before (shift(192)), the app used the same day's for the past and the last known for the future. With the two-day lag in the app the
+  difference is 0.003 GW (the first two days of the window, which have no older price).
+  One day only, not a result: on 8 Nov the market route had MAE 1.16 ct and the price run 1.74 before fix (b).
+  Forward-test hygiene: three things after 9 Nov were printed incidentally - one price (18 Nov 18:00, 20.989 ct), the mean price of
+  November to date (23.9 ct) and daily means up to 9 Nov. None was scored or used for a choice.
