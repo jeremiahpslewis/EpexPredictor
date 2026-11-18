@@ -3121,3 +3121,40 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   figure and gets the tree forecast as before.
   Caveats: 40 autumn days, one season; both forecasts had the app's stored near-current weather, so the levels flatter both; the two
   combinations were fixed before looking, but chosen after the plain replacement had failed its rule on the same 40 days.
+
+21.111 Reviewer: the 40-day test of 21.109 gave the trees near-current weather for the day ahead; live, the first day after the last
+  published figure is weather one to two days ahead (and 21.109's sentence "stale weather, which the live app does not have" is wrong for
+  that window). Check on the research autumn set (66 days, horizon 153 quarter hours from the start of the target day = right after the
+  last published figure), no new runs: trees with 1-day-old weather (rl_E_opt_T) and 2-3-day-old (rl_E_pes_T), Timestral with 1-day-old
+  (gen_mid_autumn) and 2-day-old (gen_v2_autumn), and the shipped hand-over on the like-for-like pair (1-day-old both).
+  EXPECTED before scoring: with 1-day-old weather for both, Timestral alone beats the trees over all of day 1 (night about -13%, whole day
+  -5 to -10%); the hand-over is better than the trees but not better than Timestral alone over the day; in the half day after (slots
+  96-152) Timestral is level or slightly worse. If Timestral alone holds through day 1, the hand-over is too short: full weight through
+  day 1 and fade after would be the form the research data supports (day 2 cannot be settled here, the horizon ends at 153).
+
+21.112 Result on the research autumn set (66 days, 1-day-old weather for both unless said), MAE GW night / day 1 / hours 24-38:
+  trees 1.59 / 2.48 / 3.43 (2-3-day-old weather: 2.75 / 3.52 / 3.76); Timestral alone 1.38 / 2.21 / 2.80 (2-day-old: 1.52 / 2.33 / 3.54);
+  shipped hand-over 1.29 / 2.04 / 3.43. Against the trees: hand-over -19% (-0.48 .. -0.10) night, -18% (-0.57 .. -0.30) day 1, clear;
+  Timestral alone -13% and -11%, not clear; hours 24-38 Timestral alone -18% (-1.04 .. -0.15), clear.
+  Against 21.111: Timestral alone beats the trees over day 1: direction yes, not clear. "Hand-over not better than Timestral alone": WRONG,
+  it is better on day 1 (the mix helps, +8% for Timestral alone against it, not clear). "Hours 24-38 level or slightly worse": WRONG,
+  Timestral is clearly better there. So the two tests disagree about the second day: worse by 16% with near-current weather for the trees
+  (21.109), better by 18% with weather as old as it is live. The hand-over's day-1 gain holds in both (-9% and -18%).
+  Reading: the 24-hour hand-over is safe and gives away a possible gain after 24 hours. Candidate (a) of 21.109, the plain average
+  over the whole Timestral horizon, is the form that does not have to know which regime holds. EXPECTED for (a) on this set: day 1 about
+  -15%, hours 24-38 about -10%, both clear. Rule: if (a) is clearly better than the trees on both segments here, and given it was level on
+  day 2 and -9% on day 1 in 21.110, (a) replaces the hand-over as default; otherwise the hand-over stays.
+
+21.113 Plain average, result. Research set (66 days, 1-day-old weather both): night 1.25 against trees 1.59 (-21%, -0.46 .. -0.21), day 1
+  1.84 against 2.48 (-26%, -0.82 .. -0.44), hours 24-38 2.73 against 3.43 (-20%, -0.91 .. -0.46); against the hand-over -10% on day 1
+  (-0.27 .. -0.12) and -20% after. With Timestral on 2-day-old weather and trees on 1-day-old: -20% / -19% / -17%, all clear. App-form
+  set (21.110, with the fade below): night -25%, day 1 -9% (clear), day 2 +1%, half of day 3 +1% (not clear).
+  Against 21.112: day 1 about -15%: better (-26%); hours 24-38 about -10%: better (-20%); both clear. By the rule the average replaces
+  the hand-over as default.
+  Built: weight 0.5 for 192 quarter hours after the last published figure, falling linearly to zero over the next 48 (no step where the
+  trees carry on alone). Price effect not tested in this form; bracket from 21.105 for autumn: the slim route as third forecaster gave
+  -3.6% with the tree load forecast on 1-day-old weather and -7.5% with the Timestral load forecast alone.
+  Honest account of the path: plain replacement failed its rule on the 40 app-form days; the hand-over and the average were both fixed
+  before looking; the hand-over was shipped first (5134e56); the reviewer pointed out the weather-age flaw of that test; the research set
+  then favoured the average, which had also passed the first test. Three forms were looked at on two sets. One season only.
+  The live log (loadforecastlog_DE_LU.csv.gz) keeps both raw forecasts, so any weighting can be scored later without a new backtest.

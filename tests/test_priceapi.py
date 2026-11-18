@@ -402,11 +402,15 @@ class TestRegionPriceManagerThreeForecasters:
         timestral.forecast = AsyncMock(return_value=pd.Series(18.0, index=future, name="price"))
         market = MagicMock()
         market.forecast = AsyncMock(return_value=pd.Series(24.0, index=future, name="price"))
+        published = last_known - 4 * SLOT
+        timestral.load = MagicMock()
+        timestral.load.comparison = AsyncMock(return_value=(published, {"trees": pd.Series(40.0, index=index), "timestral": pd.Series(42.0, index=index)}))
         monkeypatch.setattr(priceapi, "timestral", timestral)
         monkeypatch.setattr(priceapi, "market_route", market)
 
         manager = RegionPriceManager(PriceRegionName.DE, sample_region)
         manager.forecastlog = ForecastLog(str(tmp_path), "DE_LU")
+        manager.loadforecastlog = ForecastLog(str(tmp_path), "DE_LU", "loadforecastlog", ("trees", "timestral"))
         monkeypatch.setattr(priceapi.base_models, "get_base", MagicMock(return_value=MagicMock()))
         manager.predictor.last_data_update = MagicMock(return_value=datetime.now(timezone.utc))
         manager.predictor.train = AsyncMock()
@@ -427,6 +431,12 @@ class TestRegionPriceManagerThreeForecasters:
         first = logged.iloc[0]
         assert (first["trees"], first["timestral"], first["market"], first["price"]) == pytest.approx((12.0, 18.0, 24.0, 18.0))
 
+        # the two forecasts of the residual load, after the last published figure
+        loads = ForecastLog.read(manager.loadforecastlog.path)
+        assert list(loads.columns) == ["time", "issued", "last_known", "trees", "timestral"]
+        assert loads["time"].min() == published + SLOT and len(loads) == ForecastLog.HORIZON
+        assert (loads["trees"] == 40.0).all() and (loads["timestral"] == 42.0).all()
+
     @pytest.mark.asyncio
     async def test_update_without_the_market_model(self, sample_region, tmp_path, monkeypatch):
         import pandas as pd
@@ -446,6 +456,7 @@ class TestRegionPriceManagerThreeForecasters:
 
         manager = RegionPriceManager(PriceRegionName.DE, sample_region)
         manager.forecastlog = ForecastLog(str(tmp_path), "DE_LU")
+        manager.loadforecastlog = ForecastLog(str(tmp_path), "DE_LU", "loadforecastlog", ("trees", "timestral"))
         monkeypatch.setattr(priceapi.base_models, "get_base", MagicMock(return_value=MagicMock()))
         manager.predictor.last_data_update = MagicMock(return_value=datetime.now(timezone.utc))
         manager.predictor.train = AsyncMock()
