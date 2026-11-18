@@ -3208,3 +3208,44 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   the tree load forecast on future weather. A first attempt showed a harness artefact, not a defect: a freshly copied store counts as
   up to date for an hour, so the published figures were not refreshed until the file was marked as old.
   Hygiene: prices of 10-19 Nov are in that store; none was printed or scored.
+
+21.117 User: "ok keep going?" Open caveat: every number for the averaged load forecast is from autumn. Winter (30 days) and summer (50 days)
+  research sets: stored are the tree load forecast on 2-3-day-old weather (inputs_<period> rl_pes) and Timestral on 2-day-old weather
+  (gen_mid_<period>). The vintage now handicaps the trees (in autumn it favoured them), so trees-against-average overstates the gain here;
+  the cleaner question is whether the average beats Timestral alone.
+  EXPECTED before scoring (residual load, day 1): average better than the trees by 20-30% in both seasons (clear); average better than
+  Timestral alone by 0-8% (clear in at most one season); the same sign for hours 24-38.
+
+21.118 Result, residual load, MAE GW trees / Timestral / average: winter night 3.06 / 1.51 / 2.08, day 1 3.18 / 2.17 / 2.39, hours 24-38
+  4.22 / 3.90 / 3.74; summer night 2.34 / 1.59 / 1.71, day 1 2.58 / 2.27 / 2.07, hours 24-38 2.83 / 2.75 / 2.57. Average against trees:
+  -25% and -20% on day 1, clear (as expected, with the trees handicapped). Average against Timestral alone: winter night +37% (clear,
+  worse), winter day 1 +10% (not clear), summer day 1 -9% (clear), hours 24-38 -4% / -6% (not clear). Expectation "average better than
+  Timestral alone by 0-8%": NOT MET in winter - with trees on stale weather the average is clearly worse at night there.
+  Across all four sets the first six hours favour Timestral more than half (average against Timestral alone at night: +1% app-form autumn,
+  -9% research autumn, +37% winter, +7% summer); after that the average is level or better.
+  One candidate, fixed before looking: Timestral's weight starts at 1 at the last published figure and falls linearly to 0.5 over the
+  first 24 hours, 0.5 after ("lead-weighted"). RULE: it replaces the plain average only if, against the plain average, it is better at
+  night in at least three of the four sets and not clearly worse over day 1 in any. Otherwise the average stays and the live log decides.
+
+21.119 Lead-weighted against the plain average, result (MAE GW, night / day 1): app-form autumn 0.94 against 0.98 (-5%) / 1.74 against 1.73
+  (+1%); research autumn 1.33 against 1.25 (+7%) / 1.91 against 1.84 (+4%, +0.04 .. +0.13, clear); winter 1.55 against 2.08 (-25%, clear) /
+  2.15 against 2.39 (-10%, clear); summer 1.57 against 1.71 (-8%) / 2.07 against 2.07. Rule: better at night in three of four: yes; not
+  clearly worse over day 1 in any: NO (research autumn). The plain average stays. The sets disagree in the way the weather age predicts:
+  the staler the trees' weather, the more weight Timestral deserves. The live log holds both raw forecasts and settles it.
+  Next: price effect in winter and summer, average (AV) against Timestral load alone (TS; runs exist) for both routes. The trees-alone
+  comparison is not run there: with 2-3-day-old weather it would overstate the gain.
+  EXPECTED: the mix (trees + price route + slim route) / 3 with AV level with TS over the whole day in both seasons (within 2%, not
+  clear); at night AV slightly worse in winter (up to 3%).
+
+21.120 Price effect, winter and summer, AV against TS (exp/price_av2_score.py). Mix (trees + price + slim) / 3, MAE ct AV / TS: winter night
+  0.550 / 0.506 (+8.8%, +0.006 .. +0.084, clear), whole day 0.875 / 0.862 (+1.6%, not clear); summer night 0.716 / 0.687 (+4.2%, +0.007 ..
+  +0.048, clear), whole day 1.470 / 1.504 (-2.3%, not clear). Both routes alone show the same: night +8 to +13% (clear or nearly), whole day
+  -1 to -3% (not clear). Against 21.119: whole day level: MET. Night "slightly worse in winter, up to 3%": WORSE than expected, and in
+  summer too. Caveat as before: trees on 2-3-day-old weather here; live, the first day after the last published figure has weather about
+  one day old, which is the autumn case, where AV was better than TS at night (-0.022, not clear).
+  The rule of 21.118 was about the load error and kept the plain average. This price result is new information that rule did not cover:
+  the night, which is the user's first metric, is where the plain average can lose. So one more test, at the price level, of the one
+  candidate already defined (lead-weighted, LW: Timestral weight 1 -> 0.5 over 24 h): both routes, all three seasons (6 runs).
+  EXPECTED: the mix with LW against AV: night better in winter and summer (by 3-8%), level in autumn (within 2%); whole day level in all
+  three (within 1.5%). RULE: LW becomes the default if the mix's night is better than with AV in at least two of three seasons and the
+  whole day is not clearly worse in any; otherwise AV stays. This is the last form tested on these sets - after it the live log decides.
