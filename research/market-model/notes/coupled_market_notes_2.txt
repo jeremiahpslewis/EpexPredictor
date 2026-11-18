@@ -3249,3 +3249,23 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   EXPECTED: the mix with LW against AV: night better in winter and summer (by 3-8%), level in autumn (within 2%); whole day level in all
   three (within 1.5%). RULE: LW becomes the default if the mix's night is better than with AV in at least two of three seasons and the
   whole day is not clearly worse in any; otherwise AV stays. This is the last form tested on these sets - after it the live log decides.
+
+21.121 Price effect of the lead-weighted load forecast, result (exp/price_lw_score.py; runs tsshift_lwA_lite_*, tsm_rllwA_*; the worker was
+  restarted during the runs, three were repeated). Mix (trees + price + slim) / 3, MAE ct, LW / AV / TS:
+    winter (30)   night 0.508 / 0.550 / 0.506   whole day 0.855 / 0.875 / 0.862
+    summer (50)   night 0.687 / 0.716 / 0.687   whole day 1.465 / 1.470 / 1.504
+    autumn (66)   night 1.142 / 1.128 / 1.151   whole day 1.740 / 1.724 / 1.764   (with the tree load T: 1.136 / 1.777)
+  LW against AV, mix: night -7.7% (-0.080 .. -0.009) winter, -4.0% (-0.046 .. -0.010) summer, +1.2% (-0.031 .. +0.065) autumn; whole day
+  -2.3%, -0.3%, +0.9% (-0.003 .. +0.045), none clear. The two routes alone: night -7 to -11% in winter and summer (clear), autumn +2%
+  (not clear); whole day autumn +2.1 to +2.5% (clear for both routes alone, not for the mix).
+  LW against TS: never clearly worse; whole day better in all three for both routes (-2.6 to -4.4%, clear).
+  LW against T (autumn only): mix whole day -2.1% (-0.065 .. +0.024), not clear; AV had -3.0%, clear.
+  Against 21.120: night better in winter and summer by 3-8%: MET (7.7%, 4.0%); autumn level within 2%: MET (+1.2%); whole day level within
+  1.5%: winter better than that (-2.3%), others met. RULE: night better in two of three seasons and whole day not clearly worse in any:
+  MET (autumn whole day +0.9%, lower bound -0.003: narrowly). LW is the default.
+  Built: TimestralLoad weights 1.0 at the last published figure -> 0.5 after 96 quarter hours, 0.5 to 192, -> 0 at 240.
+  What this buys and costs, plainly: against the plain average it protects the night in the seasons where the trees' weather was stale
+  (and does as well as Timestral alone there), and gives up about a third of the average's whole-day gain in the autumn set, where the
+  trees had fresher weather. Four forms were looked at on the same sets (replacement, hand-over, average, lead-weighted); each was fixed
+  before it was scored, but the sequence was driven by results. No further form is to be tested on these sets. The live log
+  (loadforecastlog; python -m predictor.scorelog now also scores the weighting in use) is the test that counts.

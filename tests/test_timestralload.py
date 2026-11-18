@@ -124,12 +124,15 @@ class TestTimestralLoad:
 
         result = await load.apply(predictor, df)
         assert (result.loc[:LAST_PUBLISHED, "residual_load"] == 33.0).all()
-        # the average of Timestral's 40 and the 33 of the tree models, fading to the tree models at the end
+        # Timestral's 40 right after the last published figure, the average with the 33 of the tree models from a
+        # day later on, and the tree models alone at the end
         after = result.loc[LAST_PUBLISHED + SLOT:, "residual_load"].to_numpy()
         steady = TimestralLoad.HORIZON - TimestralLoad.FADE_OUT
-        assert after[:steady + 1] == pytest.approx(36.5)
+        assert after[0] == pytest.approx(40.0)
+        assert after[TimestralLoad.LEAD // 2] == pytest.approx(38.25)
+        assert (np.diff(after[:TimestralLoad.LEAD + 1]) < 0).all()
+        assert after[TimestralLoad.LEAD:steady + 1] == pytest.approx(36.5)
         assert (np.diff(after[steady:TimestralLoad.HORIZON]) < 0).all()
-        assert after[TimestralLoad.HORIZON - 1] < 33.1
         assert (after[TimestralLoad.HORIZON:] == 33.0).all()
 
         # without a forecast of the tree models, Timestral's stands alone
@@ -150,7 +153,7 @@ class TestTimestralLoad:
         timestral = load.timestral
         assert (await timestral.inputs(predictor, index[0], index[-1]))["residual_load"].eq(33.0).all()
         timestral.load = load
-        assert (await timestral.inputs(predictor, index[0], index[-1])).loc[LAST_PUBLISHED + SLOT, "residual_load"] == 36.5
+        assert (await timestral.inputs(predictor, index[0], index[-1])).loc[LAST_PUBLISHED + SLOT, "residual_load"] == 40.0
 
     @pytest.mark.asyncio
     async def test_comparison_for_the_log(self, region):

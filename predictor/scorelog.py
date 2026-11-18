@@ -92,6 +92,11 @@ def main(datadir: str, zone: str = "DE_LU") -> str:
         residual = published["tso_load"] - published["tso_wind"] - published["tso_solar"]
         log = ForecastLog.read(path)
         log["average"] = 0.5 * (log["trees"] + log["timestral"])
+        # what the application uses (see timestralload.py), counted from each issue's last published figure
+        from .model.timestralload import TimestralLoad
+        ahead = ((log["time"] - log["last_known"]) / pd.Timedelta(minutes=15)).round().astype(int) - 1
+        weight = TimestralLoad.weights(int(ahead.max()) + 1)[ahead.to_numpy()]
+        log["used"] = weight * log["timestral"] + (1.0 - weight) * log["trees"]
         out.append(report("Residual load forecast, mean absolute error", "GW", score(log, residual)))
     return "\n\n".join(out)
 

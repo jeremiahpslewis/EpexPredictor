@@ -6,12 +6,14 @@ the time after that, residualload.py reads the three figures off the weather for
 Timestral continues the three published series, jointly, with a few aggregates of the same weather forecast as
 inputs known for the future. It starts from the last published level, which the tree models do not know.
 
-Neither of the two is the better one throughout, and they make different mistakes, so their average is used. In
-two backtests in autumn it lowered the error of the tree models' residual load: by 26 % over the first day after
-the last published figure and by 20 % in the 14 hours after that when both had a weather forecast as old as it is
-in live operation (66 days), and by 9 % over the first day, with no change on the second, when the tree models
-had the weather almost as it turned out (40 days, the data of this application). Timestral alone was better than
-the tree models in the first of the two and worse on the second day in the other.
+Right after the last published figure Timestral is the better of the two, later neither is, and they make
+different mistakes. So the two are mixed: Timestral alone at the last published figure, half and half from a day
+later on, with a linear change in between. In backtests of three seasons (146 days, forecasts made at midnight
+for the day that follows) this was better than either alone and than a plain average where it matters most for
+the price forecast, in the night hours: against the plain average, the price forecast's error at night was 8 %
+lower in winter and 4 % lower in summer, and unchanged in autumn, with no clear change over the whole day. How
+much weight the tree models deserve depends on how old their weather forecast is, which the backtests could only
+approximate - the log of both forecasts (see priceapi.py) shows it for live operation.
 
 Used by Timestral on the price (timestralblend.py) and by the market model (marketroute.py). The tree models of
 the price keep the residual load of residualload.py.
@@ -43,9 +45,12 @@ class TimestralLoad:
     CONTEXT = 8192
     # Quarter hours after the last published figure that Timestral is asked for (two and a half days, as backtested)
     HORIZON = 240
-    # Weight of Timestral against the tree models, and the quarter hours at the end of the horizon over which it
-    # falls to zero, so that there is no step where the tree models carry on alone
+    # Weight of Timestral against the tree models: START at the last published figure, falling to WEIGHT over the
+    # first LEAD quarter hours. Over the last FADE_OUT quarter hours of the horizon it falls to zero, so that there
+    # is no step where the tree models carry on alone.
+    START = 1.0
     WEIGHT = 0.5
+    LEAD = 96
     FADE_OUT = 48
     TARGETS = ResidualLoad.TARGETS
 
@@ -149,11 +154,13 @@ class TimestralLoad:
     @classmethod
     def weights(cls, slots: int) -> np.ndarray:
         """Weight of Timestral for each of the quarter hours after the last published figure"""
-        return cls.WEIGHT * np.clip((cls.HORIZON - np.arange(slots)) / cls.FADE_OUT, 0.0, 1.0)
+        ahead = np.arange(slots)
+        near = cls.START + (cls.WEIGHT - cls.START) * np.clip(ahead / cls.LEAD, 0.0, 1.0)
+        return near * np.clip((cls.HORIZON - ahead) / cls.FADE_OUT, 0.0, 1.0)
 
     async def apply(self, predictor: PricePredictor, df: pd.DataFrame) -> pd.DataFrame:
         """
-        df with its residual load after the last published figures averaged with this forecast, where there is one.
+        df with its residual load after the last published figures mixed with this forecast, where there is one.
         What is in df there is the forecast of the tree models.
         """
         if predictor.residual_load is None or ResidualLoad.FEATURE not in df.columns:
