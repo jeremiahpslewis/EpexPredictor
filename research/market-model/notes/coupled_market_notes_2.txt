@@ -3076,3 +3076,48 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   One day only, not a result: on 8 Nov the market route had MAE 1.16 ct and the price run 1.74 before fix (b).
   Forward-test hygiene: three things after 9 Nov were printed incidentally - one price (18 Nov 18:00, 20.989 ct), the mean price of
   November to date (23.9 ct) and daily means up to 9 Nov. None was scored or used for a choice.
+
+21.108 User: "yep keep going, build the timestral load forecast into the app". Built as predictor/model/timestralload.py: Timestral continues
+  the three published series (wind, solar, load) jointly, context 8192, covariates = the app's grid-weather aggregates (onshore all / north /
+  south, North Sea, Baltic, radiation all / south, temperature) + holiday, weekday categorical: the port of ts_gen0.py mode joint. Horizon 240
+  quarter hours after the last published figure; trees beyond. Used only by the two Timestral price routes (the consumers that were
+  backtested with it); the tree price models keep the tree load forecast.
+  Test in the app's own form before it becomes the default (apprun/load_bt.py): 40 cut-offs at 22:45 UTC, 28 Sep - 6 Nov 2026, published
+  figures hidden after the cut-off, trees retrained at each cut-off on what was published until then, same grid weather for both (the app's
+  stored weather is the near-current historical forecast, so both are flattered; the comparison is like for like, the levels are not live
+  levels). Scored: residual load against the published figure, day 1 (night = first 24 quarter hours, whole day) and day 2.
+  EXPECTED before running: Timestral below the trees on day 1 - night by 10-25%, whole day by 5-15%, intervals clear of zero; day 2 level
+  (within +-5%). Research at equal vintage had 1.38 against 1.59 GW at night (the 1.38 flagged as optimistic).
+  RULE: default on if day 1 whole day is clearly better and day 2 is not clearly worse; otherwise ship switched off.
+
+21.109 Load forecast in the app's form, result (apprun/load_bt.py, load_score.py; out/load_bt.npz). 40 cut-offs 28 Sep - 6 Nov, MAE GW,
+  trees / Timestral: day 1 night 1.31 / 0.97 (-26%, -0.55 .. -0.12, better on 27 of 40); day 1 whole 1.91 / 1.83 (-4%, -0.28 .. +0.14);
+  day 2 whole 2.02 / 2.34 (+16%, +0.06 .. +0.57, better on 13); first half of day 3 1.96 / 2.52 (+28%). Worst day: Timestral 6.0 against 3.7
+  (day 1). Bias Timestral +0.3 to +0.6 GW, trees +0.1 to +0.2. By hour after the last published figure: Timestral 0.42 against 1.12 in the
+  first hour, level from hour 6 to 18, worse from hour 24.
+  Against 21.108: night -10..-25%: MET (-26%). Day 1 whole -5..-15% clear: NOT MET (-4%, not clear). Day 2 level: NOT MET (clearly worse).
+  By the rule the plain replacement is NOT the default. Note the trees had flattering weather here (near-current vintage for both days).
+  The research result (Timestral much better than trees at 2-3-day-old weather) is a statement about stale weather, which the live app
+  does not have.
+  Two combinations, fixed before looking at them: (a) the plain average of the two; (b) hand-over: Timestral's weight falls linearly from 1
+  at the last published figure to 0 after 24 hours, trees beyond. EXPECTED: both better than trees on day 1 (night by 15-25%, whole day by
+  5-10%), (b) equal to trees on day 2 by construction, (a) level with trees on day 2. Rule: the better of the two on day 1 becomes the
+  default if clear of zero on the whole day 1 and not clearly worse on day 2; otherwise ship switched off.
+
+21.110 Combinations, result (load_score.py). Against the trees, MAE GW: (a) average: day 1 night 0.98 against 1.31 (-25%, -0.45 .. -0.21),
+  day 1 whole 1.73 against 1.91 (-9%, -0.30 .. -0.06), day 2 2.04 against 2.02 (+1%, not clear). (b) hand-over in 24 h: night 0.91 (-31%,
+  -0.60 .. -0.21), day 1 whole 1.73 (-9%, -0.28 .. -0.06, better on 30 of 40), day 2 identical by construction; worst day 4.3 (trees 3.7).
+  Against 21.109: both better on day 1 (night 15-25%: met or better; whole day 5-10%: met), day 2 level: met. By the rule (b) is the
+  default: same day-1 gain, better night, no day-2 risk.
+  Built: TimestralLoad.apply hands over linearly over 96 quarter hours after the last published figure; Timestral is still asked for 240
+  (as backtested). Used by the two Timestral price routes only. EPEXPREDICTOR_TIMESTRAL_LOAD=false switches it off. Both residual-load
+  forecasts are logged to loadforecastlog_DE_LU.csv.gz (separate file, so the forecast log's columns stay as deployed).
+  End-to-end in the real app at a pretend cut-off 7 Nov 22:45 for prices and published figures (apprun/debug_run2.py): load run 18 s, the
+  handed-over residual load reaches both price forecasters, second day equal to the trees, three-way mix a third each, both logs written
+  and read back; peak memory 2.9 GB. One day, not a result: residual-load MAE day 1 2.55 (trees) against 2.10 (handed over).
+  NOT tested: the effect on the price forecast. When it applies: the gain sits in the first 24 hours after the last published figure, so
+  it reaches the price target (the day after the last known price) from the evening, when the figures for the next day are out, until
+  13:00 the next day, when new prices arrive; between 13:00 and the evening the target day is the second day after the last published
+  figure and gets the tree forecast as before.
+  Caveats: 40 autumn days, one season; both forecasts had the app's stored near-current weather, so the levels flatter both; the two
+  combinations were fixed before looking, but chosen after the plain replacement had failed its rule on the same 40 days.

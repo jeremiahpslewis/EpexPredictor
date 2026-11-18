@@ -49,6 +49,8 @@ class TimestralBlend:
     forecaster = None
     # the forecasts of the last blend, by name
     last_forecasts: dict[str, pd.Series] = {}
+    # optional: the forecast of the residual load that replaces the one of the tree models (see timestralload.py)
+    load = None
 
     def __init__(self, model_name: str, revision: str | None = None, residual_load: bool = True):
         self.model_name = model_name
@@ -123,6 +125,30 @@ class TimestralBlend:
             )
         return np.asarray(forecast.median)[0, 0]
 
+    def _forecast_series(self, series: np.ndarray, covariates: np.ndarray, weekday: np.ndarray) -> np.ndarray:
+        """Several series forecast jointly. series: one row per series; returns one row per series"""
+        import torch
+        from timestral import TimestralForecaster
+
+        if self.forecaster is None:
+            log.info(f"loading {self.model_name}, revision {self.revision or 'latest'}")
+            self.forecaster = TimestralForecaster.from_pretrained(self.model_name, revision=self.revision)
+        with torch.no_grad():
+            forecast = self.forecaster.forecast(
+                series[None],
+                prediction_length=covariates.shape[1] - series.shape[1],
+                known_covariates=covariates[None],
+                categorical_known_covariates=weekday[None, None, :],
+            )
+        return np.asarray(forecast.median)[0]
+
+    async def inputs(self, predictor: PricePredictor, start, end) -> pd.DataFrame | None:
+        """The input data of the region, with the residual load forecast of Timestral where that is switched on"""
+        df = await predictor.prepare_dataframe(start, end)
+        if df is not None and self.load is not None:
+            df = await self.load.apply(predictor, df)
+        return df
+
     async def forecast(self, predictor: PricePredictor) -> pd.Series | None:
         """
         Forecast for the quarter hours after the last known price, or None if it cannot be made.
@@ -134,7 +160,7 @@ class TimestralBlend:
             return None
 
         first = last_known + SLOT
-        df = await predictor.prepare_dataframe(first - self.CONTEXT * SLOT, last_known + self.HORIZON * SLOT)
+        df = await self.inputs(predictor, first - self.CONTEXT * SLOT, last_known + self.HORIZON * SLOT)
         if df is None:
             return None
         history, future = df.loc[:last_known], df.loc[first:]

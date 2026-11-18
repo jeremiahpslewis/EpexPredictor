@@ -24,4 +24,5 @@ services:
       # requirements-timestral.txt in the image (see README).
       # - EPEXPREDICTOR_TIMESTRAL_MODEL=mistralai/Timestral-123M
       # - EPEXPREDICTOR_MARKET_MODEL=false
+      # - EPEXPREDICTOR_TIMESTRAL_LOAD=false
 

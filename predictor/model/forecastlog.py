@@ -25,12 +25,16 @@ class ForecastLog:
     path: str | None
     last_issue: tuple[pd.Timestamp, pd.Timestamp] | None = None
 
-    def __init__(self, storage_dir: str | None, zone: str):
-        self.path = os.path.join(storage_dir, f"forecastlog_{zone}.csv.gz") if storage_dir else None
+    def __init__(self, storage_dir: str | None, zone: str, name: str = "forecastlog", forecasts: tuple[str, ...] | None = None):
+        """name: start of the file name. forecasts: the columns of the file, if not the ones of the price forecast"""
+        self.path = os.path.join(storage_dir, f"{name}_{zone}.csv.gz") if storage_dir else None
+        if forecasts is not None:
+            self.FORECASTS = forecasts
 
     def append(self, last_known: datetime, columns: dict[str, pd.Series], issued: datetime | None = None) -> bool:
         """
-        Add one issue. columns: forecast prices [ct/kWh] by name, indexed by time. Returns whether it was written.
+        Add one issue. columns: forecasts by name, indexed by time. last_known: the last time with a known value;
+        what comes after it is logged. Returns whether it was written.
         A failure is logged and never stops the forecast.
         """
         if self.path is None:

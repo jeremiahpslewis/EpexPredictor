@@ -92,7 +92,7 @@ class MarketRoute:
             return None
 
         first = last_known + SLOT
-        df = await predictor.prepare_dataframe(first - self.CONTEXT * SLOT, last_known + self.HORIZON * SLOT)
+        df = await self.timestral.inputs(predictor, first - self.CONTEXT * SLOT, last_known + self.HORIZON * SLOT)
         if df is None or self.RESIDUAL_LOAD not in df.columns or self.GAS_PRICE not in df.columns:
             return None
         history, future = df.loc[:last_known], df.loc[first:]
