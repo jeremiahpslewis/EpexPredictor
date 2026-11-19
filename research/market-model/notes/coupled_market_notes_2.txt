@@ -3551,3 +3551,9 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   curves, and Timestral following the shift, level included), which is why it did not break in 2026. What it lacks is the split made
   explicit: a core forecast that can stand without Timestral, and a check that prices are inside the fitted range. Figure:
   out/durable2.png.
+
+21.140 User: "you can have 4gb ram" (for the application's container). Measured on the real service (apprun/run_live.py, live_data, no
+  ENTSO-E key), resident memory sampled every 2 s: after loading and training the base models of 8 regions 2.1-2.4 GB; with the Timestral
+  model loaded and its three runs for Germany 3.0-3.1 GB; all eight regions requested: 3.11 GB; two evaluation plots on top: 3.25 GB.
+  A second run with three regions and one evaluation plot peaked at 3.41 GB. So 4 GB holds with 0.6-0.75 GB to spare; an ENTSO-E key
+  adds data and was not measured. README and proxmox/switch-branch.sh now say so (the script notes below 3.9 GB instead of 5.5 GB).
