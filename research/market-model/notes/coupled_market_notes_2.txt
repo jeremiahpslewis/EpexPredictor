@@ -3269,3 +3269,52 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   trees had fresher weather. Four forms were looked at on the same sets (replacement, hand-over, average, lead-weighted); each was fixed
   before it was scored, but the sequence was driven by results. No further form is to be tested on these sets. The live log
   (loadforecastlog; python -m predictor.scorelog now also scores the weighting in use) is the test that counts.
+
+21.122 User: "ok where is structural model in all of this?" -> answer: the curves are a change of coordinates around a black box; the shift
+  is the one place with known, unused structure (multi-day commitment level, within-hour sawtooth). User: "Try it".
+  Step 0, no new runs: where is the error of the existing shift forecast (slim route, Timestral)? Split the shift forecast error of each
+  target day into (a) the daily mean (level; what a commitment state would have to forecast), (b) the hourly profile around it, (c) the
+  quarter-hour pattern within the hour (sawtooth). All five used sets.
+  EXPECTED before looking: level about half of the squared error (45-60%), hourly profile 30-45%, within-hour 5-10%.
+
+21.123 Step 0 result (exp/shift_decomp.py). Share of the squared shift-forecast error, all five sets: level 35%, hourly profile within the
+  day 55%, within hour 10% (per set 33-46 / 44-57 / 9-11). Against 21.122: level 45-60%: NOT MET (35%); profile 30-45%: higher (55%);
+  within hour 5-10%: met. So the claim made to the user ("the shift moves with multi-day commitment") names the smaller part. Level MAE:
+  Timestral 2.2-2.6 GW against 3.0-3.9 for yesterday's level. Within-hour part: Timestral's forecast is too flat (sd 1.5-2.6 against
+  1.9-3.3 true) with correlation 0.68-0.81.
+  Step 1, still no new runs: a structural form for each part, fitted on the 56 days before each issue only, against Timestral's forecast
+  of the same part, and the hybrid that swaps a part in:
+    within hour:  u_qh - mean_hour(u) = b * (x_qh - mean_hour(x)), x = demand: supply follows the hourly product, not the quarter hour.
+    hourly profile: mean_hour(u) - mean_day(u) = k_h + l * (mean_hour(x) - mean_day(x)): plant does not follow the daily swing fully.
+    level: mean_day(u) = a + r * yesterday's level + g * (mean_day(x) - yesterday's mean_day(x)) + weekend step.
+  EXPECTED: within hour - the structural form beats Timestral's (error of that part down 10-25%); profile - the structural form alone is
+  worse than Timestral's, their average level or slightly better (0-5%); level - structural worse than Timestral (5-15%), average level.
+  Whole shift error with the best hybrid down by 2-5%. If a hybrid lowers the whole shift error by 3% or more in at least four of five
+  sets, it goes on to the price test; otherwise the result is that Timestral already has this structure, and that is reported.
+
+21.124 Step 1 result (exp/shift_struct.py). Each structural form against Timestral's forecast of the same part, RMSE, five sets:
+  level +6 / +15 / +25 / +39 / +22% (worse); hourly profile +25 / +29 / +15 / +18 / +23% (worse); within hour +15 / +23 / +9 / +13 / +19%
+  (worse). Averages with Timestral's: level -2 .. +12%, profile -2 .. +9%, within hour -2 .. +6%. Whole shift error with the best hybrid
+  -1.1% at best (autumn), worse in the other sets. Coefficients: within hour b about -2 (winter, summer), -1 (autumn); profile slope l
+  about 0 (the shift's hourly profile does not follow the demand swing); level r 0.5-0.6.
+  Against 21.123: "within hour - structural beats Timestral by 10-25%": WRONG, it is worse by 9-23%. Profile and level: structural worse,
+  as expected, but the averages do not help either. Rule (3% in four of five sets): NOT MET. Timestral already forecasts these three
+  parts better than the linear state forms; nothing goes to the price test.
+  One more question before closing this: is what Timestral gets wrong predictable from what is known at the issue but not given to it?
+  It sees only the residual load. The curves also see only the residual load, so the COMPOSITION (how much of it is solar, wind, load) is
+  in neither. Structural reason it could matter: solar and wind are must-take with their own price floor behaviour, and a low residual
+  load from high solar is a different market than one from low load. Check without new runs: regress Timestral's shift-forecast error on
+  the forecast solar, wind and load (deviations from the residual load's own effect), out of sample by blocks within each set.
+  EXPECTED: out-of-sample R2 of the error 2-8% in the summer sets, about 0 in winter. If it is 3% or more in at least three sets, one
+  Timestral run per set with solar and wind as further covariates is the test; otherwise closed.
+
+21.125 Composition check, result (exp/shift_comp.py). Out-of-sample R2 of Timestral's shift error from the forecast residual load, solar
+  and wind: winter -14%, summer +6.7% (residual load alone +5.1%), autumn -5%, fresh winter -2%, fresh summer -7%. Against 21.124:
+  2-8% in the summer sets: one of two; rule (3% in three sets): NOT MET. Closed: the error is not predictable from the composition.
+  SUMMARY of "structure in the shift" (21.122-21.125): the shift forecast's error is 35% daily level, 55% hourly profile, 10% within hour.
+  Linear state forms for each part, fitted on the 56 days before the issue, are worse than Timestral on every part in every set; mixing
+  them in does not help; the error is not predictable from the solar / wind / load mix. With an 85-day context and the demand forecast as
+  input, Timestral already uses whatever regularity these forms describe. Nothing was built into the application.
+  What this does not rule out: structure that needs data the model does not see (plant outages and availability, the neighbours'
+  schedules after the auction, intraday state). The earlier tests of neighbours and lagged schedules (21.55, fresh set C) found no gain
+  there either. Figure: out/shift_structure.png.
