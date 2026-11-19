@@ -3468,3 +3468,86 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   absorbs it and Timestral follows the shift - which is the sponge doing the structure's job. A durable core would need: hard coal's cost
   from the coal price, the import block tied to something that moves (the neighbours' fuel mix and capacities, or at least a trend
   state), and a refit or a check of the price range. Figure: out/durable.png.
+
+21.134 User: "Keep work". Next: make the core more durable, largest aging part first - the import block (drift -2.3 GW a year).
+  Step 1, description: by half year, the flow on each border, the German price minus each neighbour's price, French nuclear output.
+  Step 2, a candidate law with a physical reason to last: flows follow price differences up to the line capacity. Net imports =
+  a + sum over borders of b_c * tanh((p_DE - p_c) / w) fitted on the FIRST YEAR only (Mar 2024 - Feb 2025) and frozen; against the
+  current import curve (a function of the German price over the gas cost index only) in the same frozen test. Note the neighbours'
+  prices are not known ahead - this tests the law's durability, not yet a forecast.
+  EXPECTED: the drift sits in two or three borders (France, Switzerland, Denmark or the Netherlands); the German price has fallen
+  relative to the neighbours' by 5-15 EUR/MWh; the frozen spread law leaves a residual drift below 1.5 GW by 2026 H2 (the current curve:
+  -5.7 from first to last half year) and explains 50-70% of the hourly variance of net imports out of sample (current curve: 10-30%).
+
+21.135 Imports, result (exp/durable_imports.py). By half year 2024 H1 .. 2026 H2: net imports 4.2, 3.9, 2.2, 2.8, 0.3, -0.5 GW; the fall is on the
+  French (1.9 -> 0.5), Danish (1.2 -> 0.5), Swiss (0.9 -> -0.3) and Austrian (-0.5 -> -1.4) borders. German price minus the neighbour's:
+  Austria +2 -> -28 EUR/MWh, Switzerland +6 -> -25, France +30 -> +5; the German price over the gas cost index stayed 0.84-1.00. So the
+  current curve's variable did not move while the thing flows respond to did.
+  Frozen test, fitted on the first year only. Residual drift (actual minus law) by half year: current form +1.1, +0.3, -1.0, -1.4, -3.3,
+  -4.0; spread law -0.7, +0.3, -0.4, -0.4, -2.1, -1.4. Hourly variance of net imports explained out of sample: current form 45, 40, 14,
+  12% (2025 H1 .. 2026 H2); spread law 56, 60, 42, 46%. Against 21.134: drift below 1.5 GW by 2026 H2: met (-1.4; 2026 H1 -2.1 not);
+  50-70% explained: 2025 yes, 2026 slightly below. Borders: as expected (France, Switzerland, Denmark; also Austria). What is left of the
+  drift is on the Danish (-1.1) and French (-0.4 .. -0.9) borders - line capacity or availability, which the law does not have.
+  The law needs the neighbours' prices, which are not known ahead. Split by durability: the law (flows follow the price difference, with
+  frozen coefficients) is the durable part; how expensive each neighbour is relative to the gas cost is a slow state.
+  Test: the frozen law fed with each neighbour's price projected as (gas cost index) x (that neighbour's price over the index at the
+  same hour of day, mean of the previous 7 days) - known at the issue. German price as observed (in use it is solved for).
+  EXPECTED: residual drift within 2 GW in every half year; 30-45% of the hourly variance explained in 2026 (between the current form's
+  12-14% and the 42-46% with the neighbours' actual prices).
+
+21.136 Frozen law with the neighbours' prices projected from the previous week: residual drift -0.6, -0.1, -0.8, -0.4, -2.5, -2.4 (better
+  than the current form's -3.3, -4.0, worse than with actual prices), but the hourly variance explained is about zero (5, 1, -3, -2, -1,
+  -26%): the projected prices are off by 22-38 EUR/MWh, because a neighbour's price moves hour by hour with its own wind, sun and load.
+  Against 21.135: drift within 2 GW: not in 2026 (-2.5, -2.4); 30-45% explained: NOT MET (about 0).
+  So the level of the neighbours is a slow state, but their hourly price is not: it needs each neighbour's own supply and demand. That is
+  the coupled model. Minimal form, to see whether it is durable: each neighbour's price over the gas cost index as a smooth curve of its
+  own published residual load, fitted on the first year only; then the frozen spread law fed with those prices.
+  EXPECTED: the neighbours' curves explain 40-60% of their price in the first year and less later, with a level drift for Austria and
+  Switzerland in 2026 of +10 to +25 EUR/MWh; the import law fed with them explains 20-35% of net imports in 2025 and 10-25% in 2026,
+  with a drift like the projected one (about -2.4).
+
+21.137 Minimal coupled form, result. Neighbours' own curves (price over the gas cost index from own residual load, first-year fit, frozen):
+  variance explained 40-70% through 2025 for most, but the level runs away in 2026 H2: France +66 EUR/MWh (nuclear output 43.5 -> 37.2 GW),
+  Belgium +43, Switzerland +39, Austria +36, Denmark +19, Netherlands +13. The import law fed with them: 40, 41, 17, 5, 20, -72% explained,
+  drift -3.2, -3.4, -7.4 from 2025 H2. Against 21.136: neighbours' curves 40-60% then less: yes; level drift +10-25 for Austria and
+  Switzerland: larger and everywhere; imports 20-35% / 10-25%: NOT MET in 2025 H2 and 2026 H2.
+  Pattern across everything measured today: SHAPES last, LEVELS do not. The import law's coefficients, the neighbours' price response to
+  their residual load, the German hour-of-day shape and the gas block last two years frozen. The levels (how expensive a country is
+  relative to gas, the lignite and coal positions, the net import level) move with slow states the model does not have (nuclear
+  availability, hydro, coal price).
+  Design this suggests: frozen laws for the shapes + a slow level state per country read off the recent past + the fast layer for
+  Timestral. Test for imports: each neighbour's price = frozen curve of its residual load x gas cost index + its mean error over days 2
+  to 8 before (the slow state, known at the issue); fed to the frozen spread law.
+  EXPECTED: 30-45% of the hourly variance of net imports explained in every half year including 2026; drift within 2 GW everywhere.
+
+21.138 Frozen shapes + slow level states, result (net imports, hourly variance explained by half year 2024 H1 .. 2026 H2):
+    spread law, neighbours = frozen curve + their level of last week     46  35  32  42  30  41   drift -0.6 .. -2.8 GW
+    the same + the law's own level of last week                          40  35  36  42  48  47   drift within 0.2 GW
+    CONTROL: the current import form (first-year fit) + its own level    54  58  48  52  47  43   drift within 0.25 GW
+    (current form frozen, no level state: 51 38 45 40 14 12; spread law with the neighbours' actual prices: 54 64 56 60 42 46)
+  Against 21.137: 30-45% in every half year: MET (30-46); drift within 2 GW: not in 2026 without the law's own level state.
+  The control is the finding: once a slow level state is allowed, the simple import curve does as well as the coupled law that needs
+  eight neighbour prices. The level state does the work; which shape law is used matters little for imports.
+  And for clearing the market, level states per block add up to one number: the recent mean of the shift. That is C0 of the ledger
+  (21.127). So "frozen shapes + one slow level state" already exists as a model: the curves plus the 7-day mean of the shift.
+  D5, the durability of that model: price error by quarter over 2.7 years, relative to the price level, for (a) curves + frozen shift
+  profile (D1), (b) curves + the mean shift of the 7 days before, (c) as (b) plus the first year's hour-of-day shape of the shift.
+  EXPECTED: (b) stays at 14-19% of the price level in every quarter including the last two (where (a) goes to 36% and 27%); (c) is
+  better than (b) by 1-2 points through 2025 and equal after.
+
+21.139 D5, result (exp/durable5.py). Price error as a share of the mean price, by quarter 2024 Q1 .. 2026 Q4:
+    (a) curves + frozen shift profile            21 18 18 20 15 21 18 18 16 26 36 27
+    (b) curves + level of the last 7 days        19 21 21 18 13 26 19 15 14 22 15 14
+    (c) (b) + the first year's hour-of-day shape 19 18 17 18 13 22 16 16 14 21 15 16
+  In ct: (c) 1.2-2.0 until mid 2026, then 1.9 and 3.0 at prices of 12.6 and 18.7 ct. Against 21.138: (b) at 14-19% in every quarter:
+  mostly (13-22, one spring quarter 26); (c) better through 2025 by 1-2 points: by 2-4; equal after: yes.
+  RESULT of the durability work: frozen curves + a frozen hour-of-day shape of the shift (both fitted once, the shape on the first year
+  only) + ONE slow level state hold their relative accuracy for 2.7 years, through a doubling of the price level. Without the level
+  state the same frozen structure loses half its accuracy in the last two quarters. So the durable layer is "shapes"; the one thing that
+  must be allowed to move is a level, and a week of history is enough to place it.
+  For imports specifically (21.135-21.138): a price-difference law is the more durable shape (frozen two years: 42-60% of the hourly
+  variance against 12-45% for the current form), but it needs the neighbours' prices; with a level state the current form does as well.
+  Not built into the application. What this says about the application: its market route already has this split in effect (frozen
+  curves, and Timestral following the shift, level included), which is why it did not break in 2026. What it lacks is the split made
+  explicit: a core forecast that can stand without Timestral, and a check that prices are inside the fitted range. Figure:
+  out/durable2.png.
