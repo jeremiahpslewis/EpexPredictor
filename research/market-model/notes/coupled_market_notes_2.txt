@@ -3418,3 +3418,53 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
       (level at night in four of five sets, whole day within noise in four of five) but is the weaker core.
     - Part of the cost is a known defect (breaks in the core at midnight); the fresh-summer whole day is not explained.
   Nothing is built into the application. Figure: out/core_ledger.png.
+
+21.132 User: "Idea is that the structural layer should be more durable across time." This is a criterion that 21.126-21.131 did not measure, and
+  it reclassifies them: the state core (usual level from the last days, carry-over) is short memory, re-learned every few days - a faster
+  sponge, not a durable layer. Durable = fixed meaning and coefficients that hold: the supply curves (fitted once, Mar 2024 - Nov 2025) and
+  any term of the shift whose coefficient is stable over time.
+  Durability measurements, no new model runs, on all 2.7 years (Mar 2024 - Nov 2026; the last twelve months are after the fit window):
+    D1  How the curves age: the shift by month (mean, spread) for the full model (carbon, other plant, neighbours as fitted) - a durable
+        curve leaves a shift that stays centred; and the price error of the curves with a shift profile frozen at the fit window's
+        average (by hour of day, working day / weekend), by month.
+    D2  Are the static terms of the shift stable? Hour-of-day profile, within-hour response, demand-level response fitted per quarter of
+        a year.
+    D3  Frozen against refitted: the static core fitted on the first twelve months only and never again, against the same core refitted
+        on the trailing 85 days, by quarter: share of the shift's variance explained out of sample.
+    D4  What in the curves is aging: the highest output each fuel reaches per quarter (a proxy for available capacity) against the
+        capacities the model assumes (18 / 12 / 33 GW).
+  EXPECTED before looking: D1 - the monthly mean shift drifts by 3-6 GW over the period and the frozen-profile price error is 20-40%
+  higher after the fit window than inside it. D2 - hour-of-day profile changes with season (correlation between quarters 0.5-0.8), the
+  within-hour response varies by a factor of two, the demand-level response is stable. D3 - the frozen core explains 15-25% in the first
+  year and 0-10% in the last. D4 - coal's top output has fallen by 2-4 GW since 2024, lignite by 1-2, gas unchanged.
+
+21.133 Durability, results (exp/durable.py, durable_blocks.py; out/durable.npz, durable_blocks.csv).
+  D1 The shift does not stay centred. Full model, mean by half year: 0.0, -0.2, +2.4, -2.0 (fit window), -0.8, -9.4 GW (2026 H1, H2);
+     lowest month -12.8 (Aug 2026). The slim model the same (-9.6 in 2026 H2). Curves with the shift profile frozen at the fit window:
+     price MAE 1.56 ct in the fit window, 3.01 in the twelve months after (+92%; 18% and 26% of the price level); by quarter 1.2-2.1 until
+     2026 Q1, then 2.5, 4.6, 5.1. The break comes with the price rise of 2026 (gas 31-44 EUR/MWh until mid 2026, 71 in H2; price 144).
+     Expected drift 3-6 GW and +20-40%: both larger.
+  D2 Static terms per quarter: the within-hour response is not comparable before Oct 2025 (hourly prices, coefficient 1 by construction),
+     after that -3.0, -1.9, -1.9, -1.1, -0.7: not stable. Demand-level response 0.0-0.4, mostly 0.1-0.2: fairly stable. Hour-of-day profile:
+     correlation between quarters median 0.64, with the first year's profile 0.65-0.93: a stable shape with seasonal change.
+  D3 Share of the shift's variance explained out of sample, frozen at the first year / frozen shape with the quarter's own level /
+     refitted on the trailing 85 days: 2024 Q2-Q3 40 / 41 / 35; 2025 Q2 45 / 46 / 54; from 2025 Q4 on -44 .. -468 / -62 .. +10 / -10 .. +21.
+     The frozen shape is as good as the refitted one through the first 18 months; after that neither explains much, and the frozen level
+     is far off. Expected 15-25% then 0-10%: better early, worse late.
+  D4 Top output per quarter: lignite 11-13.5 GW (17 only in 2024 Q1), hard coal 4-8, gas 8-17 - no fall since 2024. Expected falls: WRONG.
+     The model's own top outputs (capacity times its shares) are 11.4, 6.3, 13.6, in line.
+  Which block ages (actual output minus the curve at the observed price, mean by half year 2024 H1 .. 2026 H2, GW):
+     net imports  +1.7  +0.1  -0.6  -2.4  -3.5  -4.0   a trend of about -2.3 GW per year, already inside the fit window: Germany went from
+                                                        4 GW of net imports to none, the curve still says 3.5-5
+     lignite      +0.1  +0.3  -0.4  -0.1  -0.7  -1.5   the curve has lignite's cost as a constant plus carbon; at 144 EUR/MWh it says more
+     hard coal    -0.4  +0.1  +0.3  +0.2  +0.4  -1.3   output than there was. Hard coal the same, and its residual follows the gas price
+     gas          -0.2  +0.4  +1.4  +0.5  +2.2  +0.8   the one block whose cost moves with the regime: price over its cost stays 0.61-0.73
+     storage      constant offset (a definition), no drift
+     sum of the four: +1.1, +1.0, +0.8, -1.9, -1.6, -6.1.
+  (A monthly regression of the gas block's residual gave nonsense from one bad month and is not used.)
+  READING. Durable so far: the gas block (cost tied to the gas price), the shape of the hourly profile, the demand-level response. Not
+  durable: the import block (a drift the model has no variable for), and the lignite and hard-coal blocks once the price level leaves the
+  range of the fit (their costs are constants; hard coal has no coal price). The forecasts were not hurt by this because the shift
+  absorbs it and Timestral follows the shift - which is the sponge doing the structure's job. A durable core would need: hard coal's cost
+  from the coal price, the import block tied to something that moves (the neighbours' fuel mix and capacities, or at least a trend
+  state), and a refit or a check of the price range. Figure: out/durable.png.
