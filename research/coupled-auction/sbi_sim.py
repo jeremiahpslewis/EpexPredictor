@@ -1,4 +1,8 @@
-"""Simulate datasets of five synthetic days for amortised inference (notes 21.153). Writes sims.npz."""
+"""
+Simulate datasets of five synthetic days for amortised inference (notes 21.153, 21.155). Writes sims.npz, or OUTNAME.
+Env: SEED_OFFSET shifts the dataset index (fresh seeds: 1,000,000 cannot collide with the training range or the observed
+dataset); VOLUME_RULE picks the solver's volume rule (least_flow, max_ab, max_ba, none).
+"""
 import os, sys
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 from multiprocessing import Pool
@@ -8,6 +12,8 @@ import numpy as np
 import vslice as V
 
 FREE = ("markup", "netting", "flex_wtp"); DAYS = 5; info = V.Info()
+OFFSET = int(os.environ.get("SEED_OFFSET", 0)); RULE = os.environ.get("VOLUME_RULE", "least_flow")
+RULE = None if RULE == "none" else RULE
 TRUTH = V.draw_theta(np.random.default_rng(7))
 
 def summaries(theta, seed):
@@ -15,13 +21,14 @@ def summaries(theta, seed):
     for d in range(DAYS):
         day = V.draw_day(np.random.default_rng(seed * 100 + d), info)
         try:
-            m, acc, r = V.simulate(theta, day, info)
+            m, acc, r = V.simulate(theta, day, info, volume_rule=RULE)
         except Exception:
             return None
         out.append(np.r_[r.prices.reshape(2, 6, 16).mean(2).ravel(), r.f[0].reshape(6, 16).mean(1) / 100.0])
     return np.array(out)
 
 def one(i):
+    i += OFFSET
     rng = np.random.default_rng(10_000 + i); full = V.draw_theta(rng); th = dict(TRUTH)
     for k in FREE: th[k] = full[k]
     x = summaries(th, 50_000 + i)
@@ -33,5 +40,6 @@ if __name__ == "__main__":
         res = [r for r in pool.imap(one, range(n), chunksize=8) if r is not None]
     theta = np.array([r[0] for r in res]); x = np.array([r[1] for r in res])
     obs = summaries(TRUTH, 999_999)
-    np.savez_compressed(out / "sims.npz", theta=theta, x=x, obs=obs, truth=np.array([TRUTH[k] for k in FREE]), names=np.array(FREE))
-    print("simulated", len(res), "of", n, "datasets; x", x.shape, flush=True)
+    dropped = n - len(res)
+    np.savez_compressed(out / os.environ.get("OUTNAME", "sims.npz"), dropped=dropped, theta=theta, x=x, obs=obs, truth=np.array([TRUTH[k] for k in FREE]), names=np.array(FREE))
+    print("rule", RULE, "offset", OFFSET, "simulated", len(res), "of", n, "datasets; x", x.shape, flush=True)

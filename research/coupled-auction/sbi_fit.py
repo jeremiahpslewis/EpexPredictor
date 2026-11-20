@@ -22,6 +22,8 @@ hist = wf.fit_offline(fit, epochs=int(os.environ.get("EPOCHS", 300)), batch_size
 print("epochs run", len(hist.history["loss"]), "best val", round(float(min(hist.history["val_loss"])), 3), flush=True)
 loss = hist.history; print("final loss", round(float(loss["loss"][-1]), 3), "val", round(float(loss.get("val_loss", [np.nan])[-1]), 3), flush=True)
 
+# freeze: the trained estimator and its standardisation, scored later on fresh seeds without retraining (sbi_score.py)
+wf.estimator.save(D / "estimator.keras"); np.savez(D / "standardise.npz", mu=mu, sd=sd, names=np.array(names))
 post = wf.sample(conditions={"days": z(x[te])}, num_samples=1000)
 prior_var = theta[tr].var(0); res = {"n_train": int(len(x) - n_test - 300), "n_test": n_test, "params": {}}
 for i, nm in enumerate(names):

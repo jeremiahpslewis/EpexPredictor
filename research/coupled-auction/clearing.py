@@ -242,11 +242,18 @@ def price_determination(m: Market, x, a, f, target, only=None):
     return r.x[:nP].reshape(len(m.zones), T)
 
 
-def volumes_at_prices(m: Market, a, prices, tol=1e-6):
+def volumes_at_prices(m: Market, a, prices, tol=1e-6, rule="least_flow"):
     """
     Volume indeterminacy, after the prices: with the prices fixed, in-the-money orders are fully accepted, out-of-the-
-    money ones rejected, at-the-money ones free; among those volumes, the one with the least total absolute flow (a
-    stand-in for EUPHEMIA's flow-indeterminacy rule). Any such solution maximises surplus. Returns x and f, or None.
+    money ones rejected, at-the-money ones free. Any such solution maximises surplus; `rule` picks one:
+      "least_flow"  the least total absolute line flow (the default since notes 21.153)
+      "max_ab"      the most flow from each line's `frm` zone to its `to` zone (one extreme of the admissible set)
+      "max_ba"      the most flow the other way (the other extreme)
+    With one line between two zones the flow IS the net position of `frm`, so these rules choose accepted volumes of
+    at-the-money orders, not routes: this is EUPHEMIA's volume indeterminacy (section 7.9), not its flow indeterminacy,
+    which only arises in meshed networks. EUPHEMIA's public description maximises accepted volume and then fixes flows
+    by cost coefficients; the remaining split of at-the-money volume between zones is not published.
+    Returns x, or None.
     """
     no, nb, nl, T, n = _layout(m)
     Z = {z: i for i, z in enumerate(m.zones)}
@@ -263,7 +270,12 @@ def volumes_at_prices(m: Market, a, prices, tol=1e-6):
     nf = nl * T; f0 = no + 2 * nb
     if nf == 0:
         return None
-    A = _balance(m); A_eq = np.hstack([A, np.zeros((A.shape[0], nf))])
+    A = _balance(m)
+    if rule in ("max_ab", "max_ba"):
+        cvec = np.zeros(n); cvec[f0:f0 + nf] = -1.0 if rule == "max_ab" else 1.0
+        r = linprog(cvec, A_eq=A, b_eq=np.zeros(A.shape[0]), bounds=list(zip(lo, hi)), method="highs")
+        return r.x if r.success else None
+    A_eq = np.hstack([A, np.zeros((A.shape[0], nf))])
     G = np.zeros((2 * nf, n + nf))
     for i in range(nf): G[i, f0 + i], G[i, n + i] = 1.0, -1.0; G[nf + i, f0 + i], G[nf + i, n + i] = -1.0, -1.0
     r = linprog(np.r_[np.zeros(n), np.ones(nf)], A_ub=G, b_ub=np.zeros(2 * nf), A_eq=A_eq, b_eq=np.zeros(A.shape[0]),
@@ -271,7 +283,8 @@ def volumes_at_prices(m: Market, a, prices, tol=1e-6):
     return r.x[:n] if r.success else None
 
 
-def clear(m: Market, max_rounds=200, intervals=True) -> Result:
+def clear(m: Market, max_rounds=200, intervals=True, volume_rule="least_flow") -> Result:
+    """volume_rule: None keeps the surplus problem's own (arbitrary) vertex; otherwise see volumes_at_prices"""
     no, nb, nl, T, n = _layout(m)
     cuts, log = [], []
     for rnd in range(1, max_rounds + 1):
@@ -287,7 +300,7 @@ def clear(m: Market, max_rounds=200, intervals=True) -> Result:
         prices = price_determination(m, xx, a, xx, duals)
         if prices is None:
             cuts.append(y); log.append((y, "no valid prices (a block would be paradoxically accepted)")); continue
-        vol = volumes_at_prices(m, a, prices)
+        vol = volumes_at_prices(m, a, prices, rule=volume_rule) if volume_rule else None
         if vol is not None:
             xx = vol
         nP = len(m.zones) * T

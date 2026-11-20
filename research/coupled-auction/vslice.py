@@ -53,23 +53,31 @@ PRIORS = {  # theta, shared across days
 }
 
 
-def draw_theta(rng):
+# opt-in extension (notes 21.156): the mean forced-outage share of thermal plant becomes a parameter instead of fixed at
+# Beta(2, 30) (mean 0.0625). Kept out of PRIORS so that draws without it stay identical to the earlier runs.
+PRIORS_EXT = {"forced_mean": ("beta", 4.0, 56.0)}
+FORCED_CONC = 32.0                       # concentration of the day's forced-outage share around its mean
+
+
+def draw_theta(rng, extended=False):
     th = {}
-    for k, (kind, a, b) in PRIORS.items():
+    for k, (kind, a, b) in {**PRIORS, **(PRIORS_EXT if extended else {})}.items():
         th[k] = rng.normal(a, b) if kind == "normal" else (rng.lognormal(a, b) if kind == "lognormal" else rng.beta(a, b))
     return th
 
 
-def draw_day(rng, info: Info):
+def draw_day(rng, info: Info, theta=None):
     """phi_d: day-level shocks with persistence across quarters"""
     def ar1(sd, rho=0.97):
         x = np.zeros(T); x[0] = rng.normal(0, sd)
         for t in range(1, T): x[t] = rho * x[t - 1] + rng.normal(0, sd * np.sqrt(1 - rho ** 2))
         return x
+    fm = (theta or {}).get("forced_mean")
+    fb = (2.0, 30.0) if fm is None else (fm * FORCED_CONC, (1 - fm) * FORCED_CONC)
     return {"load_level": {z: rng.normal(0, 0.02) for z in info.load},                        # retailers' load expectation error
             "wind_err": {z: ar1(0.04) for z in info.wind_cf},                                  # bidders' wind view against the issue-time forecast
             "solar_err": {z: rng.normal(0, 0.05) for z in info.solar_cf},                      # cloudiness of the day
-            "forced": {z: {k: rng.beta(2, 30) for k in TECH[z] if len(TECH[z][k]) > 1} for z in TECH},  # forced outage share
+            "forced": {z: {k: rng.beta(*fb) for k in TECH[z] if len(TECH[z][k]) > 1} for z in TECH},  # forced outage share
             "markup_day": rng.normal(0, 1.0)}
 
 
@@ -169,10 +177,10 @@ def storage_path(m, r, acc, z):
     return soc, sell, buy
 
 
-def simulate(theta, day, info, intervals=False):
+def simulate(theta, day, info, intervals=False, volume_rule="least_flow"):
     """the whole draw: book without storage -> storage owners' price forecast -> full book -> clearing"""
     m0, _ = build_book(theta, day, info, storage=False)
-    r0 = clear(m0, intervals=False)
+    r0 = clear(m0, intervals=False, volume_rule=volume_rule)
     ep = {z: r0.prices[i] for i, z in enumerate(m0.zones)}
     m, acc = build_book(theta, day, info, storage=True, expected_prices=ep)
-    return m, acc, clear(m, intervals=intervals)
+    return m, acc, clear(m, intervals=intervals, volume_rule=volume_rule)

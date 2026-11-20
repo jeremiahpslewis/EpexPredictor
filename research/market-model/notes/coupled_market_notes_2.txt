@@ -3754,3 +3754,105 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   Against 21.153: netting not identified: MET; markup >= 0.5: MET; flex_wtp 0-0.3: NOT MET (0.64, better identified than expected);
   coverage 85-95%: MET (markup at the lower edge, slightly heavy upper tail); truth inside the observed 90% interval: MET for all three.
   Narrow check: 3 free parameters, others at truth; synthetic days from the model's own simulator; 2 zones.
+
+21.155 Relayed review 3 (ChatGPT) of 21.153-21.154. Points: (a) with one line the flow IS zone A's net position, so the
+  "flow indeterminacy" fix chooses accepted volumes, not routes; (b) markup coverage 0.85 on 400 sets has a binomial 95% interval
+  of about 0.81-0.88, and both trainings were scored on the SAME 400 held-out sets; (c) netting is a valid negative control;
+  (d) do not free everything at once: free markup, thermal availability and offered share together, show the joint posterior and
+  how the trade-off moves the counterfactuals; (e) run one historical public-data window through the observation pipeline.
+  CORRECTION to 21.153: the 594 MW was volume indeterminacy (EUPHEMIA 7.9.1-7.9.4), not flow indeterminacy (7.9.5, which only
+  arises in meshed networks: "multiple flow assignments ... identical net positions"). EUPHEMIA after prices: curtailment
+  minimisation, curtailment sharing, maximise accepted volume, merit order, then flows by cost coefficients; how equal-price
+  at-the-money volume is split between zones beyond that is not published.
+  Reproduced (vol_rule.py; out/vol_rule.json): the tie on the drawn day is the flexible-demand step bidding the SAME price
+  (flex_wtp) in both zones, at a quarter where the two zones' prices are equal (hour 15.5: both 41.69; at netting 0.05 A takes
+  376 MW of that step and B 0, at netting 0.5 A 254 and B 123; net position of A, i.e. flow, 468 vs 591 MW; least-flow rule
+  gives 468 in both). Partly a simulator artefact: real orders rarely tie exactly across zones. The 594 MW is the full width
+  of the admissible range at the widest quarter of the base day (7 quarters with any room; line binding 86 of 96).
+  Over 200 prior draws: 19% of quarters have an admissible flow range (median width 431 MW, 90% 956), 32% have equal
+  prices, 68% line binding. clearing.py: clear(volume_rule=None | least_flow | max_ab | max_ba); every rule passes audit and
+  gives identical prices; verify.py passes.
+  CORRECTION to 21.152 / the demo numbers quoted since: demo.json had been made BEFORE the netting fix. With the current code
+  the drawn day is: A mean 70.9, B 65.8 (was 25.1: B's low price came from netting moving prices); ATC 500: B 67.8 (+2.0, was
+  -11.3: B exports at night at hydro's water value, 86, and imports A's solar at midday, so the cut lowers B at night and
+  raises it at midday); gas 52: A 77.1; two books: ATC-500 change in B +2.0 (book 1) vs -0.0 (book 2), per quarter up to 49
+  vs 3 EUR/MWh. demo_fig.py titles now computed from the data.
+  Freeze and fresh seeds. Retrained sbi_fit.py exactly as before (same seeds; 44 epochs, best val 2.396 as in 21.154) and now
+  saved: estimator.keras + standardise.npz. Fresh datasets: SEED_OFFSET 1,000,000 (no overlap with training, held-out or the
+  observed set; old seeds checked to reproduce sims.npz exactly), 2,000 under least_flow and the same 2,000 under max_ab (the
+  extreme other admissible volume choice). No retuning after this.
+  EXPECTED (written before the runs): least_flow fresh: 90% coverage markup 0.83-0.90 (it was at the edge), netting and
+  flex_wtp 0.86-0.93; 50% and 80% coverage within 4 points of nominal; contraction as in 21.154 within 0.05.
+  max_ab vs least_flow, same seeds: price summaries identical; flow summaries differ in at most a fifth of the blocks;
+  posterior medians of markup move by less than 0.1 prior sd on 90% of datasets; flex_wtp may move more (the tied orders are
+  its own step) - up to 0.3 prior sd on some sets.
+
+21.156 Joint recovery design (sbi_sim2.py), written before the run. Free: markup, pi (offered share of available thermal),
+  forced_mean (new, opt-in: mean of the day's forced-outage share, prior Beta(4, 56), mean 0.067; day share ~
+  Beta(32 m, 32 (1 - m)); without the option the old Beta(2, 30) is used and old draws are unchanged). Offered thermal =
+  pi * (capacity - planned) * (1 - forced): pi and availability enter only as a product, so prices alone give a ridge.
+  Published unavailability is public (REMIT, ENTSO-E outages); withholding is not. Each day therefore also carries the thermal
+  available capacity per zone with 3% noise. Two fits on the same 5,000 datasets: with and without those two summaries.
+  pi and forced_mean are fitted on the logit scale (no draws outside [0, 1]).
+  EXPECTED. Without availability: markup contraction >= 0.6; pi and forced_mean each < 0.3; their posterior correlation on
+  the observed set positive and > 0.5 (the ridge: more withholding needs less outage). With availability: forced_mean >= 0.8,
+  pi >= 0.5, markup unchanged. Coverage 85-95% for all in both fits.
+  Counterfactuals (ATC 500 with the same orders: change in B's mean; gas 52 with bids regenerated: change in A's mean), common
+  day shocks, for prior draws, both posteriors and the truth: the posterior spread is smaller than the prior's; the ridge
+  (no availability) moves the gas effect by less than 1 EUR/MWh across the 90% posterior because the product is pinned;
+  both parameter spreads are smaller than the two-book difference on the demo day (2.0 EUR/MWh), which stays the larger
+  source of counterfactual uncertainty.
+
+21.157 Historical window, reconciliation and prior-predictive check (hist_window.py), written before the run. 14 delivery
+  days 15-28 Oct 2026 (quarter-hourly; clock-change day 25 Oct has 100 quarters and is skipped), 40 prior draws per day.
+  Zone A <- DE-LU public day-ahead inputs: ENTSO-E load forecast, wind (on + off) and solar day-ahead forecasts divided by
+  the slice's installed 70 / 100 GW, THE gas price last known at noon the day before (the app's store; it reads about 88
+  EUR/MWh in this window), carbon 75 as in the app's market route. Zone B is the synthetic neighbour, not a real zone.
+  Public quantities and their counterpart in the slice:
+    price DE-LU (observed)            <- zone A price                       compared
+    day-ahead net position DE-LU      <- minus the A->B flow, limited to +-1 GW   cannot match: real imports reach several GW
+    scheduled generation (14.1.C)     <- A's awards + self-served (netted) volume  compared
+    load, wind, solar forecasts       -> inputs
+    unavailability (REMIT/ENTSO-E)    -> not used here (planned outages fixed at the slice's 1 GW of coal)
+    order-level awards, aggregate curves -> not public (curves licensed); no counterpart
+  EXPECTED: prices inside the prior-predictive 90% band in 40-70% of quarters, worse at the solar hours (A's fixed 100 GW
+  solar against the real fleet) and in hours set by imports; median bias within +-30 EUR/MWh; observed |net position| above
+  1 GW in most quarters (the slice's line cannot carry the real imports); scheduled generation overstated by the model by 2-4 GW
+  on average because the missing imports must be generated inside A.
+
+21.158 Results of 21.155 (frozen estimator; sbi_score.py; out: fresh/score.json).
+  Freeze check: the reloaded estimator on the OLD 400 held-out sets: markup 90% coverage 0.845 (Wilson 0.81-0.88), netting
+  0.88, flex_wtp 0.88 - the 21.154 numbers up to posterior sampling. Its 80% coverage there: 0.74 / 0.77 / 0.80.
+  Fresh seeds, least_flow (2,000 sets, 0 dropped):
+              contraction  corr   cov50 (95% CI)        cov80 (95% CI)        cov90 (95% CI)        ranks (10 bins)
+    markup      0.93       0.96   0.457 (0.435-0.479)   0.751 (0.732-0.770)   0.858 (0.841-0.872)   214 176 163 177 184 177 184 219 223 283
+    netting     0.06      -0.02   0.456 (0.434-0.478)   0.758 (0.739-0.776)   0.884 (0.869-0.897)   214 234 209 203 181 159 165 188 181 266
+    flex_wtp    0.64       0.77   0.499 (0.477-0.521)   0.770 (0.752-0.788)   0.876 (0.861-0.890)   267 240 238 214 223 211 156 139 124 188
+  Against 21.155: markup 90% inside 0.83-0.90 MET (0.858) but the interval excludes 0.90: overconfident; netting, flex_wtp
+  0.86-0.93 MET; 50%/80% within 4 points: NOT MET for markup (-4.3, -4.9) and netting (-4.4, -4.2), MET for flex_wtp. All three
+  posteriors are a little too narrow; markup's truths pile up in the top rank bin (posterior too low when the markup is high);
+  flex_wtp's ranks fall from left to right (posterior biased upward: the observed set's 59.6 -> 71.4 is that bias). No retuning.
+  Other admissible volume rule (max_ab, same seeds): price summaries identical (max change 0.0); flow summaries changed in 29%
+  of blocks (up to 827 MW) - NOT MET (expected at most a fifth); posterior median shift in prior sd, median / 90% / max:
+  markup 0.018 / 0.053 / 0.20 (MET), netting 0.04 / 0.09 / 0.17, flex_wtp 0.09 / 0.25 / 1.03 (as expected, the tied orders
+  are its own step; a few sets move a whole prior sd); 90% coverage under the rule it was not trained on: markup 0.866,
+  netting 0.883, flex_wtp 0.844 (0.83-0.86). The volume rule is part of the observation model for anything read off flows.
+
+21.159 Results of 21.157 (hist_window.py, hist_fig.py; out: hist/hist_window.json, hist_window.png). Bug on the way: day
+  windows were 24 h, so 25 Oct (clock change, 100 quarters) was not skipped; fixed to calendar days; 13 days used.
+  price inside the prior-predictive 90% band 0.22 (by 4 h: 0.26 0.33 0.13 0.17 0.29 0.12), median bias +64.6 EUR/MWh (every
+  4-hour block +53 to +70), MAE to the median 65.0; observed |net position| > 1 GW in 89% of quarters, mean +2.4 GW (export),
+  range -13.4 to +17.8 GW; scheduled generation inside the band 0.36, observed above the slice by 3.7 GW on average.
+  Against 21.157: coverage 40-70% NOT MET (0.22); bias within +-30 NOT MET (+65, uniform across the day, not concentrated at
+  solar hours); net position outside +-1 GW MET; generation overstated by the slice by 2-4 GW WRONG SIGN: Germany exported in
+  this window, so observed generation is ABOVE the slice's by 3.7 GW.
+  Reading the picture: on most nights and low-wind days the slice's median sits on the coal step (~100) while DE-LU clears
+  near gas cost (180-200); on the windy days 23-26 Oct both are near zero. Two causes the slice cannot separate yet: (i) zone
+  A's coal and lignite (12 + 18 GW nominal, ~95% offered) are far more than what is actually available and bid in 2026, and
+  (ii) the real exports (5-10 GW at night) raise German demand at the margin; the slice's single 1 GW line to a 7 GW synthetic
+  neighbour cannot carry them. The scheduled-generation gap tracks the net position closely (e.g. 22 and 23-24 Oct). This
+  is a prior-predictive failure of the slice as a stand-in for DE-LU, as the review asked to report: it reproduces the
+  daily shape and the windy-day collapse, not the level, the net position or the generation mix. Next for the data side:
+  real neighbours (or one aggregate neighbour with a realistic supply curve and the published cross-zonal capacity), the
+  installed and available German fleet from the ENTSO-E unit data already downloaded (entsoe/units, unavail_gen_DE_LU),
+  and 14.1.C / net position as observations.
