@@ -88,48 +88,44 @@ def build_book(theta, day, info: Info, storage=True, expected_prices=None):
     for z in TECH:
         load = info.load[z] * (1 + day["load_level"][z])
         netted = theta["netting"] * load                                      # load served inside portfolios
-        # sell side: available MW per technology and quarter, then its split
-        avail = {}
+        avail, split, steps = {}, {}, []                                      # steps: [tech, t, q, p] period offers before netting
         for k, spec in TECH[z].items():
             if k == "wind": avail[k] = spec[0] * np.clip(info.wind_cf[z] + day["wind_err"][z], 0, 1)
             elif k == "solar": avail[k] = spec[0] * np.clip(info.solar_cf[z] * (1 + day["solar_err"][z]), 0, 1)
             else: avail[k] = np.full(T, (spec[0] - info.outages.get(z, {}).get(k, 0.0)) * (1 - day["forced"][z][k]))
-        # netting is served first from the cheapest available output, in merit order
-        order_k = sorted(avail, key=lambda k: -1e9 if k in ("wind", "solar") else cost(z, k, info))
-        remaining = netted.copy(); split = {}
-        for k in order_k:
-            n_k = np.minimum(avail[k], remaining); remaining = remaining - n_k
-            rest = avail[k] - n_k
+            # withholding and blocks apply to AVAILABLE capacity, before any netting (so netting cannot change them)
             if k in ("wind", "solar"):
-                split[k] = dict(netted=n_k, period=rest, block=np.zeros(T), unoffered=np.zeros(T))
+                offered, blk = avail[k], np.zeros(T)
             else:
-                offered = theta["pi"] * rest
-                blk = np.zeros(T)
-                if k in ("coal", "gas"):
-                    unit = theta["block_share"] * offered.min()                     # one block profile, the same MW in every peak quarter
-                    blk = np.where(PEAK, unit, 0.0)
-                split[k] = dict(netted=n_k, period=offered - blk, block=blk, unoffered=rest - offered)
-        acc[z] = dict(avail=avail, split=split, load=load, netted=netted, short=remaining)
-        # period sell orders
-        for k, s in split.items():
+                offered = theta["pi"] * avail[k]
+                blk = np.where(PEAK, theta["block_share"] * offered.min(), 0.0) if k in ("coal", "gas") else np.zeros(T)
+            split[k] = dict(netted=np.zeros(T), period=offered - blk, block=blk, unoffered=avail[k] - offered)
+            # the period offers of this technology as price steps
             if k in ("wind", "solar"):
-                for t in range(T):
-                    if s["period"][t] > 1e-6: orders.append(Order(z, t, "sell", float(s["period"][t]), -5.0 if k == "wind" else -1.0))
+                for t in range(T): steps.append([k, t, float(offered[t]), -5.0 if k == "wind" else -1.0])
                 continue
             c = cost(z, k, info) + theta["markup"] + day["markup_day"]
-            steps = [(-0.1, 0.3), (0.0, 0.4), (0.15, 0.3)] if k != "hydro" else [(0.0, 0.5), (0.6, 0.5)]
+            if k == "hydro": c = 0.8 * cost(z, "gas", info) if "gas" in TECH[z] else 50.0
+            ladder = [(0.0, 0.5), (0.6, 0.5)] if k == "hydro" else [(-0.1, 0.3), (0.0, 0.4), (0.15, 0.3)]
             for t in range(T):
-                q = s["period"][t]
-                if k == "lignite":    # must-run share at a negative price, the rest around cost
-                    if q * theta["mustrun"] > 1e-6: orders.append(Order(z, t, "sell", float(q * theta["mustrun"]), -20.0))
-                    q = q * (1 - theta["mustrun"])
-                if k == "hydro":      # water value: hydro offers near the gas cost of the zone
-                    c = 0.8 * cost(z, "gas", info) if "gas" in TECH[z] else 50.0
-                for dz, share in steps:
-                    if q * share > 1e-6: orders.append(Order(z, t, "sell", float(q * share), float(c * (1 + dz * theta["spread"] / 0.08 * 0.5))))
-            if s["block"].max() > 1e-6:   # peak block: running cost plus start cost spread over the block's energy
+                q = offered[t] - blk[t]
+                if k == "lignite":    # must-run share of offered lignite at a negative price
+                    steps.append([k, t, float(q * theta["mustrun"]), -20.0]); q = q * (1 - theta["mustrun"])
+                for dz, share in ladder: steps.append([k, t, float(q * share), float(c * (1 + dz * theta["spread"] / 0.08 * 0.5))])
+            if blk.max() > 1e-6:      # peak block: running cost plus start cost spread over the block's energy
                 hours = PEAK.sum() * DT
-                blocks.append(Block(f"{z} {k} peak block", z, "sell", float(c + theta["start_cost"] / hours), [float(v) for v in s["block"]], 1.0))
+                blocks.append(Block(f"{z} {k} peak block", z, "sell", float(c + theta["start_cost"] / hours), [float(v) for v in blk], 1.0))
+        # netting takes the cheapest period offers in each quarter (the deepest in the money), never block capacity
+        short = np.zeros(T)
+        for t in range(T):
+            need = netted[t]
+            for st in sorted([s_ for s_ in steps if s_[1] == t], key=lambda s_: s_[3]):
+                take = min(st[2], need); st[2] -= take; need -= take; split[st[0]]["netted"][t] += take; split[st[0]]["period"][t] -= take
+                if need <= 1e-9: break
+            short[t] = need
+        for k_, t, q, p_ in steps:
+            if q > 1e-6: orders.append(Order(z, t, "sell", q, p_))
+        acc[z] = dict(avail=avail, split=split, load=load, netted=netted, short=short)
         # buy side: price-taking load less netting, flexible demand
         for t in range(T):
             orders.append(Order(z, t, "buy", float(load[t] - netted[t] - theta["flex_share"] * load[t]), 4000.0))

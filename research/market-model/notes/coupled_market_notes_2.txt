@@ -3725,3 +3725,20 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
     with 3 days. Crude check; BayesFlow and more days before any recovery claim.
   - Bugs on the way: zero-quantity order read as rejected (forced price <= -20) -> no valid prices -> all selections cut; capacities of
     zone A far too low (52 GW load vs ~32 GW supply) -> fixed to the market model's.
+
+21.153 User: "keep going, fix netting and rerun with bayesflow".
+  Netting fix (vslice.py): withholding (pi), must-run share and blocks apply to AVAILABLE capacity before netting; netting then takes the
+  cheapest period offers in each quarter (the deepest in the money), never block capacity, and removes the same volume of price-taking
+  load. Check on the drawn day, netting 0.05 / 0.2 / 0.37 / 0.5: prices identical (max change 0.0000). Flows still moved by up to 594 MW
+  on uncongested quarters (flow indeterminacy: equal surplus, arbitrary vertex). Added a volume step after the prices (clearing.py
+  volumes_at_prices): with prices fixed, in-the-money orders accepted, out-of-the-money rejected, at-the-money free; least total absolute
+  flow among those (a stand-in for EUPHEMIA's flow-indeterminacy rule). Flows now identical too (0.000 MW). A first attempt (tie-break
+  inside the surplus LP with a surplus tolerance) broke price determination and was replaced. verify.py: all checks pass.
+  BayesFlow 2.1.0 (keras 3.15.1, JAX backend) installed in the research venv.
+  Recovery design (exp: research/coupled-auction/sbi_sim.py, sbi_fit.py): datasets of 5 days (independent day shocks), summaries per
+  day = mean price per zone in six 4-hour blocks + mean flow in six blocks (18 numbers), days as an exchangeable set (DeepSet summary
+  network), coupling-flow posterior. Free: markup, netting, flex_wtp from their priors; other parameters at their true values.
+  4,000 training datasets, 400 held-out for calibration, one "observed" dataset from the true parameters.
+  EXPECTED: netting not identified (posterior close to prior: mean contraction below 0.1 on the held-out set); markup identified
+  (contraction 0.5 or more); flex_wtp weak (0 to 0.3); 90% intervals cover 85-95% on the held-out set for all three; for the observed
+  dataset the truth inside the 90% interval for all three.

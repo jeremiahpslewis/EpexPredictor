@@ -152,14 +152,31 @@ def solve_master(m: Market, cuts=()):
     return r.x
 
 
-def surplus_lp(m: Market, a):
-    """economic surplus maximised with the block ratios fixed; returns x, f, welfare and the balance duals"""
+def surplus_lp(m: Market, a, tie_break=False):
+    """
+    economic surplus maximised with the block ratios fixed; returns x, f, welfare and the balance duals.
+    tie_break: among surplus-maximising solutions, the one with the least total absolute flow - a stand-in for
+    EUPHEMIA's flow-indeterminacy rule, so that flows on uncongested lines are determinate.
+    """
     no, nb, nl, T, n = _layout(m)
     lo, hi = _bounds(m, fix_a=a)
-    r = linprog(-_objective(m), A_eq=_balance(m), b_eq=np.zeros(len(m.zones) * T), bounds=list(zip(lo, hi)), method="highs")
+    c, A = _objective(m), _balance(m)
+    r = linprog(-c, A_eq=A, b_eq=np.zeros(len(m.zones) * T), bounds=list(zip(lo, hi)), method="highs")
     if not r.success:
         return None
-    return r.x, -r.fun, r.eqlin.marginals.reshape(len(m.zones), T)
+    w, duals, x = -r.fun, r.eqlin.marginals.reshape(len(m.zones), T), r.x
+    if tie_break and nl:
+        nf = nl * T; f0 = no + 2 * nb
+        # variables [x (n), g (nf)]; minimise sum g, g >= |f|, surplus >= w - tolerance
+        A_eq2 = np.hstack([A, np.zeros((A.shape[0], nf))])
+        G1 = np.zeros((nf, n + nf)); G2 = np.zeros((nf, n + nf))
+        for i in range(nf): G1[i, f0 + i], G1[i, n + i] = 1.0, -1.0; G2[i, f0 + i], G2[i, n + i] = -1.0, -1.0
+        S = np.r_[-c, np.zeros(nf)][None, :]
+        r2 = linprog(np.r_[np.zeros(n), np.ones(nf)], A_ub=np.vstack([G1, G2, S]), b_ub=np.r_[np.zeros(2 * nf), -w + 1e-7 * max(1.0, abs(w))],
+                     A_eq=A_eq2, b_eq=np.zeros(A.shape[0]), bounds=list(zip(lo, hi)) + [(0, None)] * nf, method="highs")
+        if r2.success:
+            x = r2.x[:n]
+    return x, w, duals
 
 
 def price_determination(m: Market, x, a, f, target, only=None):
@@ -225,6 +242,35 @@ def price_determination(m: Market, x, a, f, target, only=None):
     return r.x[:nP].reshape(len(m.zones), T)
 
 
+def volumes_at_prices(m: Market, a, prices, tol=1e-6):
+    """
+    Volume indeterminacy, after the prices: with the prices fixed, in-the-money orders are fully accepted, out-of-the-
+    money ones rejected, at-the-money ones free; among those volumes, the one with the least total absolute flow (a
+    stand-in for EUPHEMIA's flow-indeterminacy rule). Any such solution maximises surplus. Returns x and f, or None.
+    """
+    no, nb, nl, T, n = _layout(m)
+    Z = {z: i for i, z in enumerate(m.zones)}
+    lo, hi = _bounds(m, fix_a=a)
+    for j, o in enumerate(m.orders):
+        p = prices[Z[o.zone], o.t]
+        if (o.side == "buy" and o.p > p + tol) or (o.side == "sell" and o.p < p - tol): lo[j] = hi[j] = 1.0
+        elif (o.side == "buy" and o.p < p - tol) or (o.side == "sell" and o.p > p + tol): lo[j] = hi[j] = 0.0
+    for l, ln in enumerate(m.lines):
+        for t in range(T):
+            col = no + 2 * nb + l * T + t; d = prices[Z[ln.to], t] - prices[Z[ln.frm], t]
+            if d > tol: lo[col] = hi[col] = ln.cap_fwd[t]          # dearer on the receiving side: line full that way
+            elif d < -tol: lo[col] = hi[col] = -ln.cap_bwd[t]
+    nf = nl * T; f0 = no + 2 * nb
+    if nf == 0:
+        return None
+    A = _balance(m); A_eq = np.hstack([A, np.zeros((A.shape[0], nf))])
+    G = np.zeros((2 * nf, n + nf))
+    for i in range(nf): G[i, f0 + i], G[i, n + i] = 1.0, -1.0; G[nf + i, f0 + i], G[nf + i, n + i] = -1.0, -1.0
+    r = linprog(np.r_[np.zeros(n), np.ones(nf)], A_ub=G, b_ub=np.zeros(2 * nf), A_eq=A_eq, b_eq=np.zeros(A.shape[0]),
+                bounds=list(zip(lo, hi)) + [(0, None)] * nf, method="highs")
+    return r.x[:n] if r.success else None
+
+
 def clear(m: Market, max_rounds=200, intervals=True) -> Result:
     no, nb, nl, T, n = _layout(m)
     cuts, log = [], []
@@ -241,6 +287,9 @@ def clear(m: Market, max_rounds=200, intervals=True) -> Result:
         prices = price_determination(m, xx, a, xx, duals)
         if prices is None:
             cuts.append(y); log.append((y, "no valid prices (a block would be paradoxically accepted)")); continue
+        vol = volumes_at_prices(m, a, prices)
+        if vol is not None:
+            xx = vol
         nP = len(m.zones) * T
         if not intervals:
             return Result(w, xx[:no], a, xx[no + 2 * nb:].reshape(nl, T) if nl else np.zeros((0, T)), prices, rnd, log)
