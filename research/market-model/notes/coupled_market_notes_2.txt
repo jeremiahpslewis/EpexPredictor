@@ -3690,3 +3690,18 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   (2) Imports: neither p / L nor p / L_ref is right. The EUR form fixes the slope only with the old parameters; refitted it trades level
       against slope. The variable that holds is the price difference to the neighbours (21.135), which needs their prices: the coupled model.
   M1e is not used in the application and not proposed for it.
+
+21.151 User relayed a brief (ChatGPT): build a Bayesian generative model of the coupled day-ahead auction; first deliverable = mathematical
+  specification, data and identification table, worked two-zone multi-period example with a block and a binding transmission limit,
+  re-cleared with the limit relaxed, a verified small solver, an inference plan. Timestral hybrid stays the benchmark.
+  Done: specification doc "Coupled day-ahead auction: generative model specification" (Claude Docs); solver research/coupled-auction
+  (clearing.py, example.py, verify.py; commit 8eb6a13). EUPHEMIA facts from the public description of 18 Dec 2025 (downloaded through the
+  proxy after www.nemo-committee.eu was allowed; not stored in the repo, all rights reserved). EPEX site refused automated access: the
+  contents of the aggregate curves are NOT verified. Publication times partly from memory of Regulation 543/2013, marked for checking.
+  Verification: hand cases, a forced paradoxically-accepted block, 300 random markets = brute force, audit clean, surplus identity,
+  monotone in line capacity. Bug found by the brute-force check: HiGHS default relative MIP gap (~1e-4) hid a 3,500 EUR block decision
+  inside a 40.8 M EUR surplus; gap set to 0. Price indeterminacy: the solver reports the interval of valid prices.
+  Caveat for 21.144-21.150: if the grid operators' day-ahead wind and solar forecasts are published at 18:00 D-1 (after gate closure),
+  the "published residual load" is not an issue-time input; its use as price-blind demand in the demand-slope estimate needs that caveat.
+  User pointers: PyMC (https://www.pymc.io) and BayesFlow (https://bayesflow.org/v2.1.0) - placed in the inference plan: PyMC/NumPyro NUTS
+  for parameters with a direct likelihood (curves as data), BayesFlow amortised SBI for parameters that act only through the clearing.
