@@ -3658,3 +3658,35 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   posterior sd below 0.15 (identified); real fit: eta between -0.1 and +0.2, posterior sd below 0.15 (prior sd 1: contraction > 6x), so
   the fixed-demand approximation is supported by the posterior, not assumed; the import slope per EUR about the fit-window value of M1n
   (x1 / L_ref = 15.1 / 94 = 0.16 GW per EUR/MWh).
+
+21.149 M1e, results (out/market1e_recover.log, market1e_fit.log; posterior out/market1e_post.npz).
+  Simulate and recover (7293 hours, eta = 0.5 true): eta 0.50 (0.49 .. 0.52), sd_fc 3.00, sd_d 5.01; 28 of 30 inside their 90% bands (B_g
+  and phi_c just outside), 8 of 8 neighbour coefficients; r-hat 1.002, no divergences. The data identify a demand slope of this size.
+  Real fit (15359 hours to Nov 2025): r-hat 1.001, ess 1852, no divergences. eta = 0.04 (0.04 .. 0.05) GW per 10 EUR/MWh, posterior sd 0.005
+  against prior sd 1.0 (200x contraction). Forecast-error scale sd_fc 2.58 GW; shift scale sd_d 6.29 GW. Import slope x1 8.90 GW, i.e.
+  0.095 GW per EUR/MWh at L_ref 94 (M1n: 15.1 / 94 = 0.16); import step K_x 8.6 GW (M1n 6.8); gas responsive share kap_g 0.28 (M1n 0.38,
+  prior percentile 2.9 - near a conflict); m_g 1.15 (M1n 1.37).
+  Against 21.148: eta in -0.1 .. +0.2 with sd below 0.15: MET (0.04, sd 0.005). Recovery: MET. Import slope per EUR about 0.16: NOT MET (0.095).
+  Held-out year (Dec 2025 - Nov 2026), bare curves without the shift: M1e price MAE 4.39 ct, imports minus curve -6.07 GW; M1n 3.04 ct,
+  -3.49 GW. Imports in EUR fix the SLOPE (21.146) but make the LEVEL worse at the 2026 price level: at 144 EUR/MWh the EUR form predicts
+  high imports, while the neighbours' prices rose too. Neither p / L nor p / L_ref is the right variable; the price difference to the
+  neighbours is (21.135).
+  Caveat on eta: hours are treated as independent; errors are strongly autocorrelated, so the posterior sd is too narrow by a large factor.
+  The point estimate, about 1% of the supply response, is the result; "tightly identified" is not.
+  Incident: market1e.py, copied from market1n.py, wrote its per-hour table to out/market1n_rows.parquet, overwriting M1n's (read by
+  da_basis, eve_look, m1b_fig, miss_look, neg_look). Rebuilt from the saved M1n posterior with exp/rebuild_m1n_rows.py; the fitting-period
+  summary matches the original log exactly. market1e.py now writes out/market1e_rows.parquet.
+  Next check: the net slope (21.144) with the M1e posterior. EXPECTED: observed / model 0.9-1.1 in every half year including 2026 H2.
+
+21.150 Net slope with the M1e posterior (MOD=e exp/net_slope.py; out/net_slope_half_e.csv). Observed / model by half year 2024 H1 .. 2026 H2:
+  0.96, 0.96, 0.95, 0.84, 0.92, 0.81 (M1n: 1.05, 0.97, 1.01, 0.95, 0.92, 0.72; M1n with imports in EUR, no refit: 1.02 .. 1.01).
+  Against 21.149: 0.9-1.1 in every half year: NOT MET (2025 H2 0.84, 2026 H2 0.81). The refit lowered the import slope (x1 15.1 -> 8.9)
+  because the EUR form must also match import LEVELS, which it cannot at the 2026 price level; the curve became steeper in every period.
+  Better than M1n in 2026 H2, worse inside the fit window.
+  CONCLUSIONS for the review:
+  (1) Demand: with the slope as a latent parameter the posterior puts it at 0.04 GW per 10 EUR/MWh, about 1% of the supply response, and
+      simulate-and-recover shows a slope of 0.5 would have been found. The fixed-demand approximation is supported by the data, not assumed
+      (with the caveat that the posterior width is overstated by treating hours as independent).
+  (2) Imports: neither p / L nor p / L_ref is right. The EUR form fixes the slope only with the old parameters; refitted it trades level
+      against slope. The variable that holds is the price difference to the neighbours (21.135), which needs their prices: the coupled model.
+  M1e is not used in the application and not proposed for it.

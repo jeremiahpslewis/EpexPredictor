@@ -1,14 +1,20 @@
 """Price response to weather-driven residual-load deviations: observed against the curves fitted once (notes 21.144)."""
 import numpy as np, pandas as pd, warnings; warnings.filterwarnings("ignore")
+import os, sys
+MOD = os.environ.get("MOD", "n"); sys.argv = ["x", "none"]
 import market1n as M
-SP = M.SP; P_ = np.load(f"{SP}/out/market1n_post.npz"); th = {k: float(np.median(P_[k])) for k in M.PN}
+if MOD == "e": import market1e as M
+SP = M.SP; P_ = np.load(f"{SP}/out/market1{MOD}_post.npz"); th = {k: float(np.median(P_[k])) for k in M.PN}
 Z = np.load(f"{SP}/out/shift15.npz"); S = pd.read_parquet(f"{SP}/out/star_data.parquet"); idx = S.index.tz_convert("UTC")
-q = pd.DataFrame({"p": Z["p"], "rl": Z["rl"], "other": Z["other"], "nb": Z["nbterm"]}, index=idx); h = q.resample("1h").mean()
+nbt = Z["nbterm"]
+if MOD == "e":
+    NBC = [f"rl_{c}" for c in ("fr", "nl", "be", "at", "pl", "cz", "ch", "dk")]; nbt = (((S[NBC].ffill().to_numpy(float) - P_["NMU"]) / P_["NSD"]) @ np.median(P_["kn"], 0))
+q = pd.DataFrame({"p": Z["p"], "rl": Z["rl"], "other": Z["other"], "nb": nbt}, index=idx); h = q.resample("1h").mean()
 R = pd.read_parquet(f"{SP}/out/market_hourly.parquet"); R.index = R.index.tz_convert("UTC"); E = np.load(f"{SP}/out/eua_15min.npz")["eua"]; co2 = pd.Series(E[:len(idx)], index=idx[:len(E)]).resample("1h").mean().reindex(h.index).ffill()
 h["L"] = (1.85 * R.gas.reindex(h.index).ffill() + 0.37 * co2).shift(48).ffill().bfill(); h["co2"] = co2.shift(48).ffill().bfill(); h["D"] = h.rl - h.other
 h = h.dropna(); loc = h.index.tz_convert("Europe/Berlin"); h["day"] = loc.normalize(); h["hm"] = loc.hour.astype(str) + "_" + loc.month.astype(str) + "_" + (loc.weekday >= 5).astype(str); h["half"] = loc.year.astype(str) + np.where(loc.month <= 6, "H1", "H2")
 # the shift at the observed price, and its day mean
-sup = M.supply(th, h.p.to_numpy(), h.L.to_numpy(), h.co2.to_numpy()) - th["K_s"] * ((h.p.to_numpy() < -M.EPS) + 0.5 * (np.abs(h.p.to_numpy()) <= M.EPS)); h["u"] = h.D - sup - h.nb
+sup = M.supply(th, h.p.to_numpy(), h.L.to_numpy(), h.co2.to_numpy()) - th["K_s"] * ((h.p.to_numpy() < -M.EPS) + 0.5 * (np.abs(h.p.to_numpy()) <= M.EPS)); h["u"] = h.D - th.get("eta", 0.0) * (h.p - getattr(M, "PREF", 90.0)) / 10.0 - sup - h.nb
 h["ubar"] = h.groupby("day").u.transform("mean"); h["pm"] = np.asarray(M.clear(th, h.D.to_numpy(), h.L.to_numpy(), h.co2.to_numpy(), eps=(h.ubar + h.nb).to_numpy()))
 def resid(col):  # remove day and hour x month x day-type means (two-way, a few alternating passes)
     x = h[col].copy()
@@ -28,7 +34,8 @@ print(T.pivot(index="level", columns="half", values="observed").round(1).to_stri
 print(T.pivot(index="level", columns="half", values="model").round(1).to_string()); print()
 print(T.pivot(index="level", columns="half", values="hours").to_string())
 A = h.groupby("half").apply(lambda g: pd.Series({"observed": sl(g, "p_r"), "model": sl(g, "pm_r"), "sd_D_resid_GW": g.D_r.std()})); A["ratio"] = A.observed / A.model; print(); print(A.round(2).to_string())
-T.to_csv(f"{SP}/out/net_slope.csv"); A.to_csv(f"{SP}/out/net_slope_half.csv")
+T.to_csv(f"{SP}/out/net_slope{'' if MOD == 'n' else '_' + MOD}.csv"); A.to_csv(f"{SP}/out/net_slope_half{'' if MOD == 'n' else '_' + MOD}.csv")
+if MOD == "e": sys.exit(0)
 
 # counterfactual (notes 21.145): imports and storage respond to the price in EUR at the fit window's cost level, not to p / L
 fitw = np.asarray(h.index < pd.Timestamp("2025-12-01", tz="UTC")); Lref = float(h.L[fitw].mean()); print("\nL_ref", round(Lref, 1), "| mean L by half year", h.groupby("half").L.mean().round(1).to_dict())

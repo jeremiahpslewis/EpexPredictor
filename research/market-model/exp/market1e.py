@@ -78,6 +78,6 @@ if __name__ == "__main__":
         if TAG: sys.exit(0)
         cf = cost(th, H.L.values, H.co2.values); g0 = fuels(th, H.p.values, H.L.values, H.co2.values); gX, gS = other_curves(th, H.p.values, H.L.values)
         for f in FU: H[f"e_{f}"] = logit(H[QC[f]].values / CAP[f]) - logit(g0[f] / CAP[f]); H[f"d_{f}"] = H[QC[f]].values - g0[f]; H[f"rc_{f}"] = H.p.values / cf[f]
-        H["eX"] = H.X - gX - ZN @ kn; H["eS"] = H.S - gS; H["eps"] = H.D - H.lig - H.coal - H.gasg - H.X - H.S - th["B_g"] + th["K_s"] * (H.p.values < -EPS) + 0.5 * th["K_s"] * (np.abs(H.p.values) <= EPS); H["p0"] = clear(th, H.D.values, H.L.values, H.co2.values, eX=ZN @ kn); H["tr"] = TR; H.to_parquet(f"{SP}/out/market1n_rows.parquet")
+        H["eX"] = H.X - gX - ZN @ kn; H["eS"] = H.S - gS; H["eps"] = H.D - H.lig - H.coal - H.gasg - H.X - H.S - th["B_g"] + th["K_s"] * (H.p.values < -EPS) + 0.5 * th["K_s"] * (np.abs(H.p.values) <= EPS); H["p0"] = clear(th, H.D.values, H.L.values, H.co2.values, eX=ZN @ kn); H["tr"] = TR; H.to_parquet(f"{SP}/out/market1e_rows.parquet")
         for lab, m in (("fitting period", TR), ("held-out year", ~TR)):
             g = H[m]; print(f"   {lab}: bare price MAE {np.mean(np.abs(g.p0 - g.p)) / 10:.2f} ct; mean output minus curve GW: lignite {g.d_l.mean():+.2f}, coal {g.d_c.mean():+.2f}, gas {g.d_g.mean():+.2f}, imports {g.eX.mean():+.2f}, storage {g.eS.mean():+.2f}, unmeasured {g.eps.mean():+.2f}; sd {g.d_l.std():.2f}, {g.d_c.std():.2f}, {g.d_g.std():.2f}, {g.eX.std():.2f}")
