@@ -69,5 +69,11 @@ check("4 random markets: consistency audit clean", n_audit == N, f"{n_audit} of 
 check("4 random markets: surplus = consumer + producer + congestion rent", n_identity == N, f"{n_identity} of {N}")
 check("4 random markets: relaxing lines never lowers surplus", n_relax == N, f"{n_relax} of {N}")
 
+# 5. Period duration: the same market in quarter hours has a quarter of the surplus and the same prices.
+m1 = Market(["A"], 1, [Order("A", 0, "sell", 100, 10), Order("A", 0, "sell", 100, 30), Order("A", 0, "buy", 150, 4000)])
+m4 = Market(["A"], 1, [Order("A", 0, "sell", 100, 10), Order("A", 0, "sell", 100, 30), Order("A", 0, "buy", 150, 4000)], duration=0.25)
+r1, r4 = clear(m1), clear(m4)
+check("5 quarter-hour periods: same price, a quarter of the surplus", abs(r1.prices[0, 0] - r4.prices[0, 0]) < 1e-9 and abs(r4.welfare - r1.welfare / 4) < 1e-6, f"{r1.welfare:.1f} vs {r4.welfare:.1f}")
+
 print("\nall checks passed" if not failures else f"\n{len(failures)} FAILED: {failures}")
 sys.exit(1 if failures else 0)

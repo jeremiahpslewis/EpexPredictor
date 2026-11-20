@@ -60,6 +60,7 @@ class Market:
     lines: list = field(default_factory=list)
     pmin: float = -500.0
     pmax: float = 4000.0
+    duration: float = 1.0    # hours per period: surplus is in EUR, quantities in MW, so each period counts MW x price x hours
 
 
 @dataclass
@@ -107,7 +108,7 @@ def _objective(m: Market):
         c[j] = o.q * o.p if o.side == "buy" else -o.q * o.p
     for k, b in enumerate(m.blocks):
         c[no + k] = (1 if b.side == "buy" else -1) * b.p * sum(b.q)
-    return c
+    return c * m.duration
 
 
 def _bounds(m: Market, fix_a=None):
@@ -182,6 +183,8 @@ def price_determination(m: Market, x, a, f, target, only=None):
         return r
 
     for j, o in enumerate(m.orders):
+        if o.q <= 0:          # an empty order says nothing about the price
+            continue
         i = pid(o.zone, o.t)
         full, none = x[j] >= 1 - TOL, x[j] <= TOL
         buy = o.side == "buy"
@@ -210,8 +213,8 @@ def price_determination(m: Market, x, a, f, target, only=None):
             else:          # not congested: one price
                 A_eq.append(row([(pf, 1.0), (pt, -1.0)])); b_eq.append(0.0)
     # |p - target| linearised: p - target = d+ - d-
-    for i in range(nP):
-        A_eq.append(row([(i, 1.0), (nP + i, -1.0), (2 * nP + i, 1.0)])); b_eq.append(float(np.clip(target.flat[i], m.pmin, m.pmax)))
+    for i in range(nP):   # the duals of the surplus problem are prices times the period duration
+        A_eq.append(row([(i, 1.0), (nP + i, -1.0), (2 * nP + i, 1.0)])); b_eq.append(float(np.clip(target.flat[i] / m.duration, m.pmin, m.pmax)))
     c = np.r_[np.zeros(nP), np.ones(2 * nP)]
     if only is not None:   # (index, +1 / -1): minimise / maximise one price instead, to find the interval of valid prices
         c = np.zeros(3 * nP); c[only[0]] = only[1]
@@ -222,7 +225,7 @@ def price_determination(m: Market, x, a, f, target, only=None):
     return r.x[:nP].reshape(len(m.zones), T)
 
 
-def clear(m: Market, max_rounds=200) -> Result:
+def clear(m: Market, max_rounds=200, intervals=True) -> Result:
     no, nb, nl, T, n = _layout(m)
     cuts, log = [], []
     for rnd in range(1, max_rounds + 1):
@@ -239,6 +242,8 @@ def clear(m: Market, max_rounds=200) -> Result:
         if prices is None:
             cuts.append(y); log.append((y, "no valid prices (a block would be paradoxically accepted)")); continue
         nP = len(m.zones) * T
+        if not intervals:
+            return Result(w, xx[:no], a, xx[no + 2 * nb:].reshape(nl, T) if nl else np.zeros((0, T)), prices, rnd, log)
         low = np.array([price_determination(m, xx, a, xx, duals, only=(i, 1.0)).flat[i] for i in range(nP)]).reshape(len(m.zones), T)
         high = np.array([price_determination(m, xx, a, xx, duals, only=(i, -1.0)).flat[i] for i in range(nP)]).reshape(len(m.zones), T)
         return Result(w, xx[:no], a, xx[no + 2 * nb:].reshape(nl, T) if nl else np.zeros((0, T)), prices, rnd, log, low, high)
@@ -306,4 +311,4 @@ def surplus_split(m: Market, r: Result):
         if b.side == "sell": ps += v
         else: cs -= v
     cr = sum(r.f[l, t] * (r.prices[Z[ln.to], t] - r.prices[Z[ln.frm], t]) for l, ln in enumerate(m.lines) for t in range(m.periods))
-    return cs, ps, cr
+    return cs * m.duration, ps * m.duration, cr * m.duration

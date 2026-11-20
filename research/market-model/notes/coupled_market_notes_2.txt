@@ -3705,3 +3705,23 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   the "published residual load" is not an issue-time input; its use as price-blind demand in the demand-slope estimate needs that caveat.
   User pointers: PyMC (https://www.pymc.io) and BayesFlow (https://bayesflow.org/v2.1.0) - placed in the inference plan: PyMC/NumPyro NUTS
   for parameters with a direct likelihood (curves as data), BayesFlow amortised SBI for parameters that act only through the clearing.
+
+21.152 User: will not buy the aggregate curves. Relayed review: approve direction, ask for one executable vertical slice (two zones, full
+  day, consistent bids from priors and day shocks, capacity accounting, storage feasibility, both counterfactuals, which conclusions move
+  under weakly identified assumptions, solver correctness / posterior recovery / market fit reported separately from forecast MAE);
+  period-duration factor missing in the objective; "reduced to its binding constraints" to be replaced by the full pre-auction domain.
+  Done (research/coupled-auction: vslice.py, demo.py, demo_fig.py, recovery.py; figure out/vslice_day.png):
+  - clearing.py: duration factor (verify check 5 passes); optional price intervals; empty orders ignored; price target divided by duration.
+  - slice: 96 quarters, 2 zones, 2,900 orders, 3 peak blocks, clear 0.3 s. Accounting identity residual 9e-13 MW. Storage inventory-safe
+    bidding from the owners' own price forecast (book cleared without storage). Base: A ~100 night / -1 midday, B ~10; line at its limit
+    93 of 96 quarters; blocks rejected (limits 108-112 above the peak-hours average).
+  - Counterfactuals: ATC 1000 -> 500 same orders: B mean 25.1 -> 13.8. Gas 40 -> 52 bids regenerated: A mean 70.2 -> 75.5; storage held
+    fixed changes A's closing inventory (5,975 vs 4,475 MWh) more than the price (75.5 vs 75.9).
+  - Two books: book 2 = book 1 + 1,500 MW buy/sell at p* -/+ 3 in every zone and quarter: base day identical (prices, blocks; flows within
+    6 MW where not binding); ATC 500: B's mean change -11.3 (book 1) vs -0.6 (book 2).
+  - Recovery (rejection ABC, 400 x 3 days, 10% kept; markup, netting, flex_wtp free). EXPECTED: markup recovered, netting not identified,
+    wtp weak. RESULT: markup sd ratio 0.83 (barely), netting 0.45 around 0.27 vs true 0.37, wtp 1.08. WRONG on two counts: netting moves
+    prices in this book because pi and the must-run share apply after netting (a coherence choice to review); markup swamped by day shocks
+    with 3 days. Crude check; BayesFlow and more days before any recovery claim.
+  - Bugs on the way: zero-quantity order read as rejected (forced price <= -20) -> no valid prices -> all selections cut; capacities of
+    zone A far too low (52 GW load vs ~32 GW supply) -> fixed to the market model's.
