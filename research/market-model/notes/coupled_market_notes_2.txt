@@ -3589,3 +3589,41 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   hours before the first forecast quarter hour. Own log coreforecastlog_DE_LU.csv.gz with trees, market (Timestral on the shift) and
   core. What it shows live: whether the curves keep their accuracy relative to the price level (durability), and the thickness of the
   layer Timestral adds (market against core). EXPECTED live, from the five sets: core's whole-day error 25-45% above the market route's.
+
+21.144 External review (ChatGPT, pasted by the user): demand is held fixed (price-inelastic residual load); with only clearing points, many
+  pairs of supply and demand curves pass through each point, so a demand slope is not identified without bid data; call it "a merit-order
+  model that forecasts prices conditional on residual load", not "a structural model of the German auction"; first upgrade: evidence on
+  the demand slope near clearing - does the fixed-demand approximation materially change the predicted price response to a 1 GW shock?
+  Aggregated bid curves are not available here (paid EPEX data). What the data do identify: weather moves the residual load for reasons
+  unrelated to the price, so the price response to weather-driven residual-load deviations is the slope of the NET curve (supply minus
+  any price-responsive demand), which is what the forecast uses. Price-responsive demand that is visible (pumping, exports, plant that
+  stops below zero) is already in the model, on the supply side as negative supply.
+  Test (exp/net_slope.py): hourly, March 2024 - November 2026. Price and demand (published residual load less other plant) residualised
+  on day and on hour-of-day x month x day type (so the slope comes from weather-driven deviations, not the daily cycle). Empirical slope =
+  regression of price on demand. Model slope = the same regression on prices from the curves fitted once (M1n, full form), cleared with
+  that day's mean shift (so only the curve's own slope enters). Ratio empirical / model by half year and by the day's price level.
+  EXPECTED: ratio 0.85-1.15 in the fit window; in 2026 0.7-0.9 at low and middle price levels (flatter: growing flexible demand and
+  batteries the model lacks), about 1 at high levels. If the ratio stays within 0.85-1.15 throughout, the fixed-demand approximation does
+  not materially change the response to a 1 GW shock on these data.
+
+21.145 Net slope, result (exp/net_slope.py; out/net_slope.csv). Observed / model slope of price on weather-driven demand deviations, by half
+  year 2024 H1 .. 2026 H2: 1.05, 0.97, 1.01, 0.95, 0.92, 0.72 (observed 3.0-3.2 EUR/MWh per GW, 2.7 in 2025 H2, 3.2 and 3.8 in 2026; model
+  2.8-3.5, then 5.2 in 2026 H2). By the day's price level in 2026 H2: low 0.87, middle 0.78, high 0.54.
+  Against 21.144: fit window 0.85-1.15: MET (0.95-1.05). 2026 flatter at low and middle levels, about 1 at high: WRONG in where - the gap
+  is largest at high levels. So until mid 2026 the fixed-demand approximation does not materially change the price response to a 1 GW
+  shock; in 2026 H2 the curves overstate it by about 40%.
+  Candidate supply-side cause, to rule out before calling it demand: the import block responds to p/L, so when the cost index L rose by
+  about 60% in 2026 H2, the model's import response per EUR fell by the same factor; 21.135 found flows follow price DIFFERENCES in EUR.
+  Counterfactual (no refit): the import block and the storage block read p / L_ref, L_ref = the fit window's mean cost index, instead of
+  p / L. EXPECTED: ratio in 2026 H2 rises to 0.85-1.0 overall and the high-level gap closes most; fit window unchanged within 0.05.
+
+21.146 Counterfactual, result. With imports and storage reading p / L_ref (L_ref = 94 EUR/MWh, the fit window's mean; 2026 H2 mean L 161), no
+  refit: observed / model 1.02, 1.05, 1.07, 0.94, 1.04, 1.01 by half year (was 1.05 ... 0.72). By level in 2026 H2: low 1.29, middle 1.13,
+  high 0.71 (was 0.87, 0.78, 0.54). Against 21.145: 2026 H2 overall 0.85-1.0: MET (1.01); high-level gap closed most: partly (0.54 -> 0.71,
+  and low and middle now too flat in the model by 13-29%); fit window within 0.05: within 0.07.
+  READING for the review: on weather-driven variation, the curves with fixed demand reproduce the net price response to a 1 GW shock within
+  about 5% from March 2024 to mid 2026. The 40% overstatement in 2026 H2 is explained by the import block's form (response to price over the
+  gas cost index), not by missing demand response: with an import response in EUR the overall gap is gone. This identifies the NET slope
+  only; a demand slope cannot be separated from the supply slope without bid curves, and some of the remaining level pattern (too flat at
+  low levels, too steep at high in 2026 H2) could be either. Cross-border exchange is the part that needs an explicit treatment, as the
+  reviewer said and as 21.135 found from the flows. Candidate change (not made): the import block in EUR, refitted, tested on forecasts.
