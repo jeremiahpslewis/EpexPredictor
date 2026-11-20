@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from predictor.model import marketmodel
-from predictor.model.marketroute import CARBON_PRICE, EUR_PER_MWH, OTHER_PLANT, MarketRoute
+from predictor.model.marketroute import CARBON_PRICE, CORE_LEVEL_SLOTS, EUR_PER_MWH, OTHER_PLANT, MarketRoute
 from predictor.model.pricepredictor import PricePredictor
 from predictor.model.priceregion import PriceRegionName
 from predictor.model.timestralblend import SLOT, TimestralBlend
@@ -67,6 +67,32 @@ class TestMarketRoute:
         # on the step at zero price the shift is not pinned down
         clear = df.loc[:LAST_KNOWN, "price"].abs().to_numpy() > 0.1
         assert shift[clear] == pytest.approx(2.0, abs=1e-6)
+
+    def test_core_clears_with_the_level_of_the_last_seven_days(self):
+        demand, gas = np.array([25.0, 40.0, 55.0]), np.full(3, GAS)
+        shift = np.r_[np.full(1000, 9.0), np.full(CORE_LEVEL_SLOTS, 2.0)]
+        core = MarketRoute.core(shift, demand, gas)
+        assert core == pytest.approx(marketmodel.clearing_price(demand, GAS, CARBON_PRICE, shift=2.0) / EUR_PER_MWH)
+
+        # gaps are left out of the level; too short or too thin a history gives no core
+        shift[-10:] = np.nan
+        assert MarketRoute.core(shift, demand, gas) == pytest.approx(core)
+        assert MarketRoute.core(shift[-100:], demand, gas) is None
+        thin = np.full(CORE_LEVEL_SLOTS, np.nan)
+        thin[:100] = 2.0
+        assert MarketRoute.core(thin, demand, gas) is None
+
+    @pytest.mark.asyncio
+    async def test_forecast_keeps_the_core_for_the_log(self):
+        df = input_frame()
+        route, predictor, _ = route_with_stand_in(df, shift=5.0)
+        forecast = await route.forecast(predictor)
+        assert forecast is not None and route.last_core is not None
+        assert route.last_core.index.equals(forecast.index)
+        # the prices were made with 2 GW of shift: the core finds that level, whatever Timestral says
+        future = df.loc[LAST_KNOWN + SLOT:]
+        assert route.last_core.to_numpy() == pytest.approx(marketmodel.clearing_price(future["residual_load"].to_numpy() - OTHER_PLANT, GAS, CARBON_PRICE, shift=2.0) / EUR_PER_MWH, abs=1e-6)
+        assert not np.allclose(route.last_core.to_numpy(), forecast.to_numpy())
 
     @pytest.mark.asyncio
     async def test_forecast_clears_the_market_with_the_forecast_shift(self):

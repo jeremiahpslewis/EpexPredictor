@@ -40,6 +40,9 @@ OTHER_PLANT = 8.0
 # supply shift of the past is worked out the same way as the forecast is cleared
 GAS_PRICE_LAG = 192
 
+# Quarter hours of supply shift before the forecast whose mean is the level of the core forecast (seven days)
+CORE_LEVEL_SLOTS = 672
+
 # Prices of the application are in ct/kWh, the market model works in EUR/MWh
 EUR_PER_MWH = 10.0
 
@@ -51,6 +54,8 @@ class MarketRoute:
     GAS_PRICE = "gasprice"
 
     timestral: TimestralBlend
+    # the core forecast of the last call of forecast(), for the log (see core())
+    last_core: pd.Series | None = None
 
     def __init__(self, timestral: TimestralBlend):
         self.timestral = timestral
@@ -81,12 +86,28 @@ class MarketRoute:
             CARBON_PRICE,
         )
 
+    @staticmethod
+    def core(shift: np.ndarray, demand: np.ndarray, gas: np.ndarray) -> np.ndarray | None:
+        """
+        The core forecast [ct/kWh]: the curves with one level of supply shift, the mean of the last CORE_LEVEL_SLOTS
+        quarter hours of the shift's history. No Timestral. It is not part of the issued forecast; it is logged to see
+        how well the curves hold up over time, and how much Timestral adds to them.
+
+        shift: history of the supply shift [GW]; demand, gas: the future [GW, EUR/MWh]. None if the history is too thin.
+        """
+        recent = shift[-CORE_LEVEL_SLOTS:]
+        if len(recent) < CORE_LEVEL_SLOTS or np.isfinite(recent).mean() < 0.5 or len(demand) == 0:
+            return None
+        level = float(np.nanmean(recent))
+        return marketmodel.clearing_price(demand, gas, CARBON_PRICE, shift=level) / EUR_PER_MWH
+
     async def forecast(self, predictor: PricePredictor) -> pd.Series | None:
         """
         Forecast for the quarter hours after the last known price, or None if it cannot be made.
 
         predictor: a model of the region without cross predictors - only its input data is used
         """
+        self.last_core = None
         last_known = predictor.pricestore.get_last_known()
         if last_known is None:
             return None
@@ -102,6 +123,8 @@ class MarketRoute:
         inputs = np.vstack([demand, gas])
         horizon = TimestralBlend.known_horizon(inputs, len(history))
         shift = self.supply_shift(df)[:len(history)]
+        core = self.core(shift, demand[len(history):len(history) + horizon], gas[len(history):len(history) + horizon]) if horizon > 0 else None
+        self.last_core = pd.Series(core, index=future.index[:horizon], name="price") if core is not None else None
         if horizon < 96 or len(history) < self.CONTEXT // 2 or np.isnan(shift).mean() > 0.1:
             log.warning(f"{predictor.region.bidding_zone_entsoe}: not enough data for a market model forecast "
                         f"({len(history)} quarter hours of history, {np.isnan(shift).mean():.0%} of them without supply shift, "

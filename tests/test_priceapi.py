@@ -402,6 +402,7 @@ class TestRegionPriceManagerThreeForecasters:
         timestral.forecast = AsyncMock(return_value=pd.Series(18.0, index=future, name="price"))
         market = MagicMock()
         market.forecast = AsyncMock(return_value=pd.Series(24.0, index=future, name="price"))
+        market.last_core = pd.Series(30.0, index=future, name="price")
         published = last_known - 4 * SLOT
         timestral.load = MagicMock()
         timestral.load.comparison = AsyncMock(return_value=(published, {"trees": pd.Series(40.0, index=index), "timestral": pd.Series(42.0, index=index)}))
@@ -411,6 +412,7 @@ class TestRegionPriceManagerThreeForecasters:
         manager = RegionPriceManager(PriceRegionName.DE, sample_region)
         manager.forecastlog = ForecastLog(str(tmp_path), "DE_LU")
         manager.loadforecastlog = ForecastLog(str(tmp_path), "DE_LU", "loadforecastlog", ("trees", "timestral"))
+        manager.coreforecastlog = ForecastLog(str(tmp_path), "DE_LU", "coreforecastlog", ("trees", "market", "core"))
         monkeypatch.setattr(priceapi.base_models, "get_base", MagicMock(return_value=MagicMock()))
         manager.predictor.last_data_update = MagicMock(return_value=datetime.now(timezone.utc))
         manager.predictor.train = AsyncMock()
@@ -437,6 +439,11 @@ class TestRegionPriceManagerThreeForecasters:
         assert loads["time"].min() == published + SLOT and len(loads) == ForecastLog.HORIZON
         assert (loads["trees"] == 40.0).all() and (loads["timestral"] == 42.0).all()
 
+        # the core of the market model, beside the tree models and the market model it is the core of
+        cores = ForecastLog.read(manager.coreforecastlog.path)
+        assert list(cores.columns) == ["time", "issued", "last_known", "trees", "market", "core"]
+        assert len(cores) == ForecastLog.HORIZON and (cores["core"] == 30.0).all() and (cores["market"] == 24.0).all()
+
     @pytest.mark.asyncio
     async def test_update_without_the_market_model(self, sample_region, tmp_path, monkeypatch):
         import pandas as pd
@@ -457,6 +464,7 @@ class TestRegionPriceManagerThreeForecasters:
         manager = RegionPriceManager(PriceRegionName.DE, sample_region)
         manager.forecastlog = ForecastLog(str(tmp_path), "DE_LU")
         manager.loadforecastlog = ForecastLog(str(tmp_path), "DE_LU", "loadforecastlog", ("trees", "timestral"))
+        manager.coreforecastlog = ForecastLog(str(tmp_path), "DE_LU", "coreforecastlog", ("trees", "market", "core"))
         monkeypatch.setattr(priceapi.base_models, "get_base", MagicMock(return_value=MagicMock()))
         manager.predictor.last_data_update = MagicMock(return_value=datetime.now(timezone.utc))
         manager.predictor.train = AsyncMock()

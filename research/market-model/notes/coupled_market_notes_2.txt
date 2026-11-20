@@ -3557,3 +3557,35 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   model loaded and its three runs for Germany 3.0-3.1 GB; all eight regions requested: 3.11 GB; two evaluation plots on top: 3.25 GB.
   A second run with three regions and one evaluation plot peaked at 3.41 GB. So 4 GB holds with 0.6-0.75 GB to spare; an ENTSO-E key
   adds data and was not measured. README and proxmox/switch-branch.sh now say so (the script notes below 3.9 GB instead of 5.5 GB).
+
+21.141 User: "Ok keep working". Building the core forecast into the application as a logged column (not in the issued price): frozen
+  curves (slim, as in the app), the hour-of-day shape of the shift by working day / weekend fitted on the FIRST YEAR only (Mar 2024 -
+  Feb 2025), and one level = mean shift of the 672 quarter hours before the first forecast quarter hour. Own log file, so the deployed
+  forecast log keeps its columns. Purpose: watch the durable layer on live data next to the forecasters.
+  Before building, its expected accuracy on the five used sets (exp/core_check.py), against the 7-day-mean constant (C0) and the
+  market route (Timestral on the shift). EXPECTED: core between C0 and the market route; it closes 15-35% of the gap C0 -> route over
+  the whole day (21.127: static terms did not beat C0 when re-fitted on 85 days, but the first-year shape is less noisy), night about
+  0-20%.
+
+21.142 Core check, result (exp/core_check.py, core_check2.py). Level + first-year shape against the level alone (C0), price MAE whole day:
+  winter 1.240 vs 1.118, summer 2.048 vs 2.177, autumn 2.833 vs 2.589, fresh winter 1.627 vs 1.515, fresh summer 2.126 vs 2.187. Worse in
+  three of five; NOT MET. Alignment checked (cuts at local midnight, prices identical to the scoring set). The reason: the shape is a
+  year-round average; its correlation with the true deviation of the shift from its day mean is 0.42 in the summer sets and 0.10-0.22 in
+  winter and autumn. Same with realised demand, so not the demand forecast. Consistent with D5, where (c) beat (b) in summer quarters only.
+  The shape depends on the time of year (solar). Durable form to test: the first-year shape for the same time of year - from the first
+  year's days within +-45 days of the target's day of year (wrapping around the year), still fitted once.
+  EXPECTED: correlation with the true deviation 0.35-0.55 in every set; level + seasonal shape beats the level alone in every set,
+  by 5-15% over the whole day; night level or better.
+
+21.143 Seasonal shape, result (exp/core_check3.py). Correlation with the true deviation 0.26 / 0.48 / 0.24 / 0.34 / 0.48 (expected 0.35-0.55
+  everywhere: NOT MET in winter and autumn). Level + seasonal shape against the level alone, whole day: +1.8, -3.4, +16.2 (clear, worse),
+  -2.3, +2.0%; night -1.1, +10.5, -3.9, +0.9, +3.2%. Expected better in every set by 5-15%: NOT MET.
+  CORRECTION of 21.139: "frozen shapes hold" was too broad for the shape of the shift. In D5, (c) beat (b) in 2024 Q2-Q3 and 2025 Q1, which
+  are inside the year the shape was fitted on; out of sample it helped in the summer quarters (2025 Q2, Q3) and not in the winter ones
+  (2025 Q4 16 vs 15, 2026 Q4 16 vs 14). The hour-of-day shape of the shift is not durable in a form that improves a forecast. What held for
+  2.7 years is the curves plus one moving level (D5 (b): 13-22% of the price level in every quarter, 14-15% in the last two).
+  The shapes that did hold are inside the curves and the import law (coefficients), not the shape of the remaining shift.
+  Built into the application, logged only: core = the curves (slim, as in the app) + one level, the mean supply shift of the 672 quarter
+  hours before the first forecast quarter hour. Own log coreforecastlog_DE_LU.csv.gz with trees, market (Timestral on the shift) and
+  core. What it shows live: whether the curves keep their accuracy relative to the price level (durability), and the thickness of the
+  layer Timestral adds (market against core). EXPECTED live, from the five sets: core's whole-day error 25-45% above the market route's.

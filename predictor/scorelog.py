@@ -3,9 +3,9 @@ Scores the forecast logs against what followed: how good each forecaster was, by
 
     python -m predictor.scorelog [data directory] [zone]
 
-Reads forecastlog_<zone>.csv.gz against the stored prices, and loadforecastlog_<zone>.csv.gz against the stored
-published residual load. Each target time counts once per issue it was forecast in. The comparison with the tree
-models is paired, and its range comes from resampling whole days of issue (5 to 95 %).
+Reads forecastlog_<zone>.csv.gz and coreforecastlog_<zone>.csv.gz against the stored prices, and
+loadforecastlog_<zone>.csv.gz against the stored published residual load. Each target time counts once per issue it
+was forecast in. The comparison with the tree models is paired, and its range comes from resampling whole days of issue (5 to 95 %).
 """
 
 import os
@@ -98,6 +98,10 @@ def main(datadir: str, zone: str = "DE_LU") -> str:
         weight = TimestralLoad.weights(int(ahead.max()) + 1)[ahead.to_numpy()]
         log["used"] = weight * log["timestral"] + (1.0 - weight) * log["trees"]
         out.append(report("Residual load forecast, mean absolute error", "GW", score(log, residual)))
+    path = os.path.join(datadir, f"coreforecastlog_{zone}.csv.gz")
+    if os.path.exists(path):
+        prices = read_store(os.path.join(datadir, f"prices_v3_{zone}.json.gz"))["price"]
+        out.append(report("Core of the market model (curves and one level, no Timestral), mean absolute error", "ct/kWh", score(ForecastLog.read(path), prices)))
     return "\n\n".join(out)
 
 

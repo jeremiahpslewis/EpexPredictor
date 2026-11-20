@@ -18,6 +18,7 @@ def write_logs(tmp_path, days: int = 8):
     pd.DataFrame({"tso_load": 50.0, "tso_wind": 10.0, "tso_solar": 5.0}, index=index).to_json(tmp_path / "generation_v1_DE_LU.json.gz", compression="gzip")
     forecastlog = ForecastLog(str(tmp_path), "DE_LU")
     loadlog = ForecastLog(str(tmp_path), "DE_LU", "loadforecastlog", ("trees", "timestral"))
+    corelog = ForecastLog(str(tmp_path), "DE_LU", "coreforecastlog", ("trees", "market", "core"))
     for day in range(days):
         last = START + timedelta(days=day)
         columns = {"trees": pd.Series(12.0, index=index), "timestral": pd.Series(11.0, index=index), "price": pd.Series(11.5, index=index)}
@@ -25,6 +26,7 @@ def write_logs(tmp_path, days: int = 8):
             columns["market"] = pd.Series(10.5, index=index)
         assert forecastlog.append(last, columns, last + timedelta(hours=1))
         assert loadlog.append(last, {"trees": pd.Series(38.0, index=index), "timestral": pd.Series(34.0, index=index)}, last + timedelta(hours=1))
+        assert corelog.append(last, {"trees": pd.Series(12.0, index=index), "market": pd.Series(10.5, index=index), "core": pd.Series(9.0, index=index)}, last + timedelta(hours=1))
 
 
 def test_scores_each_forecaster_against_the_tree_models(tmp_path):
@@ -47,6 +49,8 @@ def test_report_covers_both_logs(tmp_path):
     assert "Price forecast" in text and "Residual load forecast" in text
     # trees 38, Timestral 34, their average 36 against a published 35
     assert "average     1.000 GW   against the tree models -2.000" in text
+    # core 9 against a price of 10
+    assert "Core of the market model" in text and "core        1.000 ct/kWh   against the tree models -1.000" in text
 
 
 def test_report_without_logs(tmp_path):

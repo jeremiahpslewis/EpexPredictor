@@ -411,6 +411,7 @@ class RegionPriceManager:
         # what was issued, to be scored later (only written where further forecasters are mixed in)
         self.forecastlog = ForecastLog(EPEXPREDICTOR_DATADIR, region.bidding_zone_entsoe)
         self.loadforecastlog = ForecastLog(EPEXPREDICTOR_DATADIR, region.bidding_zone_entsoe, "loadforecastlog", ("trees", "timestral"))
+        self.coreforecastlog = ForecastLog(EPEXPREDICTOR_DATADIR, region.bidding_zone_entsoe, "coreforecastlog", ("trees", "market", "core"))
 
     async def ensure_loaded(self) -> Self:
         async with self.init_lock:
@@ -505,10 +506,12 @@ class RegionPriceManager:
                     assert base is not None
                     trees = newprices["price"].copy()
                     others = {"market": market_route} if market_route is not None else None
-                    if await timestral.blend(base, [newprices, neweval], others):
-                        lastknown = self.predictor.pricestore.get_last_known()
-                        if lastknown is not None:
-                            self.forecastlog.append(lastknown, {"trees": trees, **timestral.last_forecasts, "price": newprices["price"]})
+                    blended = await timestral.blend(base, [newprices, neweval], others)
+                    lastknown = self.predictor.pricestore.get_last_known()
+                    if blended and lastknown is not None:
+                        self.forecastlog.append(lastknown, {"trees": trees, **timestral.last_forecasts, "price": newprices["price"]})
+                    if market_route is not None and market_route.last_core is not None and lastknown is not None:
+                        self.coreforecastlog.append(lastknown, {"trees": trees, "market": timestral.last_forecasts.get("market"), "core": market_route.last_core})
                     if timestral.load is not None and base.residual_load is not None:
                         compared = await timestral.load.comparison(base.residual_load)
                         if compared is not None:
