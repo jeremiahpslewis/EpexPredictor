@@ -1,6 +1,7 @@
 """
 Historical window as a reconciliation and prior-predictive check, not a fit (notes 21.157). Zone A is fed the public day-
-ahead inputs of DE-LU (ENTSO-E load forecast, wind and solar forecasts; THE gas price known the day before; carbon 75 as in
+ahead inputs of DE-LU (ENTSO-E load forecast, wind and solar forecasts; the last THE gas price in the app's store dated before
+noon the day before - the app itself lags gas two days, which this does not reproduce; carbon 75 as in
 the app's market route). Zone B stays the synthetic neighbour: it is not a real zone, so flows and B's price have no
 observed counterpart. For each delivery day, parameters and day shocks are drawn from the prior and the day is cleared;
 the observed DE-LU price, day-ahead net position and scheduled generation are compared with the prior-predictive spread.
@@ -15,6 +16,12 @@ import numpy as np, pandas as pd
 import vslice as V
 
 SP, OUT = Path(sys.argv[1]), Path(sys.argv[2]); DRAWS = int(os.environ.get("DRAWS", 40)); TZ = "Europe/Berlin"
+# ablations (notes 21.161), comma-separated in ABLATE: "flex0" no price-responsive demand; "fleet" zone A's lignite and
+# coal cut towards what ran at most in the window (12.6 and 4.5 GW): 13 and 5 GW nominal (coal less the slice's 1 GW planned
+# outage = 4 GW) instead of 18 and 12; the output file names carry the tag
+ABLATE = [a for a in os.environ.get("ABLATE", "").split(",") if a]; TAG = ("_" + "_".join(ABLATE)) if ABLATE else ""
+if "fleet" in ABLATE:
+    V.TECH["A"]["lignite"] = (13000,) + V.TECH["A"]["lignite"][1:]; V.TECH["A"]["coal"] = (5000,) + V.TECH["A"]["coal"][1:]
 DAYS = pd.date_range(os.environ.get("FIRST", "2026-10-15"), periods=int(os.environ.get("NDAYS", 14)), freq="D", tz=TZ)
 
 def series(name, col):
@@ -32,7 +39,7 @@ def day_inputs(d):
     idx = pd.date_range(d, (d + pd.DateOffset(days=1)).normalize(), freq="15min", inclusive="left")   # a calendar day: 92 or 100 quarters at a clock change
     if len(idx) != V.T: return None, idx             # clock-change days have 92 or 100 quarters; the slice has 96
     info = V.Info(); info.co2 = 75.0
-    g = gas[:d - pd.Timedelta(hours=12)]; info.gas = float(g.iloc[-1])      # last gas price known at noon the day before
+    g = gas[:d - pd.Timedelta(hours=12)]; info.gas = float(g.iloc[-1])      # last stored value dated before noon the day before
     info.load = {"A": load.reindex(idx).to_numpy(float), "B": V.Info().load["B"]}
     info.wind_cf = {"A": np.clip((ws["Wind Onshore"] + ws["Wind Offshore"]).reindex(idx).to_numpy(float) / V.TECH["A"]["wind"][0], 0, 1), "B": V.Info().wind_cf["B"]}
     info.solar_cf = {"A": np.clip(ws["Solar"].reindex(idx).to_numpy(float) / V.TECH["A"]["solar"][0], 0, 1)}
@@ -41,6 +48,7 @@ def day_inputs(d):
 def run(args):
     k, d = args; info, idx = day_inputs(d)
     rng = np.random.default_rng(3_000_000 + k); th = V.draw_theta(rng); day = V.draw_day(rng, info)
+    if "flex0" in ABLATE: th["flex_share"] = 0.0
     try:
         m, acc, r = V.simulate(th, day, info)
     except Exception as e:
@@ -67,7 +75,7 @@ if __name__ == "__main__":
                              obs_netpos=obs_np[t], flow_p50=np.median(-F[:, t]), obs_gen=obs_g[t], gen_p50=np.median(G[:, t]),
                              gen_p05=np.quantile(G[:, t], 0.05), gen_p95=np.quantile(G[:, t], 0.95), load=day_inputs(d)[0].load["A"][t],
                              gas=day_inputs(d)[0].gas))
-    R = pd.DataFrame(rows).set_index("time"); R.to_parquet(OUT / "hist_window.parquet")
+    R = pd.DataFrame(rows).set_index("time"); R.to_parquet(OUT / f"hist_window{TAG}.parquet")
     inside = (R.obs_price >= R.p05) & (R.obs_price <= R.p95); ginside = (R.obs_gen >= R.gen_p05) & (R.obs_gen <= R.gen_p95)
     h = R.index.hour
     summ = {"days": len(ok), "skipped_days": [str(d.date()) for d in DAYS if d not in ok], "failed_draws": fails, "draws_per_day": DRAWS,
@@ -79,4 +87,4 @@ if __name__ == "__main__":
             "obs_netpos_range": [round(float(R.obs_netpos.min())), round(float(R.obs_netpos.max()))],
             "gen_inside_90": round(float(ginside.mean()), 3), "gen_bias_median_MW": round(float((R.obs_gen - R.gen_p50).mean())),
             "obs_gen_mean": round(float(R.obs_gen.mean())), "load_mean": round(float(R.load.mean())), "gas_range": [round(float(R.gas.min()), 1), round(float(R.gas.max()), 1)]}
-    json.dump(summ, open(OUT / "hist_window.json", "w"), indent=1); print(json.dumps(summ, indent=1))
+    summ["ablate"] = ABLATE; json.dump(summ, open(OUT / f"hist_window{TAG}.json", "w"), indent=1); print(json.dumps(summ, indent=1))

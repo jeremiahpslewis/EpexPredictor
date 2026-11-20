@@ -3882,3 +3882,26 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   effect's 90% posterior range (6-8 EUR/MWh) exceeds the demo day's two-book difference (2.0) - different days, so not a
   clean comparison, but parameter uncertainty is not the minor term I expected. Parameter spread is still a lower bound: the
   book family (two-book range) adds to it.
+
+21.161 Follow-ups from a review of 21.158-21.160 (before reporting).
+  (a) Historical window, the diagnosis in 21.159 was untested. Realised generation in the window (recon_hourly): lignite mean
+  8.5 GW (max 12.6), coal 2.6 (max 4.5), gas 6.4 - against the slice's 18 + 12 GW nominal. Ablations (hist_window.py ABLATE,
+  same 13 days and draws; median error = observed minus prior median, robust to scarcity spikes):
+                         median error   inside 90% band   quarters with prior median >= 500 (observed: 0)
+    base                   +65.1          0.22              0.0%
+    flex0 (no flex demand) +53.0          0.31              0.0%
+    fleet (13 / 5 GW)      +29.8          0.56              3.3%
+    fleet + flex0          +19.5          0.61              4.6%
+  The fleet size explains most of the level gap (night error +65 -> +17 to +23); flexible demand bidding at a willingness to
+  pay set for gas at 40 explains a further ~10. With the smaller fleet the slice runs short at the evening peak and hits the
+  price cap in 3-5% of quarters, which never happened: the missing neighbour (imports up to 13 GW) now shows as false
+  scarcity. Remaining +20 is consistent with missing exports and the 75 carbon / 12 coal constants, untested. The figure's
+  third title overstated ("the exports it cannot carry"): generation gap 3.7 GW vs mean net export 2.4 GW; retitled.
+  (b) Two books on the SAME three days as the posterior counterfactuals (twobook3.py), at the truth: ATC-500 change in B's mean
+  book 1 -5.61 (days -2.5, -12.3, -2.0), book 2 -0.73: difference 4.9 EUR/MWh, against the posterior 90% range 6.2 (with
+  availability) to 8.1 (without). Same order of magnitude; 21.160's "exceeds the two-book difference (2.0)" compared different
+  days and is withdrawn. The demo day (+2.0) is another day; across days the effect ranges -2 to -12.
+  (c) Joint coverage figures in 21.160 rest on 400 held-out sets: binomial 95% about +-0.03.
+  (d) verify.py check 4 under VOLUME_RULE=max_ab and max_ba: all 300 markets pass brute force, audit, surplus identity and
+  monotonicity. surplus_lp docstring corrected. Block limits on the demo day rechecked: 107.7 and 111.7 (unchanged).
+  (e) Gas in hist_window.py is the last stored value dated before noon the day before; the app lags gas two days; not matched.

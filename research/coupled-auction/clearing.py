@@ -155,8 +155,9 @@ def solve_master(m: Market, cuts=()):
 def surplus_lp(m: Market, a, tie_break=False):
     """
     economic surplus maximised with the block ratios fixed; returns x, f, welfare and the balance duals.
-    tie_break: among surplus-maximising solutions, the one with the least total absolute flow - a stand-in for
-    EUPHEMIA's flow-indeterminacy rule, so that flows on uncongested lines are determinate.
+    tie_break: among surplus-maximising solutions, the one with the least total absolute flow. Not used by clear():
+    it broke price determination (notes 21.153); volumes are settled after the prices by volumes_at_prices instead,
+    which is a volume-indeterminacy rule, not EUPHEMIA's flow indeterminacy (notes 21.155).
     """
     no, nb, nl, T, n = _layout(m)
     lo, hi = _bounds(m, fix_a=a)

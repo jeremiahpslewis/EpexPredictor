@@ -26,7 +26,7 @@ a = ax[2]; a.fill_between(x, R.gen_p05 / 1000, R.gen_p95 / 1000, step="post", co
 a.step(x, R.obs_gen / 1000, where="post", color=ORANGE, lw=1.4); a.step(x, R.load / 1000, where="post", color=INK2, lw=0.9, ls="--"); a.set_ylabel("GW")
 a.text(0.005, 0.9, "observed scheduled generation", color=ORANGE, transform=a.transAxes); a.text(0.005, 0.81, "slice: awards + self-served, median and 90% band", color=BLUE, transform=a.transAxes)
 a.text(0.005, 0.72, "load forecast (input)", color=INK2, transform=a.transAxes)
-a.set_title(f"Scheduled generation exceeds the slice's by {S['gen_bias_median_MW'] / 1000:+.1f} GW on average: the exports it cannot carry",
+a.set_title(f"Scheduled generation exceeds the slice's by {S['gen_bias_median_MW'] / 1000:+.1f} GW on average, while net exports average {S['obs_netpos_mean'] / 1000:+.1f} GW",
             loc="left", fontweight="bold", fontsize=10.5)
 for a in ax: a.grid(axis="y", color=GRID, lw=0.8); a.set_axisbelow(True)
 fig.text(0.01, 0.005, f"{S['days']} delivery days from {x.min():%d %b %Y}, {S['draws_per_day']} prior draws per day; zone A fed DE-LU's public day-ahead inputs "

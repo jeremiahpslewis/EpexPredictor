@@ -39,6 +39,8 @@ check("3 valid price intervals without the block: [100, 4000] and [0, 4000]", np
 check("3 result equals brute force", abs(r.welfare - bf[0]) < 1e-6, f"{r.welfare:.1f} vs {bf[0]:.1f}")
 
 # 4. Random markets: algorithm against brute force over all block selections, and the consistency audit.
+import os
+RULE = os.environ.get("VOLUME_RULE", "least_flow"); RULE = None if RULE == "none" else RULE   # check 4 under any volume rule
 rng = np.random.default_rng(1); n_ok = n_audit = n_identity = n_relax = 0; N = 300; n_cut = 0
 for i in range(N):
     zones, T = ["A", "B", "C"][:rng.integers(1, 4)], int(rng.integers(1, 4)); orders = []
@@ -52,7 +54,7 @@ for i in range(N):
     lines = [Line(zones[k], zones[k + 1], [float(rng.integers(0, 200)) for _ in range(T)], [float(rng.integers(0, 200)) for _ in range(T)]) for k in range(len(zones) - 1)]
     m = Market(zones, T, orders, blocks, lines)
     try:
-        r = clear(m)
+        r = clear(m, volume_rule=RULE)
     except RuntimeError:
         continue
     bf = brute_force(m); n_cut += len(r.cuts) > 0
@@ -61,7 +63,7 @@ for i in range(N):
     cs, ps, cr = surplus_split(m, r); n_identity += abs(cs + ps + cr - r.welfare) <= 1e-6 * max(1, abs(r.welfare))
     if lines:   # relaxing every line cannot lower the surplus
         m2 = Market(zones, T, orders, blocks, [Line(l.frm, l.to, [c + 500 for c in l.cap_fwd], [c + 500 for c in l.cap_bwd]) for l in lines])
-        n_relax += clear(m2).welfare >= r.welfare - 1e-6 * max(1, abs(r.welfare))
+        n_relax += clear(m2, volume_rule=RULE).welfare >= r.welfare - 1e-6 * max(1, abs(r.welfare))
     else:
         n_relax += 1
 check(f"4 random markets: equal to brute force ({N} markets, {n_cut} needed a cut)", n_ok == N, f"{n_ok} of {N}")
