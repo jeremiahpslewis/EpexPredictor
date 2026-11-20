@@ -3742,3 +3742,15 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   EXPECTED: netting not identified (posterior close to prior: mean contraction below 0.1 on the held-out set); markup identified
   (contraction 0.5 or more); flex_wtp weak (0 to 0.3); 90% intervals cover 85-95% on the held-out set for all three; for the observed
   dataset the truth inside the 90% interval for all three.
+
+21.154 BayesFlow recovery, result (research/coupled-auction sbi_sim.py, sbi_fit.py, sbi_fig.py; out/sims.npz, sbi_results.json,
+  sbi_recovery.png). 4,400 datasets x 5 days simulated in 27 min on 4 cores; 3,700 train, 300 validation, 400 held out.
+  Dry run on pure noise: posterior = prior (contraction about 0, coverage about 0.9) - the pipeline invents nothing.
+  First training (150 epochs, DeepSet summary_dim 12, no stopping): train loss -0.46, validation 14.4 - overfit; coverage 0.38 / 0.65 /
+  0.39, U-shaped ranks. Retrained with early stopping on validation loss (44 epochs) and summary_dim 6:
+    markup    contraction 0.93, 90% coverage 0.85, corr 0.96; observed 3.00 -> 3.19 (2.29 .. 4.05)
+    netting   contraction 0.06, coverage 0.89, corr 0.01; observed 0.37 -> 0.33 (0.12 .. 0.55) = prior
+    flex_wtp  contraction 0.64, coverage 0.88, corr 0.78; observed 59.6 -> 71.4 (56.1 .. 86.6)
+  Against 21.153: netting not identified: MET; markup >= 0.5: MET; flex_wtp 0-0.3: NOT MET (0.64, better identified than expected);
+  coverage 85-95%: MET (markup at the lower edge, slightly heavy upper tail); truth inside the observed 90% interval: MET for all three.
+  Narrow check: 3 free parameters, others at truth; synthetic days from the model's own simulator; 2 zones.

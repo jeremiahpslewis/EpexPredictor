@@ -12,10 +12,14 @@ mu, sd = x[tr].reshape(-1, x.shape[-1]).mean(0), x[tr].reshape(-1, x.shape[-1]).
 z = lambda a: ((a - mu) / sd).astype("float32")
 def pack(sl): return {**{nm: theta[sl, i:i + 1] for i, nm in enumerate(names)}, "days": z(x[sl])}
 keras.utils.set_random_seed(1)
-wf = bf.BasicWorkflow(inference_network=bf.networks.CouplingFlow(), summary_network=bf.networks.DeepSet(summary_dim=12),
+wf = bf.BasicWorkflow(inference_network=bf.networks.CouplingFlow(), summary_network=bf.networks.DeepSet(summary_dim=int(os.environ.get("SUMDIM", 6))),
                       inference_variables=names, summary_variables=["days"], initial_learning_rate=5e-4)
 train = pack(tr); val = {k: v[-300:] for k, v in train.items()}; fit = {k: v[:-300] for k, v in train.items()}
-hist = wf.fit_offline(fit, epochs=int(os.environ.get("EPOCHS", 150)), batch_size=64, validation_data=val, verbose=0)
+# stop at the best validation loss: the first run (150 epochs, no stopping) overfit (train -0.46, validation 14.4) and its
+# posteriors covered the truth 38-65% of the time at nominal 90%
+stop = keras.callbacks.EarlyStopping(monitor="val_loss", patience=int(os.environ.get("PATIENCE", 15)), restore_best_weights=True)
+hist = wf.fit_offline(fit, epochs=int(os.environ.get("EPOCHS", 300)), batch_size=64, validation_data=val, verbose=0, callbacks=[stop])
+print("epochs run", len(hist.history["loss"]), "best val", round(float(min(hist.history["val_loss"])), 3), flush=True)
 loss = hist.history; print("final loss", round(float(loss["loss"][-1]), 3), "val", round(float(loss.get("val_loss", [np.nan])[-1]), 3), flush=True)
 
 post = wf.sample(conditions={"days": z(x[te])}, num_samples=1000)
