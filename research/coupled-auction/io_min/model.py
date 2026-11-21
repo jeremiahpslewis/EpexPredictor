@@ -22,6 +22,7 @@ jax.config.update("jax_enable_x64", True)
 E_L, E_C, E_G, V_G = 0.364, 0.341, 0.202, 3.0       # t CO2 per MWh_th (IPCC defaults), gas variable O&M EUR/MWh
 PMIN, PMAX = -500.0, 4000.0
 KQ = 24.0
+SMOOTH = 0.05      # GW, smoothing of the floor cap min(F, K)
 FUELS = ("L", "C", "G")
 
 def sig(z): return jax.nn.sigmoid(z)
@@ -42,7 +43,7 @@ def fuel_supply(th, x, p, outage=0.0, kind="cheapest"):
     for f in FUELS:
         K = th[f"alpha_{f}"] * x[f"K_{f}"]
         if f == "G" and kind == "average": K = K - outage
-        Ff = jnp.minimum(F[f], K); s = th[f"sigma_{f}"] * c[f]; z = (p - c[f]) / s
+        Ff = -SMOOTH * jnp.logaddexp(-F[f] / SMOOTH, -K / SMOOTH); s = th[f"sigma_{f}"] * c[f]; z = (p - c[f]) / s   # smooth min(F, K)
         S[f] = Ff + (K - Ff) * sig(z); dS[f] = (K - Ff) * dsig(z) / s
         if f == "G" and kind == "cheapest" and outage > 0:
             cut = jnp.minimum(outage, S[f] - Ff)               # the outage unit runs whenever gas is above its floor
