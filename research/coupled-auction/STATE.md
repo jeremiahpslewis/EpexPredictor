@@ -46,7 +46,7 @@ A task testing both, `FLOOR2` and `LIGLEVEL`, is in flight.
 
 ## Open threads
 
-- A neighbour zone built from public data. The data assembly is in flight: `neighbour_data.py` and
+- A neighbour zone built from public data. The data are assembled (21.176): `neighbour_data.py` and
   `notes/neighbour_data.md`, with data in `$SP/entsoe/neighbours/`. No day-ahead capacity is published on the
   flow-based Core borders, so run the aggregate limit at two or three values.
 - A solver cut over fill-or-kill blocks only. For now, `GASCURVE` makes the thermal peak blocks divisible.

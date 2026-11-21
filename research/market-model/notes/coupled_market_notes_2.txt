@@ -4159,3 +4159,14 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   summer shortfall; the rest of the August misfit (night price too low) points to lignite offered too large (21.174).
   Proposed: floor = year-round baseline (estimated from negative-price hours before the window) + HDD heating term;
   lignite's top level allowed to move as in 21.174.
+
+21.176 Neighbour data assembled (delegated; neighbour_data.py, notes/neighbour_data.md; data only in the scratchpad).
+  Ten SDAC zones coupled to DE_LU (FR NL BE AT CZ PL DK_1 DK_2 SE_4 NO_2) plus CH kept apart, 2025-08-01..2026-11-09:
+  load forecast, wind/solar forecasts, DA price, scheduled exchanges both ways, DA NTC, installed capacity 2025/2026.
+  No failed chunks. The ten SDAC borders' scheduled exchanges reproduce the DE_LU net position from October 2025 with
+  bias -10 MW, MAE 12.5 MW, corr 0.99997 (adding CH raises MAE above 1 GW, so CH is outside the net position).
+  NTC is published only for DK_1, CH and NL, and NL's is not binding (schedules exceed it ~25% of the time); FR, CZ, PL,
+  AT, BE, DK_2, SE_4, NO_2 have none. So the aggregate exchange limit must be a parameter run at two or three values.
+  Aggregate 2026 capacity of the ten zones ~419 GW (solar 108, nuclear 70, onshore 56, gas 52, hard coal 27, hydro
+  reservoir 23, run-of-river 20, lignite 14, pumped storage 14, offshore 11). NL 2026 capacity equals 2025 (likely
+  not updated). Several zones moved to 15-min forecasts after October 2025 (SE_4 Nov 2025, FR Jan 2026, BE solar Oct 2026).
