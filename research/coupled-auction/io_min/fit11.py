@@ -20,6 +20,7 @@ RECS, BASIN, OUT = sys.argv[1:4]; WARM, NS, NC = map(int, sys.argv[4:7]); numpyr
 KQ = 4.0
 d = pickle.load(open(RECS, "rb"))["recs"]
 d = [r for r in d if r["kind"] == "fit" and not any(v["missing"] for v in r["links"].values())]
+NMAX = int(sys.argv[7]) if len(sys.argv) > 7 else len(d); d = d[::max(1, len(d) // NMAX)][:NMAX]
 T = len(d); print("fit MTUs:", T, " augmented:", sum(r["aug"] is not None for r in d), " generic:", sum("generic" in (r["aug"] or {}).get("added", []) for r in d))
 arr = lambda k: jnp.asarray(np.array([r[k] for r in d], dtype=float))
 p, n, X, D = arr("p"), arr("n"), arr("X"), arr("D")
@@ -68,7 +69,7 @@ init.update(m_al=0.4, t_al=0.1, m_lb=0.0, t_lb=0.1, m_a=0.0, t_a=10.0, m_b=1.0, 
             sd_q=np.full(3, 1.5), beta_q=np.zeros(3), nu_q=5.0)
 t0 = time.time()
 mc = MCMC(NUTS(model, init_strategy=init_to_value(values={k: jnp.asarray(v) for k, v in init.items()}), target_accept_prob=0.85, max_tree_depth=8),
-          num_warmup=WARM, num_samples=NS, num_chains=NC, chain_method="parallel", progress_bar=False)
+          num_warmup=WARM, num_samples=NS, num_chains=NC, chain_method="parallel", progress_bar=True)
 mc.run(jax.random.PRNGKey(3))
 G = mc.get_samples(group_by_chain=True); summ = numpyro.diagnostics.summary(G)
 rh = {k: float(np.nanmax(s["r_hat"])) for k, s in summ.items()}
