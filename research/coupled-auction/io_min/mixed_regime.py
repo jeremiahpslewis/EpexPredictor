@@ -39,7 +39,8 @@ if MODE == "toy":
 
 if MODE == "recover":
     import cvxpy as cp, jax, jax.numpy as jnp, numpyro, numpyro.distributions as dist
-    from numpyro.infer import MCMC, NUTS
+    from numpyro.infer import MCMC, NUTS, init_to_median
+    from numpyro.infer.util import log_density
     jax.config.update("jax_enable_x64", True); numpyro.set_host_device_count(4)
     NMTU = int(sys.argv[4]) if len(sys.argv) > 4 else 300
     CORE = ["DE", "FR", "NL", "BE", "AT", "CZ", "PL"]; NORD = ["DK_1", "DK_2", "SE_4", "NO_2"]; Z = CORE + NORD; OMIT = ["HR", "HU", "RO", "SI", "SK"]
@@ -104,10 +105,17 @@ if MODE == "recover":
         u = S - D_ - n_
         Mt = jnp.einsum("tzk,tz,tzl->tkl", Q_, dS / 1000, Q_) + jax.vmap(jnp.diag)(pad)
         numpyro.factor("lik", dist.Normal(0, sd * 1000).log_prob(u).sum() + jnp.linalg.slogdet(Mt)[1].sum())
-    mc = MCMC(NUTS(model, target_accept_prob=0.9), num_warmup=800, num_samples=800, num_chains=4, chain_method="parallel", progress_bar=False)
+    mc = MCMC(NUTS(model, target_accept_prob=0.9, init_strategy=init_to_median(num_samples=50)), num_warmup=800, num_samples=800, num_chains=4, chain_method="parallel", progress_bar=False)
     mc.run(jax.random.PRNGKey(0)); Sm = mc.get_samples(); sm = numpyro.diagnostics.summary(mc.get_samples(group_by_chain=True))
     rh = max(float(np.max(v["r_hat"])) for v in sm.values()); div = int(np.asarray(mc.get_extra_fields()["diverging"]).sum())
-    out = {"n_mtu": len(rows), "regimes_by_dimV": {int(v): int((k == v).sum()) for v in np.unique(k)}, "max_rhat": rh, "divergences": div}
+    G = mc.get_samples(group_by_chain=True)
+    print("per-chain median mu_a, mu_ls, sd_u:", [(round(float(np.median(G['mu_a'][c])), 1), round(float(np.median(G['mu_ls'][c])), 2), round(float(np.median(G['sd_u'][c])), 2)) for c in range(4)])
+    tr = {"mu_a": TRUE["mu_a"], "tau_a": TRUE["tau_a"], "mu_ls": TRUE["mu_ls"], "tau_ls": TRUE["tau_ls"], "sd_u": TRUE["sd_u"],
+          "za": (a_true - TRUE["mu_a"]) / TRUE["tau_a"], "zl": (ls_true - TRUE["mu_ls"]) / TRUE["tau_ls"]}
+    lp_true = float(log_density(model, (), {}, tr)[0])
+    lp_ch = [float(log_density(model, (), {}, {k: np.median(np.asarray(G[k][c]), axis=0) for k in tr})[0]) for c in range(4)]
+    print("log density at truth:", round(lp_true, 1), " at chain medians:", [round(v, 1) for v in lp_ch])
+    out = {"n_mtu": len(rows), "logdens_truth": lp_true, "logdens_chains": lp_ch, "regimes_by_dimV": {int(v): int((k == v).sum()) for v in np.unique(k)}, "max_rhat": rh, "divergences": div}
     ins = []
     for name, tv in [("a", a_true), ("ls", ls_true)]:
         q = np.quantile(np.asarray(Sm[name]), [0.05, 0.95], axis=0); ins += list((q[0] <= tv) & (tv <= q[1]))
