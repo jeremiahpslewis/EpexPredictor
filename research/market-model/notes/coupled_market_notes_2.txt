@@ -3971,3 +3971,47 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   and -465 MW in June; the slice's generation is 0.7-0.9 GW below that in the conditional runs (storage losses, netting).
   Neighbour (not built yet): ENTSO-E day-ahead NTC exists for DE-DK1 (3.5 GW), DE-CH, partly DE-NL; none for the
   flow-based Core borders (FR, PL, CZ: NoMatchingDataError). An aggregate limit cannot be read off; runs at 2-3 values.
+
+21.165 The shape: evening and midday (design from data before the windows, written before the runs).
+  Evidence (recon_hourly, June window and the 3 months before it, evenings 19-22 h by price band): at prices above 200 DE
+  ran gas 8.3 GW, lignite 8.8, coal 3.1 out of fleets of 22 / 14.6 / 10.8 GW, and IMPORTED 11 GW; gas output rises only
+  from 6.6 to 8.3 GW between 140-200 and 200+. The effective German supply curve is steep above gas cost; in the slice all
+  22 GW of gas sit at one cost, so with imports fixed the evening price stays flat. "Other" output is 6-9 GW at any
+  price (midday mean 6.8-7.0, nights 7.5-7.6): price-insensitive.
+  Change (hist_window.py SHAPE=1; vslice.py opt-in Info.price_insensitive, Info.peak_factor, tech "gaspeak"; old seeds
+  reproduce): gas offered at cost = its 99th percentile of hourly output in the 3 months before / 0.84 (Oct 11.8 GW,
+  June 12.4, Feb 19.6); the rest of the unit fleet as "gaspeak" at gas cost x peak_factor ~ lognormal(log 1.6, 0.25) per
+  draw (prior, not fitted); "other" offered in full at -5, sized at its 3-month mean output / 0.93 (Oct 7.6, Jun 8.3,
+  Feb 8.9 GW). Used with FLEETMODE=output (fixed now as the configuration under test).
+  Third window, untouched by any choice so far: 10-23 February 2026 (winter; gas, lignite and coal more at the margin).
+    S1 June (development)   COND+FLEET+COSTS+output+SHAPE
+    S2 October (development) the same
+    T1 February (test)       COND+FLEET+COSTS+output, no SHAPE
+    T2 February (test)       the same + SHAPE
+  EXPECTED: S1 evening (20-24 h) median error from +40 to within +-20, midday (12-16 h) from -24 to within +-15, inside
+  the 90% band 60-75%. S2 inside >= 0.75 and median error <= +28 (no worse than R2b). T2 inside >= T1 + 10 points,
+  |median error| <= 20, inside 55-80%; scarcity < 1% in all.
+
+21.166 Results of 21.165.
+                                     inside 90%   median error   scarcity   median error by 4 h                 
+    S1 June + SHAPE (development)       0.60          +6.1          0.0%      +12 +11  +1 -29  +7 +36
+    S2 Oct + SHAPE (development)        0.87          +5.9          0.0%      +25 +18 +10  +6  +2 -10
+    T1 Feb, no SHAPE (test)             0.61          -8.2          1.8%      -13 -10  -1  -9  +2  -8
+    T2 Feb + SHAPE (test)               0.54         -12.2          3.9%      -16 -14  -7 -13  -4 -11
+  Against 21.165: S1 inside 60-75% MET (0.60) but evening within +-20 NOT MET (+36) and midday within +-15 NOT MET (-29): the
+  change widened the band without fixing the two errors it was meant for. S2 MET (0.87, +5.9). T2 inside >= T1 + 10 points
+  NOT MET (-7 points), |median error| <= 20 MET, inside 55-80% NOT MET (0.54), scarcity < 1% NOT MET (3.9%).
+  DECISION: SHAPE is not adopted. It improves the windows it was designed on and makes the untouched window worse.
+  The configuration that stands is the one fixed before February: unit fleet + output-sized lignite/coal/other + costs,
+  conditional on the net position. On the untouched February window it reaches 61% inside the band with a level error of
+  -8 and false scarcity in 1.8% of quarters.
+  February's picture (hist_window_feb_cond.png): the median tracks the observed price (~100) closely, but the band's upper
+  tail reaches the cap in 489 of 1,344 quarters: in tight winter hours (load ~70 GW, exports up to 12 GW), draws with a low
+  offered share pi (prior Beta(18, 2), 5% quantile 0.77) run out of supply. The prior's lower tail for pi is implausible for
+  winter; that is a finding about the prior, to be confronted with the posterior rather than tuned away here.
+  Reconciliation: observed generation - (load forecast + net position): Oct +0.03 GW, June -0.47, Feb -4.56 GW. In winter
+  the load forecast exceeds scheduled generation net of exports by 4.6 GW (self-generation outside 14.1.C, or the load
+  forecast's definition); the slice, fed the load forecast, therefore generates 2.5 GW MORE than observed in February.
+  What remains open on the shape: June evenings (+36) and middays (-29) are still wrong with and without SHAPE; candidates
+  not tested: the evening price reflects imports' price (neighbours' evening scarcity) rather than German supply - which the
+  conditional design cannot represent, since it fixes the import volume but not its price; and solar's day-ahead bids.

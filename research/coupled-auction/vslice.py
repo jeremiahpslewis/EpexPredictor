@@ -47,6 +47,10 @@ class Info:
     # flexible demand's willingness to pay scaled with the gas-fired cost (opt-in, notes 21.162): flex_wtp is read as the
     # value at the reference costs (gas 40, carbon 75) and multiplied by today's gas-fired cost over the reference one
     wtp_scales_with_gas: bool = False
+    # opt-in (notes 21.165): technologies per zone offered in full at -5 like wind (price-insensitive output), and the cost
+    # multiple of the "gaspeak" tranche (gas capacity beyond what usually runs: peakers, units needing a start)
+    price_insensitive: dict | None = None
+    peak_factor: float = 1.6
 
 
 def techs(info):
@@ -96,8 +100,8 @@ def draw_day(rng, info: Info, theta=None):
 
 def cost(z, k, info):
     C, hr, ef, oc, sc = techs(info)[z][k]
-    fuel = info.gas if k == "gas" else ((COAL_PRICE if info.coal_price is None else info.coal_price) if k == "coal" else 0.0)
-    return hr * fuel + ef * info.co2 + oc
+    fuel = info.gas if k in ("gas", "gaspeak") else ((COAL_PRICE if info.coal_price is None else info.coal_price) if k == "coal" else 0.0)
+    return (hr * fuel + ef * info.co2 + oc) * (info.peak_factor if k == "gaspeak" else 1.0)
 
 
 def build_book(theta, day, info: Info, storage=True, expected_prices=None):
@@ -116,15 +120,16 @@ def build_book(theta, day, info: Info, storage=True, expected_prices=None):
             elif k == "solar": avail[k] = spec[0] * np.clip(info.solar_cf[z] * (1 + day["solar_err"][z]), 0, 1)
             else: avail[k] = np.zeros(T) + np.maximum(spec[0] - np.asarray(info.outages.get(z, {}).get(k, 0.0)), 0.0) * (1 - day["forced"][z][k])
             # withholding and blocks apply to AVAILABLE capacity, before any netting (so netting cannot change them)
-            if k in ("wind", "solar"):
+            insens = k in ((info.price_insensitive or {}).get(z, ()))
+            if k in ("wind", "solar") or insens:
                 offered, blk = avail[k], np.zeros(T)
             else:
                 offered = theta["pi"] * avail[k]
                 blk = np.where(PEAK, theta["block_share"] * offered.min(), 0.0) if k in ("coal", "gas") else np.zeros(T)
             split[k] = dict(netted=np.zeros(T), period=offered - blk, block=blk, unoffered=avail[k] - offered)
             # the period offers of this technology as price steps
-            if k in ("wind", "solar"):
-                for t in range(T): steps.append([k, t, float(offered[t]), -5.0 if k == "wind" else -1.0])
+            if k in ("wind", "solar") or insens:
+                for t in range(T): steps.append([k, t, float(offered[t]), -1.0 if k == "solar" else -5.0])
                 continue
             c = cost(z, k, info) + theta["markup"] + day["markup_day"]
             if k == "hydro": c = 0.8 * cost(z, "gas", info) if "gas" in TECH_[z] else 50.0

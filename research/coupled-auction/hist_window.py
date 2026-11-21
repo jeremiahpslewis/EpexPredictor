@@ -46,6 +46,18 @@ if FLEET:
         W = Xr[(Xr.index >= f0 - pd.DateOffset(months=3)) & (Xr.index < f0)]
         for k, col in (("lignite", "lig"), ("coal", "coal"), ("other", "other")): TECH["A"][k] = (float(W[col].quantile(0.99)) * 1000 / 0.84,) + TECH["A"][k][1:]
         TAG += "_output"
+# SHAPE=1 (with FLEET and FLEETMODE=output; notes 21.165): gas split into the capacity that usually runs - its 99th
+# percentile of hourly output in the 3 months before / 0.84 - offered at gas cost, and the rest of the unit fleet as a
+# "gaspeak" tranche at a cost multiple drawn per draw ~ lognormal(log 1.6, 0.25); "other" (biomass, run-of-river, waste)
+# offered in full at -5, sized at its mean output in those 3 months / 0.93 (1 - mean forced outage share)
+SHAPE = os.environ.get("SHAPE") == "1"
+if SHAPE:
+    assert FLEET and FLEETMODE == "output"
+    gas_base = float(W["gasg"].quantile(0.99)) * 1000 / 0.84; gas_fleet = TECH["A"]["gas"][0]
+    TECH["A"]["gaspeak"] = (max(gas_fleet - gas_base, 0.0),) + TECH["A"]["gas"][1:]
+    TECH["A"]["gas"] = (min(gas_base, gas_fleet),) + TECH["A"]["gas"][1:]
+    TECH["A"]["other"] = (float(W["other"].mean()) * 1000 / 0.93,) + TECH["A"]["other"][1:]
+    TAG += "_shape"
 STORE = {z: dict(v) for z, v in V.STORAGE.items()}
 if FLEET: STORE["A"] = dict(P=6500.0, E=40000.0, soc0=20000.0, eta=0.75)
 DAYS = pd.date_range(os.environ.get("FIRST", "2026-10-15"), periods=int(os.environ.get("NDAYS", 14)), freq="D", tz=TZ)
@@ -84,6 +96,7 @@ def run(args):
     rng = np.random.default_rng(3_000_000 + k); th = V.draw_theta(rng); day = V.draw_day(rng, info)
     if "flex0" in ABLATE: th["flex_share"] = 0.0
     if COSTS: info.coal_price = float(rng.lognormal(np.log(12.0), 0.25))
+    if SHAPE: info.peak_factor = float(rng.lognormal(np.log(1.6), 0.25)); info.price_insensitive = {"A": {"other"}}
     try:
         m, acc, r = V.simulate(th, day, info)
     except Exception as e:
