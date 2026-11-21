@@ -113,3 +113,16 @@ ELEVEN_ZONE_SPEC.md, whose NordLink entry of 0 was therefore a missing value, no
 **Still open.** Zero schedules with a price gap above 1 EUR/MWh are frequent on three links: DE–SE4 32%, NL–NO2 46%,
 PL–SE4 28%. The same rule will be applied to them once their physical flows and outage records are in. Until then,
 none of these links' zero schedules is treated as an observed congested zero.
+
+## Addendum 2 (2026-11-21, before any outage run): missing-schedule rule applied to all seven links
+
+Each link is matched to its own transmission-outage records. Full results are in `prereg/link_audit.json`; the
+flagged MTUs are in `prereg/link_audit.missing.csv`.
+
+- **Genuine outages (capacity 0):** DE–SE4 (Baltic Cable), NL–NO2 (NorNed) and PL–SE4 (SwePol). Their frequent zero
+  schedules coincide with zero physical flow and are covered by outage records: 40%, 50% and 28% of MTUs. These are
+  observed zeros. The link limit is 0 in both directions in those MTUs, for both the replay and every headroom
+  scenario.
+- **Missing schedules by the rule:** DE–NO2 (NordLink) 3.5% of MTUs, NL–DK1 (COBRA) 4.3%, DE–DK1 0.45%, others
+  ≤ 0.2%. These MTUs are excluded from the likelihood, and flagged in the outage sample as stated in the first
+  addendum.

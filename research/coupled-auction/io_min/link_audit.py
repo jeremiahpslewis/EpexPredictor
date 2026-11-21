@@ -32,15 +32,26 @@ for a, b in LINKS:
         r[f"loss_{d}"] = dict(n=int(len(ratio)), median=round(ell, 4), iqr=[round(float(ratio.quantile(.25)), 4), round(float(ratio.quantile(.75)), 4)] if len(ratio) else None,
                               lossless=bool(abs(ell) <= 0.002) if len(ratio) else None)
     out[f"{a}-{b}"] = r
-# NordLink against physical flow and outages
-sx = (ser("sx_DE_LU_NO_2") - ser("sx_NO_2_DE_LU")).dropna(); pf = (ser("pf_DE_LU_NO_2") - ser("pf_NO_2_DE_LU")).resample("15min").ffill().reindex(sx.index)
-U = pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(str(E / "ut_*.parquet")))]).reset_index()
-U = U[U.docstatus.astype(str) != "Cancelled"]; U["start"] = pd.to_datetime(U.start, utc=True); U["end"] = pd.to_datetime(U.end, utc=True)
-cov = pd.Series(False, index=sx.index)
-for _, row in U.iterrows(): cov |= (sx.index >= row.start) & (sx.index < row.end)
-missing = (sx.abs() < 0.5) & (pf.abs() > 100) & ~cov
-out["NordLink_audit"] = dict(corr_sched_phys=round(float(sx.corr(pf)), 3), share_missing_by_rule=round(float(missing.mean()), 4),
-                             mtus_missing=int(missing.sum()), share_zero_with_outage=round(float(((sx.abs() < 0.5) & cov).mean()), 4),
-                             missing_by_month={str(k.date()): round(float(v), 3) for k, v in missing.resample("MS").mean().items()})
-missing[missing].index.to_series().to_csv(Path(sys.argv[2]).with_suffix(".nordlink_missing.csv"), index=False)
+# every link against physical flow and outage records (missing-schedule rule of the addendum)
+def outages(a, b):          # this link's own transmission-unavailability records, both directions
+    fs = sorted(glob.glob(str(E / f"ut_{a}_{b}_*.parquet"))) + sorted(glob.glob(str(E / f"ut_{b}_{a}_*.parquet")))
+    if not fs: return pd.DataFrame(columns=["start", "end"])
+    U = pd.concat([pd.read_parquet(f) for f in fs]).reset_index()
+    U = U[U.docstatus.astype(str) != "Cancelled"]; U["start"] = pd.to_datetime(U.start, utc=True); U["end"] = pd.to_datetime(U.end, utc=True)
+    return U
+miss_all = []
+for a, b in LINKS:
+    sx = (ser(f"sx_{a}_{b}") - ser(f"sx_{b}_{a}")).dropna()
+    pf = (ser(f"pf_{a}_{b}") - ser(f"pf_{b}_{a}")).resample("15min").ffill().reindex(sx.index)
+    cov = pd.Series(False, index=sx.index)
+    U = outages(a, b)
+    for _, row in U.iterrows(): cov |= (sx.index >= row.start) & (sx.index < row.end)
+    out[f"{a}-{b}"]["outage_records"] = int(len(U)); out[f"{a}-{b}"]["share_zero_schedule_under_outage"] = round(float(((sx.abs() < 0.5) & cov).mean()), 4)
+    missing = (sx.abs() < 0.5) & (pf.abs() > 100) & ~cov
+    zero_phys = (sx.abs() < 0.5) & (pf.abs() <= 100)
+    out[f"{a}-{b}"]["audit"] = dict(corr_sched_phys=round(float(sx.corr(pf)), 3), share_missing_by_rule=round(float(missing.mean()), 4),
+                                    share_zero_and_phys_zero=round(float(zero_phys.mean()), 4),
+                                    missing_by_month={str(k.date()): round(float(v), 3) for k, v in missing.resample("MS").mean().items()})
+    miss_all.append(missing[missing].index.to_series().rename(f"{a}-{b}"))
+pd.concat(miss_all, axis=1).notna().reset_index().to_csv(Path(sys.argv[2]).with_suffix(".missing.csv"), index=False)
 print(json.dumps(out, indent=1)); json.dump(out, open(sys.argv[2], "w"), indent=1)
