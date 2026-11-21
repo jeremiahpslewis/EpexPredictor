@@ -4093,3 +4093,16 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   For the slice: commitment blocks of ~6-12 h, minimum run and down times ~3-4 h, centred window, no hysteresis term;
   start cost only bounded (per-run gross margin median 55 EUR/MW, lower quartile 7). Caveats: midnight censoring of the
   single-day stretches; the 1.85 heat rate is a CCGT number; 20% threshold counts low-load CHP as off.
+
+21.172 Gas floor from heating degree days (delegated; research/coupled-auction/gas_floor.py, notes/gas_floor.md,
+  gas_floor.png; reviewed against the files). F_t = f0 + f1 * HDD_d (base 15 C, mean of six German points of the app's
+  weather store; archived short-lead model output, not a forecast issued the day before: day-ahead temperature error,
+  ~0.4 GW per 1 C, is not in these errors). Into winter (fit to Oct 2025, test Nov 2025 - Feb 2026): f0 0.66, f1 0.417
+  GW/HDD; out of winter (fit to Mar 2026, test Apr - mid-Aug 2026): f0 0.23, f1 0.436 (intervals overconfident - hours
+  treated as independent; the two fits' difference is the fairer spread).
+  MAE of hourly gas output vs the carried-forward floor: into winter 4.33 -> 1.74 GW (-60%), out of winter 2.00 -> 1.21
+  (-40%): MET. 90% coverage 0.71 into winter (NOT MET; the shortfall is in hours above the floor - the curve gives too
+  little gas on winter days, also in sample) and 0.94 out of winter. Out-of-winter fit: 8 divergences, r-hat 1.010 (NOT
+  MET; lambda at its bound 1). A slow random walk on top absorbed the season (f1 -> 0.12-0.16) and was dropped.
+  The straight line sits ~0.75-1 GW too low at zero HDD in summer; summer 2026 gas also ran 0.7-2 GW above summer 2025.
+  Use: replace the carried-forward floor by the HDD floor as the point forecast; winter intervals not yet trustworthy.
