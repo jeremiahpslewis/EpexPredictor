@@ -1,0 +1,541 @@
+{
+ "2026-02-11 17:00:00+00:00": {
+  "mtu": "2026-02-11 17:00:00+00:00",
+  "presolved_cnecs": 116,
+  "external_rows_in_presolved": 4,
+  "active_virtual_hubs": [],
+  "binding_rows": 3,
+  "binding_names": [
+   [
+    "External Constraint BE_AL_import",
+    9.411
+   ],
+   [
+    "L 400kV N0 1 CREYS-ST-VULBAS-OUEST ",
+    723.144
+   ],
+   [
+    "Resita - Timisoara c1 ",
+    32.382
+   ]
+  ],
+  "W1_max_violation_MW": 0.005198999999777243,
+  "W1_n_violated_gt5": 0,
+  "W1_min_slack_MW": -0.005198999999777243,
+  "W1_binding_matched": 1,
+  "W1_binding_slack_MW": [
+   -0.0
+  ],
+  "prices": {
+   "DE": 131.01,
+   "FR": 36.99,
+   "NL": 119.1,
+   "BE": 108.26,
+   "AT": 140.1,
+   "CZ": 136.02,
+   "PL": 135.35,
+   "DK_1": 131.03,
+   "DK_2": 160.28,
+   "SE_4": 160.26,
+   "NO_2": 127.67
+  },
+  "W2_max_spread_error_by_sign": {
+   "1": 188.03599792274707,
+   "-1": 0.008122988570640644
+  },
+  "domain_check_observed_y": {
+   "max_violation": 0.005198999999976195,
+   "balance_resid": 2.2737367544323206e-13
+  },
+  "W3": {
+   "DE": {
+    "np_entsoe": -1354.6,
+    "sum_border_schedules": -554.8,
+    "n_plus_X": -555.1,
+    "resid_model": -799.5,
+    "resid_schedules": -799.8
+   },
+   "FR": {
+    "np_entsoe": 6275.9,
+    "sum_border_schedules": 13013.9,
+    "n_plus_X": 13013.9,
+    "resid_model": -6738.0,
+    "resid_schedules": -6738.0
+   },
+   "NL": {
+    "np_entsoe": 4980.3,
+    "sum_border_schedules": 4323.3,
+    "n_plus_X": 4323.3,
+    "resid_model": 657.0,
+    "resid_schedules": 657.0
+   },
+   "BE": {
+    "np_entsoe": -4342.3,
+    "sum_border_schedules": -3342.3,
+    "n_plus_X": -3342.3,
+    "resid_model": -1000.0,
+    "resid_schedules": -1000.0
+   },
+   "AT": {
+    "np_entsoe": -611.5,
+    "sum_border_schedules": -1811.4,
+    "n_plus_X": -1811.5,
+    "resid_model": 1200.0,
+    "resid_schedules": 1199.9
+   },
+   "CZ": {
+    "np_entsoe": 1288.3,
+    "sum_border_schedules": 1287.9,
+    "n_plus_X": 1288.3,
+    "resid_model": 0.0,
+    "resid_schedules": 0.4
+   },
+   "PL": {
+    "np_entsoe": -1597.8,
+    "sum_border_schedules": -1597.8,
+    "n_plus_X": -1597.8,
+    "resid_model": 0.0,
+    "resid_schedules": 0.0
+   },
+   "DK_1": {
+    "np_entsoe": 850.0,
+    "sum_border_schedules": -123.0,
+    "n_plus_X": -123.0,
+    "resid_model": 973.0,
+    "resid_schedules": 973.0
+   },
+   "DK_2": {
+    "np_entsoe": -1258.0,
+    "sum_border_schedules": -1259.0,
+    "n_plus_X": -1259.0,
+    "resid_model": 1.0,
+    "resid_schedules": 1.0
+   },
+   "SE_4": {
+    "np_entsoe": -2537.0,
+    "sum_border_schedules": -1941.5,
+    "n_plus_X": -1941.5,
+    "resid_model": -595.5,
+    "resid_schedules": -595.5
+   },
+   "NO_2": {
+    "np_entsoe": 5659.3,
+    "sum_border_schedules": 2743.2,
+    "n_plus_X": 2743.2,
+    "resid_model": 2916.2,
+    "resid_schedules": 2916.2
+   }
+  },
+  "n_obs_MW": {
+   "DE": -1354.2,
+   "FR": 4070.9,
+   "NL": 4980.3,
+   "BE": -4342.3,
+   "AT": -491.5,
+   "CZ": 1288.3,
+   "PL": -1767.8,
+   "DK_1": 1124.0,
+   "DK_2": -890.0,
+   "SE_4": -52.5,
+   "NO_2": -640.0
+  },
+  "X_held_MW": {
+   "DE": 799.1,
+   "FR": 8943.0,
+   "NL": -657.0,
+   "BE": 1000.0,
+   "AT": -1320.0,
+   "CZ": 0.0,
+   "PL": 170.0,
+   "DK_1": -1247.0,
+   "DK_2": -369.0,
+   "SE_4": -1889.0,
+   "NO_2": 3383.2
+  },
+  "links_obs_MW": {
+   "DE->DK_1": -1824.0,
+   "DE->DK_2": 890.0,
+   "DE->SE_4": 209.0,
+   "DE->NO_2": 0.0,
+   "NL->NO_2": 640.0,
+   "NL->DK_1": 700.0,
+   "PL->SE_4": -156.5
+  },
+  "alegro_obs_MW": 1000.0,
+  "binding_set_size": 10,
+  "W4": {
+   "dim_price_subspace": 7,
+   "dim_free_n": 4,
+   "total": 11,
+   "max_abs_QtN": 7.608284047520688e-14,
+   "observed_price_in_V_resid": 0.006909311490871129
+  },
+  "W4_unit": {
+   "coupled": 1.0,
+   "separated": 1.0000000000000007
+  },
+  "calibration": {
+   "rows_raised": 1,
+   "max_raise_MW": 0.005198999999976195,
+   "shadow_rows": 3,
+   "shadow_rows_flow_minus_published_ram_MW": [
+    0.0,
+    0.0,
+    -0.0
+   ]
+  },
+  "W5_links_held": {
+   "status": "optimal",
+   "max_abs_price_err": 0.008273445193452744,
+   "price_err": {
+    "DE": -0.001,
+    "FR": 0.0,
+    "NL": 0.006,
+    "BE": 0.0,
+    "AT": -0.005,
+    "CZ": 0.002,
+    "PL": 0.008,
+    "DK_1": 0.001,
+    "DK_2": 0.0,
+    "SE_4": -0.001,
+    "NO_2": 0.0
+   },
+   "max_abs_n_err_MW": 0.10766497904569405,
+   "n_err": {
+    "DE": -0.0,
+    "FR": 0.0,
+    "NL": 0.1,
+    "BE": -0.1,
+    "AT": -0.0,
+    "CZ": 0.0,
+    "PL": 0.0,
+    "DK_1": -0.0,
+    "DK_2": 0.0,
+    "SE_4": 0.0,
+    "NO_2": 0.0
+   }
+  },
+  "W5_links_endogenous": {
+   "status": "optimal",
+   "max_abs_price_err": 0.04799862697674939,
+   "price_err": {
+    "DE": -0.001,
+    "FR": -0.0,
+    "NL": 0.007,
+    "BE": 0.001,
+    "AT": -0.001,
+    "CZ": -0.001,
+    "PL": 0.002,
+    "DK_1": 0.048,
+    "DK_2": -0.001,
+    "SE_4": -0.003,
+    "NO_2": 0.0
+   },
+   "max_abs_n_err_MW": 0.2582573345378023,
+   "n_err": {
+    "DE": -0.3,
+    "FR": -0.0,
+    "NL": 0.1,
+    "BE": -0.0,
+    "AT": -0.0,
+    "CZ": 0.0,
+    "PL": 0.1,
+    "DK_1": 0.1,
+    "DK_2": 0.0,
+    "SE_4": 0.0,
+    "NO_2": -0.0
+   }
+  },
+  "W5_links_endogenous_uncalibrated": {
+   "status": "optimal",
+   "max_abs_price_err": 0.05842999498457857,
+   "price_err": {
+    "DE": 0.0,
+    "FR": -0.004,
+    "NL": 0.008,
+    "BE": 0.003,
+    "AT": 0.015,
+    "CZ": -0.015,
+    "PL": -0.029,
+    "DK_1": 0.058,
+    "DK_2": -0.003,
+    "SE_4": -0.004,
+    "NO_2": -0.002
+   },
+   "max_abs_n_err_MW": 0.13640247241187353,
+   "n_err": {
+    "DE": -0.0,
+    "FR": -0.1,
+    "NL": 0.1,
+    "BE": 0.1,
+    "AT": 0.1,
+    "CZ": -0.1,
+    "PL": -0.1,
+    "DK_1": 0.1,
+    "DK_2": 0.0,
+    "SE_4": 0.0,
+    "NO_2": -0.0
+   }
+  }
+ },
+ "2026-02-01 03:00:00+00:00": {
+  "mtu": "2026-02-01 03:00:00+00:00",
+  "presolved_cnecs": 117,
+  "external_rows_in_presolved": 4,
+  "active_virtual_hubs": [],
+  "binding_rows": 0,
+  "binding_names": [],
+  "W1_max_violation_MW": 74.64055200000001,
+  "W1_n_violated_gt5": 1,
+  "W1_min_slack_MW": -74.64055200000001,
+  "W1_binding_matched": 0,
+  "W1_binding_slack_MW": [],
+  "prices": {
+   "DE": 98.85,
+   "FR": 98.85,
+   "NL": 98.85,
+   "BE": 98.85,
+   "AT": 98.85,
+   "CZ": 98.85,
+   "PL": 98.85,
+   "DK_1": 88.48,
+   "DK_2": 96.03,
+   "SE_4": 65.77,
+   "NO_2": 95.93
+  },
+  "W2_max_spread_error_by_sign": {
+   "1": 0.0,
+   "-1": 0.0
+  },
+  "domain_check_observed_y": {
+   "max_violation": 74.64055200000001,
+   "balance_resid": -2.2737367544323206e-13
+  },
+  "W3": {
+   "DE": {
+    "np_entsoe": 4713.1,
+    "sum_border_schedules": 5507.0,
+    "n_plus_X": 5507.0,
+    "resid_model": -793.9,
+    "resid_schedules": -793.9
+   },
+   "FR": {
+    "np_entsoe": 4851.4,
+    "sum_border_schedules": 11038.4,
+    "n_plus_X": 11038.4,
+    "resid_model": -6187.0,
+    "resid_schedules": -6187.0
+   },
+   "NL": {
+    "np_entsoe": 212.9,
+    "sum_border_schedules": 1043.5,
+    "n_plus_X": 1043.6,
+    "resid_model": -830.7,
+    "resid_schedules": -830.6
+   },
+   "BE": {
+    "np_entsoe": -5121.1,
+    "sum_border_schedules": -4319.1,
+    "n_plus_X": -4319.1,
+    "resid_model": -802.0,
+    "resid_schedules": -802.0
+   },
+   "AT": {
+    "np_entsoe": -5798.9,
+    "sum_border_schedules": -4598.6,
+    "n_plus_X": -4598.9,
+    "resid_model": -1200.0,
+    "resid_schedules": -1200.3
+   },
+   "CZ": {
+    "np_entsoe": 635.0,
+    "sum_border_schedules": 634.8,
+    "n_plus_X": 635.0,
+    "resid_model": 0.0,
+    "resid_schedules": 0.2
+   },
+   "PL": {
+    "np_entsoe": 195.6,
+    "sum_border_schedules": 195.6,
+    "n_plus_X": 195.6,
+    "resid_model": 0.0,
+    "resid_schedules": 0.0
+   },
+   "DK_1": {
+    "np_entsoe": 2117.0,
+    "sum_border_schedules": 3098.4,
+    "n_plus_X": 3098.4,
+    "resid_model": -981.4,
+    "resid_schedules": -981.4
+   },
+   "DK_2": {
+    "np_entsoe": -67.0,
+    "sum_border_schedules": -67.0,
+    "n_plus_X": -67.0,
+    "resid_model": 0.0,
+    "resid_schedules": 0.0
+   },
+   "SE_4": {
+    "np_entsoe": -1515.0,
+    "sum_border_schedules": -315.0,
+    "n_plus_X": -315.0,
+    "resid_model": -1200.0,
+    "resid_schedules": -1200.0
+   },
+   "NO_2": {
+    "np_entsoe": -1261.1,
+    "sum_border_schedules": 1771.0,
+    "n_plus_X": 1771.0,
+    "resid_model": -3032.1,
+    "resid_schedules": -3032.1
+   }
+  },
+  "n_obs_MW": {
+   "DE": 4707.9,
+   "FR": 1951.4,
+   "NL": 209.6,
+   "BE": -5121.1,
+   "AT": -6163.9,
+   "CZ": 635.0,
+   "PL": 359.5,
+   "DK_1": 3003.4,
+   "DK_2": 663.0,
+   "SE_4": 516.0,
+   "NO_2": 104.1
+  },
+  "X_held_MW": {
+   "DE": 799.1,
+   "FR": 9087.0,
+   "NL": 834.0,
+   "BE": 802.0,
+   "AT": 1565.0,
+   "CZ": 0.0,
+   "PL": -163.9,
+   "DK_1": 95.0,
+   "DK_2": -730.0,
+   "SE_4": -831.0,
+   "NO_2": 1666.9
+  },
+  "links_obs_MW": {
+   "DE->DK_1": -2500.0,
+   "DE->DK_2": -663.0,
+   "DE->SE_4": -216.0,
+   "DE->NO_2": 0.0,
+   "NL->NO_2": -104.1,
+   "NL->DK_1": -503.4,
+   "PL->SE_4": -300.0
+  },
+  "alegro_obs_MW": -920.9,
+  "binding_set_size": 7,
+  "W4": {
+   "dim_price_subspace": 5,
+   "dim_free_n": 6,
+   "total": 11,
+   "max_abs_QtN": 4.711195907784343e-16,
+   "observed_price_in_V_resid": 1.154495294690031e-13
+  },
+  "W4_unit": {
+   "coupled": 1.0,
+   "separated": 1.0000000000000007
+  },
+  "calibration": {
+   "rows_raised": 1,
+   "max_raise_MW": 74.64055200000001,
+   "shadow_rows": 0,
+   "shadow_rows_flow_minus_published_ram_MW": []
+  },
+  "W5_links_held": {
+   "status": "optimal",
+   "max_abs_price_err": 0.009521387731481923,
+   "price_err": {
+    "DE": 0.002,
+    "FR": 0.002,
+    "NL": 0.003,
+    "BE": 0.002,
+    "AT": 0.002,
+    "CZ": 0.002,
+    "PL": 0.002,
+    "DK_1": -0.01,
+    "DK_2": -0.001,
+    "SE_4": 0.001,
+    "NO_2": 0.002
+   },
+   "max_abs_n_err_MW": 0.23069952542937244,
+   "n_err": {
+    "DE": -0.2,
+    "FR": -0.1,
+    "NL": 0.1,
+    "BE": 0.0,
+    "AT": -0.0,
+    "CZ": 0.1,
+    "PL": 0.1,
+    "DK_1": -0.0,
+    "DK_2": -0.0,
+    "SE_4": -0.0,
+    "NO_2": -0.0
+   }
+  },
+  "W5_links_endogenous": {
+   "status": "optimal",
+   "max_abs_price_err": 0.002970415004227789,
+   "price_err": {
+    "DE": -0.0,
+    "FR": -0.0,
+    "NL": 0.0,
+    "BE": -0.0,
+    "AT": -0.0,
+    "CZ": -0.0,
+    "PL": -0.0,
+    "DK_1": 0.003,
+    "DK_2": 0.001,
+    "SE_4": 0.001,
+    "NO_2": 0.003
+   },
+   "max_abs_n_err_MW": 0.17574418556728233,
+   "n_err": {
+    "DE": 0.0,
+    "FR": 0.2,
+    "NL": 0.0,
+    "BE": 0.0,
+    "AT": -0.1,
+    "CZ": -0.0,
+    "PL": -0.1,
+    "DK_1": -0.0,
+    "DK_2": -0.0,
+    "SE_4": -0.0,
+    "NO_2": -0.0
+   }
+  },
+  "W5_links_endogenous_uncalibrated": {
+   "status": "optimal",
+   "max_abs_price_err": 5.298771207562055,
+   "price_err": {
+    "DE": -1.579,
+    "FR": 0.107,
+    "NL": 5.299,
+    "BE": 0.811,
+    "AT": -0.778,
+    "CZ": -0.987,
+    "PL": -1.095,
+    "DK_1": -0.0,
+    "DK_2": 0.011,
+    "SE_4": 0.0,
+    "NO_2": 0.006
+   },
+   "max_abs_n_err_MW": 275.30941988789925,
+   "n_err": {
+    "DE": -169.3,
+    "FR": 28.8,
+    "NL": 275.3,
+    "BE": 48.9,
+    "AT": -49.5,
+    "CZ": -63.5,
+    "PL": -70.7,
+    "DK_1": -0.0,
+    "DK_2": -0.0,
+    "SE_4": -0.0,
+    "NO_2": -0.0
+   }
+  }
+ }
+}
