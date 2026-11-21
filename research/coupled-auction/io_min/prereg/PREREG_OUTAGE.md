@@ -85,3 +85,31 @@ Also reported separately: the same table for MTUs where gas is marginal against 
 **Reading rule, fixed now.** The answer changes materially across headroom if the median ΔpDE moves by more than 30%,
 or Germany's own share of the replacement moves by more than 0.15, between η = 0.10 and η = 1.00. If it does, that
 sensitivity is reported as a structural finding.
+
+## Addendum, 2026-11-21 (before any outage run): link data audit and loss factors
+
+Source: `link_audit.py`; results in `prereg/link_audit.json`.
+
+**Loss factors**, estimated on October–November 2025 by the rule above, then fixed:
+
+| Link | Loss | Treatment |
+|---|---|---|
+| DE–SE4 (Baltic Cable) | 0.025 | lossy |
+| DE–NO2 (NordLink) | 0.031 | lossy |
+| NL–NO2 (NorNed) | 0.032 | lossy |
+| DE–DK1, DE–DK2, NL–DK1 | 0 | lossless |
+| PL–SE4 (SwePol) | 0 (PL→SE4), 0.011 (SE4→PL) | flagged: few observations, wide spread |
+
+**Missing schedules.** A DC-link day-ahead schedule of exactly 0 is treated as missing when:
+- the physical flow exceeds 100 MW in magnitude; and
+- no non-cancelled transmission outage covers the MTU.
+
+Such MTUs are excluded from the likelihood. In the outage sample they are kept, flagged, and reported separately
+with physical flow standing in for the schedule.
+
+For NordLink this flags 3.5% of MTUs (13–15% in January–February 2026). It includes both worked MTUs of
+ELEVEN_ZONE_SPEC.md, whose NordLink entry of 0 was therefore a missing value, not an observed zero.
+
+**Still open.** Zero schedules with a price gap above 1 EUR/MWh are frequent on three links: DE–SE4 32%, NL–NO2 46%,
+PL–SE4 28%. The same rule will be applied to them once their physical flows and outage records are in. Until then,
+none of these links' zero schedules is treated as an observed congested zero.

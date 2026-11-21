@@ -57,6 +57,8 @@ if MODE == "entsoe":
     pairs = sorted({(a, b) for a, nb in BORDERS.items() for b in nb} | {(b, a) for a, nb in BORDERS.items() for b in nb})
     jobs = [("sx", a, b) for a, b in pairs] + [("price", "DE_LU", None), ("load", "DE_LU", None), ("ws", "DE_LU", None),
             ("pf", "DE_LU", "NO_2"), ("pf", "NO_2", "DE_LU"), ("ut", "DE_LU", "NO_2"), ("ut", "NO_2", "DE_LU")]
+    for a_, b_ in [("DE_LU", "DK_1"), ("DE_LU", "DK_2"), ("DE_LU", "SE_4"), ("NL", "NO_2"), ("NL", "DK_1"), ("PL", "SE_4")]:   # link audit
+        jobs += [("pf", a_, b_), ("pf", b_, a_), ("ut", a_, b_), ("ut", b_, a_)]
     chunks = [(pd.Timestamp(a, tz="Europe/Berlin"), pd.Timestamp(b, tz="Europe/Berlin")) for a, b in
               [("2025-10-01", "2026-01-01"), ("2026-01-01", "2026-04-01"), ("2026-04-01", "2026-07-01"), ("2026-07-01", "2026-10-01"), ("2026-10-01", "2026-11-10")]]
     jobs = [(j, c) for j in jobs for c in chunks]
