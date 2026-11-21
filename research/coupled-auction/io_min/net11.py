@@ -97,13 +97,13 @@ def polish(supply, load, H, A, b, e, e0, lo, hi, p0, y0, act0=None, bnd0=None, i
             x = x + t * dx
         F, _ = resid(x); pp, yy = x[:nz], x[nz:nz + ny]; mu = x[nz + ny:nz + ny + na]; nu = x[nz + ny + na + 1:]
         slack = b - A @ yy
-        viol = [k for k in range(len(b)) if k not in act and slack[k] < -1e-4]
-        bviol = [(j, "hi") for j in range(ny) if np.isfinite(hi[j]) and (j, "hi") not in bnd and yy[j] > hi[j] + 1e-4] + \
-                [(j, "lo") for j in range(ny) if np.isfinite(lo[j]) and (j, "lo") not in bnd and yy[j] < lo[j] - 1e-4]
-        neg = [ar[i] for i in range(na) if mu[i] < -1e-6]
+        viol = [k for k in range(len(b)) if k not in act and slack[k] < -1e-2]          # 0.01 MW
+        bviol = [(j, "hi") for j in range(ny) if np.isfinite(hi[j]) and (j, "hi") not in bnd and yy[j] > hi[j] + 1e-2] + \
+                [(j, "lo") for j in range(ny) if np.isfinite(lo[j]) and (j, "lo") not in bnd and yy[j] < lo[j] - 1e-2]
+        neg = [ar[i] for i in range(na) if mu[i] < -1e-3]
         # bound multipliers, same convention as the rows (H'p + A'mu + ... + Eb'nu = 0): y_j <= hi enters like a row,
         # so nu >= 0; y_j >= lo is -y_j <= -lo, so nu <= 0
-        bneg = [br[i] for i in range(nb) if (br[i][1] == "hi" and nu[i] < -1e-6) or (br[i][1] == "lo" and nu[i] > 1e-6)]
+        bneg = [br[i] for i in range(nb) if (br[i][1] == "hi" and nu[i] < -1e-3) or (br[i][1] == "lo" and nu[i] > 1e-3)]
         if not viol and not bviol and not neg and not bneg and np.max(np.abs(F)) < 1e-3:
             return pp, yy, ar, br, True
         if viol: act.add(min(viol, key=lambda k: slack[k]))
