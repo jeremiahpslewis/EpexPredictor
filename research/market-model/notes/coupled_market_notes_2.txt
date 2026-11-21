@@ -4076,3 +4076,20 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   run lengths, and check whether units started for the evening run through the following hours at negative margins.
   Implication for the slice: gas offers should respond to a multi-hour margin - block orders spanning several hours with
   start costs, i.e. the structure the slice already has for coal and gas peak blocks, rather than hour-by-hour steps.
+
+21.171 Unit-level commitment test (delegated; research/coupled-auction/unit_commitment.py, notes/unit_commitment.md,
+  unit_commitment.png; reviewed against the files). Pre-set overall criterion (E1 + three of E2-E5) NOT MET: E1, E3 met.
+  50 gas units >= 100 MW, 15.2 GW, median 72% of system gas; alternate days only (187 single-day stretches).
+  - E1: with margin, clock hour and season fixed, output rises 0.057 GW per EUR/MWh of (m_win - m) (0.051-0.072); 80%
+    (77-83%) of it is capacity switching on/off, 12% load factor. The current-margin response is also 75% on/off.
+  - E2 (narrow miss): 24.2% of run-hours at negative margin (threshold 25%); run-average margin exceeds the start-hour
+    margin by 16 EUR/MWh; 40% of starts at negative margin; margin -31 three hours before a start, +7 at it, +22 over the run.
+  - E3: 7.4% of runs under 3 h; Kaplan-Meier median run 12 h, median down-time 8 h.
+  - E4 NOT MET, and a CORRECTION to 21.168/21.170: the wider late-evening curve (1.6x) is not in the unit data, and system
+    gas output gives the same 0.78 or 1.28 evening/midday width ratio under simpler fits; the 1.6x was a property of the
+    hierarchical shared-amplitude specification, not of the plants.
+  - E5 NOT MET: no hysteresis (falling - rising -0.03 GW, -0.28 .. +0.45); capacity on responds equally to the next and
+    the previous 3 h (0.028 / 0.027): the window is centred.
+  For the slice: commitment blocks of ~6-12 h, minimum run and down times ~3-4 h, centred window, no hysteresis term;
+  start cost only bounded (per-run gross margin median 55 EUR/MW, lower quartile 7). Caveats: midnight censoring of the
+  single-day stretches; the 1.85 heat rate is a CCGT number; 20% threshold counts low-load CHP as off.
