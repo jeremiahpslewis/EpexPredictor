@@ -4145,3 +4145,17 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   test hours on the flat top where mu barely matters; lambda at 1 suggests a commitment horizon longer than +-3 h.
   Link to 21.173: the slice's August nights sat too low (~110 vs ~150) while running too little gas; an oversized lignite
   offer (real August lignite 1.5 GW below even these curves) is consistent with that - untested.
+
+21.175 User: a gas model that works in winter and not in summer means the Blockheizkraftwerke (small CHP) are missing?
+  Check (recon_hourly, gas output at negative prices = the price-insensitive floor): summer months 2025 ~0.9-1.3 GW
+  (median at p < 0), 2026 ~1.2-1.5 GW; winter 3-4 GW. Summer gas by price band (median GW), 2025 / 2026:
+    p < 0: 1.16 / 1.48; 0-10: 1.25 / 1.66; 10-30: 1.44 / 1.83; 30-60: 1.70 / 1.99; 60-90: 2.24 / 2.48; 90-120: 3.41 / 3.36;
+    > 120: 4.85 / 5.24.
+  Reading: yes in part. There is a year-round price-insensitive gas floor of ~1.2-1.5 GW (process heat, hot water, small
+  CHP) that the HDD floor (intercept 0.2-0.7 GW, 21.172) undershoots by ~0.8 GW - the same gap the floor agent saw at zero
+  HDD. No step at zero price (no large subsidised tranche bidding just above 0): output rises smoothly, +0.5 GW from
+  negative prices to 30-60 EUR/MWh. The 2026 rise in summer gas is mostly at prices > 120 (2021 of 3,475 summer hours
+  in 2026 vs 402 in 2025), i.e. more hours high on the curve, not a bigger floor. So the BHKW floor explains ~1 GW of the
+  summer shortfall; the rest of the August misfit (night price too low) points to lignite offered too large (21.174).
+  Proposed: floor = year-round baseline (estimated from negative-price hours before the window) + HDD heating term;
+  lignite's top level allowed to move as in 21.174.
