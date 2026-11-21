@@ -4129,3 +4129,19 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   untested (lig_coal_curves task running). Open: a cut over fill-or-kill blocks only (clearing.py) instead of making
   the peak blocks divisible; February's 95th percentile still reaches 500 in 13% of quarters; one summer window only.
   The HDD floor (21.172) is not yet used here.
+
+21.174 Lignite and coal latent curves (delegated; lig_coal_curves.py, notes/lig_coal_curves.md, lig_coal_curves.png;
+  reviewed against the files). Registered expectations E1-E6 NOT MET, E7 met (lambda ~ 1, at its bound). The model was
+  changed once after seeing the registered model's test scores (it failed in-sample checks: floor and mu traded off,
+  mu swung); the fixed-curve baseline was added after the tests - so this is not a blind result.
+  Test MAE (GW), fixed curve / floor walk / top-level (A) walk / A + mu walk:
+    lignite Aug 2.51 / 1.98 / 1.77 / 1.80;  lignite Oct 1.08 / 1.09 / 0.96 / 1.02
+    coal Aug    0.54 / 0.68 / 0.75 / 0.67;  coal Oct    1.16 / 0.66 / 0.58 / 0.61
+  Letting the level (A) move helps; letting mu drift adds nothing out of sample (+2%, +6%, -11%, +5%). Lignite in August is
+  over-predicted by ~1.5 GW by every variant (90% coverage 0.54-0.58): real lignite ran 4-7 GW for long stretches against
+  ~9 predicted. October over-predicts by ~0.6 (lignite) and ~0.5 GW (coal). mu (descriptive): lignite -21..-4 until Mar
+  2026, ~+3 Apr-Jun, +4..+10 from mid-Aug (~+13 to +20 year on year), partly seasonal; coal -31..-8 in winter, +6..+10 from
+  late July, not separable from season. Caveats: two 14-day windows; A and mu partly confounded (corr 0.29-0.55); 66-81% of
+  test hours on the flat top where mu barely matters; lambda at 1 suggests a commitment horizon longer than +-3 h.
+  Link to 21.173: the slice's August nights sat too low (~110 vs ~150) while running too little gas; an oversized lignite
+  offer (real August lignite 1.5 GW below even these curves) is consistent with that - untested.
