@@ -61,7 +61,14 @@ def domain(r, eta):
         flip = np.where(mu[ns:ns + ni] < 0, -1.0, 1.0); A_inf = A_inf * flip[:, None]; b_inf = b_inf * flip
     eq_rows = [k for k in range(ns) if mu[k] < -0.05]
     held = [r["bnd"][i] for i in range(len(r["bnd"])) if mu[ns + ni + i] < -0.05]
-    A = np.vstack([r["A"], r["A_sp"], A_inf] + ([-r["A_sp"][eq_rows]] if eq_rows else []))
+    # drop presolved rows parallel to a binding or inferred row (same CNEC published twice): duplicates make the active
+    # set degenerate and the active-set search cycles
+    keep = np.ones(len(r["A"]), bool); Bn = np.vstack([r["A_sp"], A_inf]) if (ns or ni) else np.zeros((0, N.NY))
+    if len(Bn):
+        nA = r["A"] / np.maximum(np.linalg.norm(r["A"], axis=1, keepdims=True), 1e-12); nB = Bn / np.maximum(np.linalg.norm(Bn, axis=1, keepdims=True), 1e-12)
+        keep = (np.abs(nA @ nB.T) < 0.99999).all(axis=1)
+    b = b[keep]
+    A = np.vstack([r["A"][keep], r["A_sp"], A_inf] + ([-r["A_sp"][eq_rows]] if eq_rows else []))
     b = np.r_[b, r["A_sp"] @ y if ns else np.zeros(0), b_inf] if True else None
     if eq_rows: b = np.r_[b, -(r["A_sp"][eq_rows] @ y)]
     lo = np.full(N.NY, -np.inf); hi = np.full(N.NY, np.inf); lo[N.IA], hi[N.IA] = -1000.0, 1000.0
@@ -81,7 +88,7 @@ def work(args):
     S0, _ = make_supply(th, nb, r)(r["p"]); load = S0 - r["n"]                   # = D + X + 1000 u: shocks recovered at this draw
     for name, eta in SCEN:
         A, b, lo, hi, dflag = domain(r, eta)
-        act0 = list(range(len(r["A"]), len(b)))                                   # binding rows: shadow and inferred
+        act0 = list(range(len(b) - len(r["A_sp"]) - len(r["A_inf"]) - dflag["eq_rows"], len(b)))          # binding rows: shadow, inferred, equality copies
         bnd0 = [(j, s) for j, s in r["bnd"]] + [(j, "lo") for j in range(N.IA + 1, N.NY) if r["y"][j] < 0.5 and (j, "lo") not in r["bnd"]]
         if abs(r["y"][N.IA]) >= 999.5: bnd0.append((N.IA, "hi" if r["y"][N.IA] > 0 else "lo"))
         pb, yb, ab, bb, okb = N.polish(make_supply(th, nb, r), load, r["H"], A, b, r["e"], r["e0"], lo, hi, r["p"], r["y"], act0, list(set(bnd0)))

@@ -64,7 +64,7 @@ def price_subspace(H, AB, e, tol=1e-4):
     Uq, _, _ = np.linalg.svd(Q, full_matrices=True)
     return Q, Uq[:, Q.shape[1]:]
 
-def polish(supply, load, H, A, b, e, e0, lo, hi, p0, y0, act0=None, bnd0=None, iters=40, outer=80):
+def polish(supply, load, H, A, b, e, e0, lo, hi, p0, y0, act0=None, bnd0=None, iters=40, outer=200):
     """Exact equilibrium by active-set Newton. supply(p) -> (S, dS) in MW. Starts from (p0, y0) and an optional active
     set; adds the most violated row or bound, drops the most negative multiplier, until KKT holds.
     Returns p, y, active rows, active bounds (index, side), ok."""
@@ -106,11 +106,11 @@ def polish(supply, load, H, A, b, e, e0, lo, hi, p0, y0, act0=None, bnd0=None, i
         bneg = [br[i] for i in range(nb) if (br[i][1] == "hi" and nu[i] < -1e-6) or (br[i][1] == "lo" and nu[i] > 1e-6)]
         if not viol and not bviol and not neg and not bneg and np.max(np.abs(F)) < 1e-3:
             return pp, yy, ar, br, True
-        # Bland's rule (lowest index first) prevents cycling among nearly collinear rows
-        if viol: act.add(min(viol))
-        elif bviol: bnd.add(min(bviol))
-        elif neg: act.discard(min(neg))
-        elif bneg: bnd.discard(min(bneg))
+        if viol:                                                       # add up to five most violated rows at once
+            for k in sorted(viol, key=lambda k: slack[k])[:5]: act.add(k)
+        elif bviol: bnd.add(bviol[0])
+        elif neg: act.discard(min(neg, key=lambda k: mu[ar.index(k)]))
+        elif bneg: bnd.discard(bneg[0])
         p, y = pp, yy
     return p, y, sorted(act), sorted(bnd), False
 
