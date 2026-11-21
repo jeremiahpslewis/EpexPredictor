@@ -4170,3 +4170,22 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   Aggregate 2026 capacity of the ten zones ~419 GW (solar 108, nuclear 70, onshore 56, gas 52, hard coal 27, hydro
   reservoir 23, run-of-river 20, lignite 14, pumped storage 14, offshore 11). NL 2026 capacity equals 2025 (likely
   not updated). Several zones moved to 15-min forecasts after October 2025 (SE_4 Nov 2025, FR Jan 2026, BE solar Oct 2026).
+
+21.177 FLOOR2 and LIGLEVEL tested in the slice (delegated; notes/floor_lignite.md, hist_window_aug_liglevel.png; both
+  opt-in in hist_window.py, vslice.py gains only tech_orders, default off). Checks rerun here: sbi_sim old seeds max
+  diff 0.0, verify.py all checks passed.
+  FLOOR2: gas floor = B + 0.417*HDD, B from negative-price hours before the window (1.42 GW Aug, 1.10 GW Feb).
+  LIGLEVEL: lignite capacity = 28-day median output in high-margin hours / 0.84 (12.6 -> 10.2 GW Aug, 15.9 -> 13.4 Feb).
+                  inside90  band  med err      Feb: inside90  band  med err
+    current        .713     107   +33.2            .830      55   +1.0
+    +FLOOR2        .690     103   +36.1            .818      81   -5.8
+    +LIGLEVEL      .777     143   +22.3            .798      79   -3.9
+    +both          .759     142   +24.7            .748      86  -11.9
+  Expectations: E1 met (FLOOR2 does not fix August), E3 met, E6 met (default unchanged); E2 not met (night improved by
+  only 8 and the band widened), E4 not met (lignite 1.26 GW over, not >= 1.5), E5 not met (February worse, less than
+  predicted). LIGLEVEL brings back false scarcity in February. In the August figure the slice is step-like (nights about
+  100-120 against 150 observed, evenings 250-300 against about 200): cutting lignite lifts the evening peak more than
+  the night. The floor raises gas output in the right direction (Feb gas 10.5 vs 10.8 observed) without moving price,
+  so the night misfit is not a quantity-of-gas problem. Neither switch is fit for a default; one summer window only.
+  Next suspect: the shape of the supply stack between ~100 and ~250 EUR/MWh (it is too flat-then-steep); coal output
+  is too low in every variant.

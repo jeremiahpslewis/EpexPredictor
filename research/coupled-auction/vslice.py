@@ -59,6 +59,9 @@ class Info:
     # With the curve's divisible span blocks in the book, a fill-or-kill block that is paradoxically accepted cannot be cut
     # off by the solver's no-good cuts (the master escapes each cut by changing a divisible block), so GASCURVE sets 0.
     peak_mar: float | None = None
+    # opt-in (notes/floor_lignite.md): record each technology's order indices in acc[z]["orders_by_tech"], for checks of
+    # dispatch by technology; changes nothing in the book
+    tech_orders: bool = False
 
 
 def gc_tilings(span_h):
@@ -200,12 +203,14 @@ def build_book(theta, day, info: Info, storage=True, expected_prices=None):
                 take = min(st[2], need); st[2] -= take; need -= take; split[st[0]]["netted"][t] += take; split[st[0]]["period"][t] -= take
                 if need <= 1e-9: break
             short[t] = need
-        gas_idx = []
+        gas_idx, by_tech = [], {}
         for k_, t, q, p_ in steps:
             if q > 1e-6:
                 if k_ == "gas": gas_idx.append(len(orders))
+                by_tech.setdefault(k_, []).append(len(orders))
                 orders.append(Order(z, t, "sell", q, p_))
         acc[z] = dict(avail=avail, split=split, load=load, netted=netted, short=short)
+        if info.tech_orders: acc[z]["orders_by_tech"] = by_tech
         if info.gas_curve is not None and z in info.gas_curve: acc[z]["gas_orders"] = gas_idx   # opt-in: for checks of gas dispatch
         # buy side: price-taking load less netting, flexible demand
         for t in range(T):

@@ -71,6 +71,43 @@ if GASCURVE:
 # also usable alone, as the control run for GASCURVE
 PEAKDIV = GASCURVE or os.environ.get("PEAKDIV") == "1"
 if PEAKDIV and not GASCURVE: TAG += "_peakdiv"
+# Two opt-in switches (notes/floor_lignite.md), estimated only from hours before Berlin midnight of FIRST:
+#   FLOOR2=1 (with GASCURVE): the curve's floor F replaced per delivery day by F_d = B + f1 HDD_d. HDD_d = max(0, 15 - daily
+#     mean of the six German land points of the weather store), as in gas_floor.py; f1 = 0.417 GW/HDD, gas_floor.py's
+#     into-winter fit (data to 2025-10-31, before both windows; FLOOR2_F1 overrides); B = median of gas output less f1 HDD
+#     over the last 100 negative-price hours on days without heating (HDD <= 0.5): the year-round price-insensitive floor
+#     (process heat, hot water, small CHP), measured where neither price nor heating calls gas.
+#   LIGLEVEL=1 (with FLEET and FLEETMODE=output): lignite sized at its median hourly output over the 28 days before, in
+#     hours priced above lignite cost + 40 EUR/MWh (cost 1.1 carbon + 8, daily EUA), divided by 0.84 as in FLEETMODE=output,
+#     instead of the 3-month 99th percentile / 0.84.
+#   TECHOUT=1: also write hist_window{TAG}_tech.parquet, the slice's median gas, lignite and coal output per quarter
+#     (awards plus netted) with observed output; changes neither the draws nor the JSON.
+FLOOR2, LIGLEVEL, TECHOUT = os.environ.get("FLOOR2") == "1", os.environ.get("LIGLEVEL") == "1", os.environ.get("TECHOUT") == "1"
+if FLOOR2 or LIGLEVEL:
+    F0L = pd.Timestamp(os.environ.get("FIRST", "2026-10-15"), tz=TZ)
+    Xb = pd.read_parquet(SP / "out/recon_hourly.parquet").tz_convert(TZ); Xb = Xb[Xb.index < F0L]
+    _day = lambda ix: ix.tz_localize(None).normalize()
+if FLOOR2:
+    assert GASCURVE, "FLOOR2 replaces the GASCURVE floor"
+    _w = pd.read_json(SP / "appdata/weather_v2_DE_LU.json.gz", compression="gzip")
+    if pd.api.types.is_integer_dtype(_w.index.dtype): _w.index = pd.to_datetime(_w.index, unit="ms", utc=True)
+    elif _w.index.tz is None: _w.index = _w.index.tz_localize("UTC")
+    _t = _w[[f"temp_{i}" for i in range(6)]].mean(axis=1).tz_convert(TZ)
+    HDD = (15.0 - _t.groupby(_day(_t.index)).mean()).clip(lower=0)
+    F2_F1 = float(os.environ.get("FLOOR2_F1", 0.417))
+    _h = HDD.reindex(_day(Xb.index)).to_numpy(); _neg = Xb[(Xb.p < 0) & (_h <= 0.5)].iloc[-100:]
+    F2_B = float((_neg.gasg - F2_F1 * HDD.reindex(_day(_neg.index)).to_numpy()).median())
+    F2_INFO = dict(B_GW=round(F2_B, 3), f1=F2_F1, hours=len(_neg), first_hour=str(_neg.index.min()), last_hour=str(_neg.index.max()))
+    floor2 = lambda d: 1000 * (F2_B + F2_F1 * float(HDD[pd.Timestamp(d.date())]))       # MW, delivery day d
+    TAG += "_floor2"
+if LIGLEVEL:
+    assert FLEET and FLEETMODE == "output", "LIGLEVEL needs FLEET and FLEETMODE=output"
+    _eua = pd.read_parquet(SP / "out/eua_daily.parquet")["eua"].sort_index()
+    _L = Xb[Xb.index >= F0L - pd.Timedelta(days=28)]; _lc = 1.1 * _eua.reindex(_day(_L.index), method="ffill").to_numpy() + 8.0
+    _lv = float(_L.lig[_L.p > _lc + 40].median())
+    LL_INFO = dict(level_GW=round(_lv, 3), hours=int((_L.p > _lc + 40).sum()), cap_MW=round(_lv * 1000 / 0.84), p99_cap_MW=round(TECH["A"]["lignite"][0]))
+    TECH["A"]["lignite"] = (_lv * 1000 / 0.84,) + TECH["A"]["lignite"][1:]
+    TAG += "_liglevel"
 STORE = {z: dict(v) for z, v in V.STORAGE.items()}
 if FLEET: STORE["A"] = dict(P=6500.0, E=40000.0, soc0=20000.0, eta=0.75)
 DAYS = pd.date_range(os.environ.get("FIRST", "2026-10-15"), periods=int(os.environ.get("NDAYS", 14)), freq="D", tz=TZ)
@@ -115,6 +152,8 @@ def run(args):
         j = int(np.random.default_rng(7_000_000 + k).integers(len(GC["A"]))); hb = np.digitize(V.HOURS, [6, 10, 16, 20])
         info.gas_curve = {"A": dict(F=1000 * float(GC["F_last"][j]), A=1000 * float(GC["A"][j]), lam=float(GC["lam"][j]),
                                     mu=GC["mu_b"][j][hb], s=GC["s_b"][j][hb], nq=GC_NQ, mar=GC_MAR)}
+        if FLOOR2: info.gas_curve["A"]["F"] = floor2(d)
+    if TECHOUT: info.tech_orders = True
     try:
         m, acc, r = V.simulate(th, day, info)
     except Exception as e:
@@ -125,6 +164,13 @@ def run(args):
     for b_, blk in enumerate(m.blocks):
         if blk.zone == "A": sold += r.a[b_] * np.array(blk.q)
     gen_a = sold + acc["A"]["netted"]                    # scheduled generation: auction awards plus what portfolios serve themselves
+    if TECHOUT:                                          # output by technology: netted + period awards + block awards
+        out = {k_: s_["netted"].copy() for k_, s_ in acc["A"]["split"].items()}
+        for k_, ids in acc["A"]["orders_by_tech"].items():
+            for jj in ids: out[k_][m.orders[jj].t] += r.x[jj] * m.orders[jj].q
+        for b_, blk in enumerate(m.blocks):
+            if blk.zone == "A": out[blk.name.split()[1]] += r.a[b_] * np.array(blk.q)
+        return k, d, dict(price=r.prices[0], flow=r.f[0], gen=gen_a, tech={k_: out[k_] for k_ in ("gas", "lignite", "coal")})
     return k, d, dict(price=r.prices[0], flow=r.f[0], gen=gen_a)
 
 if __name__ == "__main__":
@@ -160,4 +206,14 @@ if __name__ == "__main__":
     hh = R.index.tz_convert(TZ).hour; summ["median_error_by_4h"] = {f"{a:02d}-{a + 4:02d}": round(float((R.obs_price - R.p50)[(hh >= a) & (hh < a + 4)].median()), 1) for a in range(0, 24, 4)}
     summ["gen_residual_vs_load_plus_netpos_MW"] = round(float((R.obs_gen - (R.load + R.obs_netpos)).mean()))
     summ["slice_gen_minus_load_plus_netpos_MW"] = round(float((R.gen_p50 - (R.load + R.obs_netpos)).mean()))
+    if FLOOR2: summ["floor2"] = dict(F2_INFO, F_MW_by_day={str(d.date()): round(floor2(d)) for d in ok})
+    if LIGLEVEL: summ["liglevel"] = LL_INFO
+    if TECHOUT:
+        Xo = pd.read_parquet(SP / "out/recon_hourly.parquet"); tr = []
+        for d in ok:
+            idx = day_inputs(d)[1]; sims = [r for (_, dd, r) in res if dd == d and r is not None]; hr = idx.tz_convert("UTC").floor("h")
+            tr.append(pd.DataFrame({**{f"{k_}_p50": np.median([s["tech"][k_] for s in sims], axis=0) / 1000 for k_ in ("gas", "lignite", "coal")},
+                                    "obs_gas": Xo["gasg"].reindex(hr).to_numpy(float), "obs_lignite": Xo["lig"].reindex(hr).to_numpy(float),
+                                    "obs_coal": Xo["coal"].reindex(hr).to_numpy(float)}, index=idx))
+        pd.concat(tr).to_parquet(OUT / f"hist_window{TAG}_tech.parquet")
     json.dump(summ, open(OUT / f"hist_window{TAG}.json", "w"), indent=1); print(json.dumps(summ, indent=1))

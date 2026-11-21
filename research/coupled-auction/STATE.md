@@ -42,7 +42,9 @@ In August, nights are priced too low. The working diagnoses:
 - the summer gas floor is about 0.8 GW too low (a year-round small-CHP and process-heat floor of 1.2–1.5 GW);
 - lignite is offered about 1.5 GW too large.
 
-A task testing both, `FLOOR2` and `LIGLEVEL`, is in flight.
+Both were tested (21.177, `notes/floor_lignite.md`): `LIGLEVEL` improves August (78% inside, median error +22) but
+widens the band and brings back false scarcity in February; `FLOOR2` does not move the price. Neither is a default.
+The slice prices too step-like: nights too low and evenings too high, with coal output too low in every variant.
 
 ## Open threads
 
