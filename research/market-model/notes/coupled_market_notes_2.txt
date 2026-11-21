@@ -4015,3 +4015,37 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   What remains open on the shape: June evenings (+36) and middays (-29) are still wrong with and without SHAPE; candidates
   not tested: the evening price reflects imports' price (neighbours' evening scarcity) rather than German supply - which the
   conditional design cannot represent, since it fixes the import volume but not its price; and solar's day-ahead bids.
+
+21.167 User: "Gas split should use latent structure to learn diff price elas of supply?" - yes: 21.165 fixed the shape by
+  hand (share from output, multiple from a prior), nothing was learned. Earlier finding (section 1 of these notes): gas
+  utilisation against (price - 1.85 gas - 0.37 carbon) is one curve mid-2024 .. Nov 2026, so the curve is durable.
+  Model (gas_curve.py, NumPyro NUTS, direct likelihood, hourly, no clearing):
+    m_t = p_t - (1.85 gas_d + 0.37 co2_d)
+    gasg_t ~ StudentT(nu, F_month(t) + A * sigmoid((m_t - mu_b(t)) / s_b(t)), sigma)
+    F_month: must-run floor (CHP heat), random walk over months; A: dispatchable capacity; b = time-of-day block (0-6,
+    6-10, 10-16, 16-20, 20-24); mu_b ~ N(mu, tau_mu), log s_b ~ N(log s, tau_s) - partial pooling = hour-specific price
+    elasticity of supply. Baseline: one mu, one s (pooled).
+  Fit: 12 months to 11 Aug 2026. Test (untouched): 12-25 Aug 2026, gas output predicted from observed prices, using the
+  last month's floor carried forward. Identification caveat: price and output are joint; relies on weather-driven demand
+  moving along a stable curve.
+  EXPECTED: the blocks differ (|mu_b - mu_b'| > 20 EUR/MWh for some pair, or s_b differing by a factor > 1.5); on the test
+  window the block model's MAE beats the pooled model's by >= 10%; its 90% predictive intervals cover 85-95%.
+
+21.168 Result of 21.167 (gas_curve.py; out: gascurve/gas_curve.json, gas_curve_draws.npz). 8,750 fit hours, 336 test
+  hours (12-25 Aug 2026). Both models: 0 divergences, r-hat <= 1.005, ESS >= 389. 90% intervals in EUR/MWh / GW.
+    pooled: half-utilisation margin mu 10.0 (8.6-11.4), width s 23.2 (22.1-24.4), dispatchable A 7.14 GW (6.94-7.34)
+    blocks: mu_b 0-6h 8.6, 6-10h 17.7, 10-16h 5.1, 16-20h 18.6, 20-24h 15.0;
+            s_b 20.2, 22.3, 17.8, 25.3, 30.2;  A 7.55 GW (7.35-7.78)
+    must-run floor by month Aug 2025 .. Aug 2026 (GW): 0.1 0.9 2.6 5.5 5.3 8.4 8.1 3.3 2.9 1.5 1.2 1.0 0.8
+    test (floor of the last month carried forward): MAE pooled 1.131 GW, blocks 1.106 (gain 2.2%); bias +0.57 / +0.54;
+    90% coverage 0.958 / 0.961.
+  Against 21.167: blocks differ - widths by a factor 1.7 (midday 17.8 vs late evening 30.2) MET, locations by 14 (< 20)
+  NOT MET; test MAE gain >= 10% NOT MET (2.2%); coverage 85-95% NOT MET (0.96, slightly wide).
+  Reading: the hour-specific elasticity is real (late-evening gas responds to price over a 1.7x wider range than midday
+  gas) but adds little out of sample. What the latent curve says that matters more for the slice: only ~7.5 GW of German
+  gas responds to price, spread smoothly from about cost - 40 to cost + 70 (mu +- 2.2 s), on top of a must-run floor that
+  is ~1 GW in summer and ~8 GW in Jan-Feb (CHP heat). The slice offers 22 GW at cost +- 7%. The winter floor also explains
+  why February's gas p99 (16.4 GW) was so much higher than summer's (~10).
+  Next: replace the slice's gas offers by the learned curve (floor as price-taking, the dispatchable part as a ladder at
+  cost + logistic quantiles, parameters drawn from the posterior), and a predictor for the floor (temperature / heat
+  demand) so that it can be carried into a new season rather than from the last month.
