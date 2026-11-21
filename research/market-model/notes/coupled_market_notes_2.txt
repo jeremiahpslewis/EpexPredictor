@@ -3905,3 +3905,69 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   (d) verify.py check 4 under VOLUME_RULE=max_ab and max_ba: all 300 markets pass brute force, audit, surplus identity and
   monotonicity. surplus_lp docstring corrected. Block limits on the demo day rechecked: 107.7 and 111.7 (unchanged).
   (e) Gas in hist_window.py is the last stored value dated before noon the day before; the app lags gas two days; not matched.
+
+21.162 Fleet first, neighbour second (design after a review: building both at once would repeat the free-everything problem).
+  Plumbing (vslice.py, opt-in, old seeds and demo reproduce exactly): Info.tech / coal_price / storage / fixed_netpos /
+  wtp_scales_with_gas; outages may be per-quarter arrays.
+  Data dated before the window (de_fleet.py): market fleet = sum over units of the largest hourly output in the 12 months
+  before (units that made > 50 MW at least once). Oct window (fleet from Oct 2025 - Sep 2026): lignite 22 units 14.6 GW
+  (unit data covers 99.8% of lignite output), coal 24 units 10.8 GW (96%; at most 7.1 GW ran at once), gas 53 units
+  16.1 GW covering 72.8% of gas output -> scaled to 22.1 GW. Pumped storage: max generation 6.5 GW, pumping 6.3 (slice 2).
+  Published unavailability known before noon the day before, latest revision, cancelled dropped, per unit max of overlaps,
+  matched to the fleet by name (unmatched: 1 lignite, 2 coal unit names): lignite ~0, coal 0.1-1.2 GW, gas 0.1-2.3 GW per day.
+  Note: lignite ran 8.5 GW on average (max 12.6) in the window although 14.6 GW are in the fleet and almost nothing is
+  published as unavailable - either economic, or unavailability that is not in this file.
+  Costs: carbon in the window 83-90 EUR/t (daily EUA series, out/eua_daily.parquet), not 75. No coal price series: prior
+  lognormal(log 12, 0.25) per draw. Flexible demand: flex_wtp is read as the value at reference costs (gas 40, carbon 75)
+  and scaled by today's gas-fired cost (opt-in), since at gas ~90 an unscaled N(60, 15) sheds every hour.
+  Runs (hist_window.py switches), 13 Oct days, 40 prior draws/day:
+    R1 COND           spec fleet; line 0; observed net position as a price-taking order (conditional: an auction outcome)
+    R2 COND+FLEET+COSTS
+    R3 FLEET+COSTS    synthetic neighbour as before (reference)
+    R4 COND+FLEET+COSTS on a second window, 10-23 June 2026, fleet and outages from data before 10 June
+  EXPECTED: R1 scarcity < 0.5% of quarters, median error still +40 to +60 (the coal step too long). R2 inside the 90% band
+  55-80%, median error within +-25, scarcity < 1%, slice generation - (load + net position) within +-2 GW on average.
+  R3 scarcity 3-10%, median error within +-40. R4 inside 50-80%, median error within +-30, worst at the solar hours.
+
+21.163 Results R1-R3 of 21.162, and a fleet measure added after seeing them.
+  R1 COND, spec fleet: inside 0.33, median error +60.1, scarcity 0.0%; observed generation = load + net position within 31 MW
+     on average (the public quantities reconcile); slice generation 1.7 GW below that. MET (scarcity gone, error +40..+60).
+  R2 COND+FLEET+COSTS: inside 0.55 (MET, at the edge), median error +42.8 (NOT MET, +-25), scarcity 0.0% (MET), slice
+     generation - (load + net position) -0.77 GW (MET).  By 4 h: +46 +44 +52 +29 +51 +27.
+  R3 FLEET+COSTS, synthetic neighbour: inside 0.40, median error +46.8 (NOT MET, +-40), scarcity 0.0% (NOT MET, expected
+     3-10%: with 22 GW of gas the data fleet does not run short even without imports), slice generation 2.9 GW below
+     load + net position (the exports it does not make).
+  Why R2 still sits low: the unit fleet overstates what was available in the window. Output by price band in the window
+  (recon_hourly): even at 220-400 EUR/MWh coal averaged 3.4 GW (max 4.5) and lignite 11.0 (max 12.6), against unit fleets
+  of 10.8 and 14.6; 6 coal and 2 lignite units that ran in the 12-month lookback were silent in the 3 months before the
+  window (last-3-month fleets: coal 8.6, lignite 13.7). Published unavailability does not explain the rest.
+  ADDED AFTER SEEING R2 (so the October window no longer tests it): FLEETMODE=output - lignite, coal and "other" sized from
+  their 99th percentile of hourly output in the 3 months before the window, / 0.84 (prior mean offered share x (1 - forced)),
+  their published outages not subtracted again; gas keeps the unit fleet (it is at the margin; its output measures demand).
+  Before the Oct window: lignite p99 12.5 GW, coal 5.4, other 8.5; before the June window: 12.9, 6.4, 9.2.
+  The June window (10-23 June 2026) is the test of this choice:
+    R4  COND+FLEET+COSTS, unit fleet, June (expectation in 21.162)
+    R4b COND+FLEET+COSTS+output, June. EXPECTED (written now, before R4 is read): inside 55-85%, median error within +-20,
+        scarcity < 1%, better than R4 on median error by at least 10.
+    R2b the same on October: reported, but it is in-sample for the choice.
+
+21.164 Results R4, R4b (June, the test of FLEETMODE=output) and R2b (October, in-sample for that choice).
+                                   inside 90%   median error   scarcity   by 4 h (median error)                 slice gen - (load+np)
+    R4  June, unit fleet             0.47          +8.0          0.0%      +14 +13  -6 -28  +8 +40               -0.80 GW
+    R4b June, output fleet           0.48         +11.7          0.0%      +18 +14  -4 -24 +11 +40               -0.69 GW
+    R2  Oct, unit fleet              0.55         +42.8          0.0%      +46 +44 +52 +29 +51 +27               -0.77 GW
+    R2b Oct, output fleet            0.77         +27.6          0.0%      +26 +30 +33 +13 +45 +11               -0.89 GW
+  Against 21.163: R4b inside 55-85% NOT MET (0.48); median error within +-20 MET (+11.7); scarcity MET; better than R4 by
+  >= 10 NOT MET (slightly worse). The output-based fleet helps in October (where it was chosen) and not in June: in June
+  coal and lignite are rarely at the margin (gas 41-50), so their size matters little there.
+  June's misfit is the daily SHAPE, not the level (figure hist_window_june_cond.png): the slice's median is flat near gas
+  cost (100-120) through the evening, while DE-LU rises to 150-550 after sunset; at midday the slice sits near +10 while
+  DE-LU clears at 0 to -50. Two named candidates, untested:
+  (i) evening: no steep part of the supply curve above gas - all 22 GW of gas share one cost ladder (+-15% of one heat
+      rate), no older/peaking units, oil, start costs per day, or scarcity markups; the evening ramp is where real offers
+      are steepest; (ii) midday: "other" (10 GW biomass, run-of-river, waste) bids at its cost (~5) plus markup, ~8-10;
+      in reality most of it is price-insensitive (feed-in tariffs, run-of-river), and renewables bid below zero.
+  Reconciliation holds throughout: observed scheduled generation = load forecast + net position within 31 MW in October
+  and -465 MW in June; the slice's generation is 0.7-0.9 GW below that in the conditional runs (storage losses, netting).
+  Neighbour (not built yet): ENTSO-E day-ahead NTC exists for DE-DK1 (3.5 GW), DE-CH, partly DE-NL; none for the
+  flow-based Core borders (FR, PL, CZ: NoMatchingDataError). An aggregate limit cannot be read off; runs at 2-3 values.

@@ -38,6 +38,19 @@ class Info:
     load: dict = field(default_factory=lambda: {"A": 52000 + 12000 * np.exp(-((HOURS - 12) / 4.5) ** 2) + 5000 * np.exp(-((HOURS - 19) / 2) ** 2) - 8000 * np.exp(-((HOURS - 3.5) / 2.5) ** 2),
                                                 "B": 7000 + 1500 * np.exp(-((HOURS - 18.5) / 2.5) ** 2)})
     outages: dict = field(default_factory=lambda: {"A": {"coal": 1000.0}, "B": {"nuclear": 0.0}})
+    tech: dict | None = None               # technology table per zone; None = TECH
+    coal_price: float | None = None        # EUR/MWh thermal; None = COAL_PRICE
+    # zone -> MW per quarter, exogenous net position (+ export) entered as a price-taking order: buy at the cap for an
+    # export, sell at the floor for an import (notes 21.162: a conditional check with the observed net position)
+    fixed_netpos: dict | None = None
+    storage: dict | None = None            # storage per zone; None = STORAGE
+    # flexible demand's willingness to pay scaled with the gas-fired cost (opt-in, notes 21.162): flex_wtp is read as the
+    # value at the reference costs (gas 40, carbon 75) and multiplied by today's gas-fired cost over the reference one
+    wtp_scales_with_gas: bool = False
+
+
+def techs(info):
+    return info.tech if info is not None and info.tech is not None else TECH
 
 
 PRIORS = {  # theta, shared across days
@@ -77,13 +90,13 @@ def draw_day(rng, info: Info, theta=None):
     return {"load_level": {z: rng.normal(0, 0.02) for z in info.load},                        # retailers' load expectation error
             "wind_err": {z: ar1(0.04) for z in info.wind_cf},                                  # bidders' wind view against the issue-time forecast
             "solar_err": {z: rng.normal(0, 0.05) for z in info.solar_cf},                      # cloudiness of the day
-            "forced": {z: {k: rng.beta(*fb) for k in TECH[z] if len(TECH[z][k]) > 1} for z in TECH},  # forced outage share
+            "forced": {z: {k: rng.beta(*fb) for k in techs(info)[z] if len(techs(info)[z][k]) > 1} for z in techs(info)},  # forced outage share
             "markup_day": rng.normal(0, 1.0)}
 
 
 def cost(z, k, info):
-    C, hr, ef, oc, sc = TECH[z][k]
-    fuel = info.gas if k == "gas" else (COAL_PRICE if k == "coal" else 0.0)
+    C, hr, ef, oc, sc = techs(info)[z][k]
+    fuel = info.gas if k == "gas" else ((COAL_PRICE if info.coal_price is None else info.coal_price) if k == "coal" else 0.0)
     return hr * fuel + ef * info.co2 + oc
 
 
@@ -93,14 +106,15 @@ def build_book(theta, day, info: Info, storage=True, expected_prices=None):
     forecast; if None, storage is left out (used to make that forecast from the rest of the book).
     """
     orders, blocks, acc = [], [], {}
-    for z in TECH:
+    TECH_ = techs(info); STORAGE_ = info.storage if info.storage is not None else STORAGE
+    for z in TECH_:
         load = info.load[z] * (1 + day["load_level"][z])
         netted = theta["netting"] * load                                      # load served inside portfolios
         avail, split, steps = {}, {}, []                                      # steps: [tech, t, q, p] period offers before netting
-        for k, spec in TECH[z].items():
+        for k, spec in TECH_[z].items():
             if k == "wind": avail[k] = spec[0] * np.clip(info.wind_cf[z] + day["wind_err"][z], 0, 1)
             elif k == "solar": avail[k] = spec[0] * np.clip(info.solar_cf[z] * (1 + day["solar_err"][z]), 0, 1)
-            else: avail[k] = np.full(T, (spec[0] - info.outages.get(z, {}).get(k, 0.0)) * (1 - day["forced"][z][k]))
+            else: avail[k] = np.zeros(T) + np.maximum(spec[0] - np.asarray(info.outages.get(z, {}).get(k, 0.0)), 0.0) * (1 - day["forced"][z][k])
             # withholding and blocks apply to AVAILABLE capacity, before any netting (so netting cannot change them)
             if k in ("wind", "solar"):
                 offered, blk = avail[k], np.zeros(T)
@@ -113,7 +127,7 @@ def build_book(theta, day, info: Info, storage=True, expected_prices=None):
                 for t in range(T): steps.append([k, t, float(offered[t]), -5.0 if k == "wind" else -1.0])
                 continue
             c = cost(z, k, info) + theta["markup"] + day["markup_day"]
-            if k == "hydro": c = 0.8 * cost(z, "gas", info) if "gas" in TECH[z] else 50.0
+            if k == "hydro": c = 0.8 * cost(z, "gas", info) if "gas" in TECH_[z] else 50.0
             ladder = [(0.0, 0.5), (0.6, 0.5)] if k == "hydro" else [(-0.1, 0.3), (0.0, 0.4), (0.15, 0.3)]
             for t in range(T):
                 q = offered[t] - blk[t]
@@ -137,11 +151,18 @@ def build_book(theta, day, info: Info, storage=True, expected_prices=None):
         # buy side: price-taking load less netting, flexible demand
         for t in range(T):
             orders.append(Order(z, t, "buy", float(load[t] - netted[t] - theta["flex_share"] * load[t]), 4000.0))
+            wtp = theta["flex_wtp"] * ((1.9 * info.gas + 0.37 * info.co2 + 4.0) / (1.9 * 40.0 + 0.37 * 75.0 + 4.0) if info.wtp_scales_with_gas else 1.0)
             for dz, share in ((-0.3, 0.3), (0.0, 0.4), (0.3, 0.3)):
-                orders.append(Order(z, t, "buy", float(theta["flex_share"] * load[t] * share), float(theta["flex_wtp"] * (1 + dz))))
+                orders.append(Order(z, t, "buy", float(theta["flex_share"] * load[t] * share), float(wtp * (1 + dz))))
+        # exogenous net position (conditional checks only): an export is extra price-taking demand, an import extra
+        # price-taking supply at the floor; neither scales with load, so netting and flexible demand do not touch it
+        if info.fixed_netpos is not None and z in info.fixed_netpos:
+            for t, v in enumerate(info.fixed_netpos[z]):
+                if v > 1e-6: orders.append(Order(z, t, "buy", float(v), 4000.0))
+                elif v < -1e-6: orders.append(Order(z, t, "sell", float(-v), -500.0))
         # storage: inventory-safe bids from the owners' price forecast
         if storage and expected_prices is not None:
-            st = STORAGE[z]; ep = expected_prices[z]
+            st = STORAGE_[z]; ep = expected_prices[z]
             n_dis = int(st["soc0"] / (st["P"] * DT))                     # discharge offered never exceeds the opening inventory
             n_chg = int((st["E"] - st["soc0"]) / (st["eta"] * st["P"] * DT))  # charging offered never exceeds the free space
             dis = np.argsort(-ep)[:n_dis]; chg = np.argsort(ep)[:n_chg]
