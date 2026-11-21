@@ -18,7 +18,8 @@ import sys, json, glob, time
 from pathlib import Path
 import numpy as np, pandas as pd
 
-SP, OUT, MODE = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]; OUT.mkdir(parents=True, exist_ok=True)
+SP, OUT, MODE = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+JACDIAG = MODE == "jacdiag"; MODE = "recover" if JACDIAG else MODE; OUT.mkdir(parents=True, exist_ok=True)
 
 if MODE == "toy":
     from scipy import integrate, stats
@@ -58,7 +59,47 @@ if MODE == "recover":
     a_true = rng.normal(TRUE["mu_a"], TRUE["tau_a"], len(Z)); ls_true = rng.normal(TRUE["mu_ls"], TRUE["tau_ls"], len(Z))
     B = np.array([60.0 if z in CORE else 15.0 for z in Z]); B[zi["DE"]] = 50.0; B[zi["FR"]] = 70.0       # GW, known
     Sg = lambda p, a, ls: B * 1000 / (1 + np.exp(-(p - a) / np.exp(ls)))                                   # MW
-    rows = []; t0 = time.time()
+    def polish(p, y, A, b, e0, lo, hi, load, sc, a_z, iters=30):
+        """Exact equilibrium by active-set Newton from a conic-solver start. Returns p, y, active rows, bound set, ok."""
+        act = set(np.flatnonzero(b - A @ y < 1.0)); bnd = {j for j in range(ny) if np.isfinite(hi[j]) and (hi[j] - y[j] < 1.0 or y[j] - lo[j] < 1.0)}
+        for outer in range(60):
+            ar = sorted(act); br = sorted(bnd); na, nb_ = len(ar), len(br)
+            x = np.r_[p, y, np.zeros(na), 0.0, np.zeros(nb_)]
+            for it in range(iters):
+                pp, yy = x[:len(Z)], x[len(Z):len(Z) + ny]; mu_ = x[len(Z) + ny:len(Z) + ny + na]; lam_ = x[len(Z) + ny + na]; nu_ = x[len(Z) + ny + na + 1:]
+                g = 1 / (1 + np.exp(-np.clip((pp - a_z) / sc, -60, 60))); Sv = B * 1000 * g; dS = B * 1000 * g * (1 - g) / sc
+                bvec = np.array([hi[j] if hi[j] - yy[j] < yy[j] - lo[j] else lo[j] for j in br])
+                F = np.r_[Sv - load - H @ yy, H.T @ pp + A[ar].T @ mu_ + e * lam_ + np.eye(ny)[br].T @ nu_, A[ar] @ yy - b[ar], e @ yy - e0, yy[br] - bvec]
+                Jm = np.zeros((len(F), len(x))); r0 = 0
+                Jm[:len(Z), :len(Z)] = np.diag(dS); Jm[:len(Z), len(Z):len(Z) + ny] = -H
+                r1 = len(Z); Jm[r1:r1 + ny, :len(Z)] = H.T; Jm[r1:r1 + ny, len(Z) + ny:len(Z) + ny + na] = A[ar].T
+                Jm[r1:r1 + ny, len(Z) + ny + na] = e; Jm[r1:r1 + ny, len(Z) + ny + na + 1:] = np.eye(ny)[br].T
+                r2 = r1 + ny; Jm[r2:r2 + na, len(Z):len(Z) + ny] = A[ar]; Jm[r2 + na, len(Z):len(Z) + ny] = e
+                Jm[r2 + na + 1:, len(Z):len(Z) + ny] = np.eye(ny)[br]
+                if np.max(np.abs(F)) < 1e-8: break
+                dx = np.linalg.lstsq(Jm, -F, rcond=None)[0]
+                m = np.max(np.abs(dx[:len(Z)])); dx = dx * min(1.0, 20.0 / m) if m > 0 else dx     # price steps of at most 20 EUR/MWh
+                f0 = np.linalg.norm(F); t = 1.0
+                for _ls in range(30):                                                             # backtracking on the residual norm
+                    xt = x + t * dx; pp_, yy_ = xt[:len(Z)], xt[len(Z):len(Z) + ny]
+                    g_ = 1 / (1 + np.exp(-np.clip((pp_ - a_z) / sc, -60, 60)))
+                    Ft = np.r_[B * 1000 * g_ - load - H @ yy_, H.T @ pp_ + A[ar].T @ xt[len(Z) + ny:len(Z) + ny + na] + e * xt[len(Z) + ny + na] + np.eye(ny)[br].T @ xt[len(Z) + ny + na + 1:],
+                               A[ar] @ yy_ - b[ar], e @ yy_ - e0, yy_[br] - bvec]
+                    if np.linalg.norm(Ft) < (1 - 1e-4 * t) * f0: break
+                    t *= 0.5
+                x = x + t * dx
+            pp, yy = x[:len(Z)], x[len(Z):len(Z) + ny]; mu_ = x[len(Z) + ny:len(Z) + ny + na]
+            slack = b - A @ yy; viol = [k for k in range(len(b)) if k not in act and slack[k] < -1e-6]
+            neg = [ar[i] for i in range(na) if mu_[i] < -1e-7]
+            bviol = [j for j in range(ny) if np.isfinite(hi[j]) and j not in bnd and (yy[j] > hi[j] + 1e-6 or yy[j] < lo[j] - 1e-6)]
+            if not viol and not neg and not bviol and np.max(np.abs(F)) < 1e-3: return pp, yy, ar, br, True
+            WHY.append((outer, len(viol), len(neg), len(bviol), float(np.max(np.abs(F)))))
+            if viol: act.add(min(viol, key=lambda k: slack[k]))
+            elif neg: act.discard(min(neg, key=lambda k: mu_[ar.index(k)]))
+            if bviol: bnd.add(bviol[0])
+            p, y = pp, yy
+        FAILS.append(WHY[-3:]); return p, y, sorted(act), sorted(bnd), False
+    rows = []; t0 = time.time(); n_fail = 0; FAILS = []; WHY = []
     for m in range(NMTU):
         h = hours[m % len(hours)]; g = FC[FC.dateTimeUtc == h]; npr = NPJ.loc[h] if not isinstance(NPJ.loc[h], pd.DataFrame) else NPJ.loc[h].iloc[0]
         hubs = [c[5:] for c in g.columns if c.startswith("ptdf_")]
@@ -81,17 +122,46 @@ if MODE == "recover":
         con = [H.T @ pz + A.T @ mu + e * lam + nh - nl == 0, nh[~fb] == 0, nl[~fb] == 0]
         pr = cp.Problem(cp.Minimize(obj), con); pr.solve(solver="CLARABEL")
         if pr.status != "optimal": continue
-        p = np.asarray(pz.value); y = -con[0].dual_value; n = H @ y
+        p = np.asarray(pz.value); y = -con[0].dual_value
+        p, y, ar, br, okp = polish(p, y, A, b, e0, lo, hi, load, np.exp(ls_true), a_true)
+        if not okp: n_fail += 1; continue
+        n = H @ y
         # binding set from the simulated duals, exactly as from published shadow prices / links at their limits
-        AB = [A[k] for k in np.flatnonzero(mu.value > 1e-4)] + [np.eye(ny)[j] for j in range(len(CORE), ny) if nh.value[j] > 1e-4 or nl.value[j] > 1e-4]
+        # regime = the TIGHT set (slack < 0.1 MW) plus quantities at their bounds; dual values are not unique when
+        # nearly collinear presolved rows meet at the solution, so a dual-threshold set can miss tight rows
+        AB = [A[k] for k in ar] + [np.eye(ny)[j] for j in br]
         AB = np.array(AB) if AB else np.zeros((0, ny))
-        M = np.hstack([H.T, -AB.T, -e[:, None]]); _, sv, Vt = np.linalg.svd(M); rk = int((sv > 1e-9 * sv[0]).sum())
-        U_, s_, _ = np.linalg.svd(Vt[rk:].T[:len(Z)], full_matrices=False); Q = U_[:, s_ > 1e-8]
+        # V = {p : H'p in span(R)}, R = active normals (rows of AB) and the Core balance e; one rank tolerance (1e-7
+        # relative, above the 5-decimal rounding of published PTDFs) for both V and the face directions
+        Rm = np.vstack([AB, e[None, :]]).T; Ur, sr, Vr = np.linalg.svd(Rm, full_matrices=True); rr = int((sr > 1e-7 * sr[0]).sum())
+        Pp = np.eye(ny) - Ur[:, :rr] @ Ur[:, :rr].T; _, sq, Vq = np.linalg.svd(Pp @ H.T)
+        sq_full = np.r_[sq, np.zeros(len(Z) - len(sq))]; Q = Vq[sq_full < 1e-4 * max(sq.max(), 1e-12)].T
         resid = float(np.linalg.norm(p - Q @ (Q.T @ p)))
+        if resid > 1e-6: print(f"  offending MTU {m}: resid {resid:.3g}, ||P_perp H'p|| {np.linalg.norm(Pp @ H.T @ p):.3g}, active rows {len(ar)}, bounds {br}, rank R {rr}, k {Q.shape[1]}, p {np.round(p, 2).tolist()}")
         Qp = np.zeros((len(Z), len(Z))); Qp[:, :Q.shape[1]] = Q
-        rows.append(dict(p=p, n=n, D=Dbase, Q=Qp, k=Q.shape[1], resid=resid, nbind=int(AB.shape[0])))
-    print(f"cleared {len(rows)} MTUs in {time.time()-t0:.0f}s; price-subspace residual max {max(r['resid'] for r in rows):.2e}")
+        Uq, _, _ = np.linalg.svd(Q, full_matrices=True); Nb = Uq[:, Q.shape[1]:]          # face directions = exact complement of V
+        rows.append(dict(p=p, y=y, n=n, D=Dbase, Q=Qp, k=Q.shape[1], resid=resid, nbind=int(AB.shape[0]), Nb=Nb, Qo=Q,
+                         QtN=float(np.abs(Q.T @ Nb).max()) if Nb.size else 0.0, solve=(A, b, e0, lo, hi, load, fb)))
+    for fl in FAILS[:8]: print("  fail trail (outer, n_viol, n_negmu, n_bound_viol, max|F|):", fl)
+    print(f"polish failures {n_fail}; cleared {len(rows)} MTUs in {time.time()-t0:.0f}s; price-subspace residual max {max(r['resid'] for r in rows):.2e}")
     k = np.array([r["k"] for r in rows]); print("regimes by dim V:", {int(v): int((k == v).sum()) for v in np.unique(k)})
+    print("max |Q'N| over MTUs:", max(r["QtN"] for r in rows), " dims k + dim N == 11:", all(r["k"] + r["Nb"].shape[1] == 11 for r in rows))
+    if JACDIAG:
+        sc = np.exp(ls_true); res = []
+        for r in rows[:40]:
+            A, b, e0, lo, hi, load, fb = r["solve"]; Q, Nb = r["Qo"], r["Nb"]; eps = 0.5
+            base = polish(r["p"], r["y"], A, b, e0, lo, hi, load, sc, a_true)
+            J = np.zeros((11, 11)); same = True
+            for i in range(11):
+                lp = load.copy(); lp[i] += eps; lm = load.copy(); lm[i] -= eps
+                p1, y1, a1, b1, o1 = polish(r["p"], r["y"], A, b, e0, lo, hi, lp, sc, a_true); p2, y2, a2, b2, o2 = polish(r["p"], r["y"], A, b, e0, lo, hi, lm, sc, a_true)
+                same &= o1 and o2 and a1 == base[2] and a2 == base[2] and b1 == base[3] and b2 == base[3]
+                J[:, i] = np.r_[Q.T @ (p1 - p2), Nb.T @ (H @ y1 - H @ y2)] / (2 * eps)
+            g = 1 / (1 + np.exp(-(r["p"] - a_true) / sc)); dS = B * 1000 * g * (1 - g) / sc
+            res.append((r["k"], same, (1 / abs(np.linalg.det(J))) / abs(np.linalg.det(Q.T @ np.diag(dS) @ Q))))
+        for k_, same, ratio in res: print(f"k={k_:2d}  same regime: {same!s:5}  ratio fd/analytic {ratio:.6f}")
+        ok = [x[2] for x in res if x[1]]; print("same-regime MTUs:", len(ok), "of", len(res), " ratio range:", (round(min(ok), 6), round(max(ok), 6)) if ok else None)
+        sys.exit(0)
     pz_ = jnp.asarray(np.array([r["p"] for r in rows])); n_ = jnp.asarray(np.array([r["n"] for r in rows])); D_ = jnp.asarray(np.array([r["D"] for r in rows]))
     Q_ = jnp.asarray(np.array([r["Q"] for r in rows])); pad = jnp.asarray(np.array([[0.0] * r["k"] + [1.0] * (len(Z) - r["k"]) for r in rows]))
     Bj = jnp.asarray(B)
