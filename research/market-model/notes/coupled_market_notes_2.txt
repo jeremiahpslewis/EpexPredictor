@@ -4049,3 +4049,30 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   Next: replace the slice's gas offers by the learned curve (floor as price-taking, the dispatchable part as a ladder at
   cost + logistic quantiles, parameters drawn from the posterior), and a predictor for the floor (temperature / heat
   demand) so that it can be carried into a new season rather than from the last month.
+
+21.169 User: is the per-hour elasticity really min run times / start costs? Test (gas_curve2.py), written before running.
+  If intertemporal constraints drive the block differences of 21.168:
+   (a) static block-model residuals rise with (mean margin over +-3 h - current margin): slope > 0.02 GW per EUR/MWh;
+   (b) hysteresis: at the same margin, residuals higher when the margin is falling than rising (by > 0.2 GW);
+   (c) with m_eff = m + lambda (m_win - m), lambda ~ Beta(1, 1) latent: lambda clearly > 0 (90% interval above 0.2), the
+       block widths' ratio max/min falls from 1.7 to below 1.3 and the location spread from 14 to below 8 EUR/MWh;
+   (d) out of sample (12-25 Aug 2026) the dynamic pooled model beats the static block model.
+  If (a)-(c) fail, the hour differences are not explained by this commitment proxy.
+
+21.170 Result of 21.169 (gas_curve2.py; out: gascurve/gas_curve2.json). Same 12 fit months, same Aug test window.
+  (a) static block residuals against (m_win - m): slope 0.035 GW per EUR/MWh (by block 0.085 0.048 0.083 0.031 0.049) MET.
+  (b) hysteresis, falling minus rising margin at the same margin: +0.02 GW NOT MET (no sign of it in this crude form).
+  (c) lambda: pooled 0.84 (0.81-0.87), blocks 0.93 (0.89-0.96) - gas output follows the +-3 h mean margin far more than
+      the current hour's - MET. Block differences shrink but do not vanish: location spread 14 -> 9.3 (NOT below 8;
+      early evening +18.6 -> +12.6, morning +17.7 -> +8.3), width ratio 1.7 -> 1.57 (NOT below 1.3; late evening 26.2 vs
+      midday 16.7). Both fits: 0 divergences, r-hat <= 1.01.
+  (d) test MAE: static pooled 1.131, static blocks 1.106, dynamic pooled 1.015, dynamic blocks 0.967 GW (-14.5% against
+      static pooled); 90% coverage 0.946 / 0.958. MET.
+  Reading: mostly yes. The largest single gain out of sample is the multi-hour margin, not the hour blocks, and most of
+  the morning and early-evening location differences were commitment in disguise. What remains is a flatter response in
+  the late evening (wider curve), which this proxy does not explain. Limits: m_win is a symmetric +-3 h mean, a crude
+  stand-in for start costs and minimum run times (all 24 hours clear at once, so using later hours is legitimate for a
+  day-ahead bid); no hysteresis showed. A direct test would use the per-unit data (entsoe/units_all) to count starts and
+  run lengths, and check whether units started for the evening run through the following hours at negative margins.
+  Implication for the slice: gas offers should respond to a multi-hour margin - block orders spanning several hours with
+  start costs, i.e. the structure the slice already has for coal and gas peak blocks, rather than hour-by-hour steps.
