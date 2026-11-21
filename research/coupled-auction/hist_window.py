@@ -58,6 +58,19 @@ if SHAPE:
     TECH["A"]["gas"] = (min(gas_base, gas_fleet),) + TECH["A"]["gas"][1:]
     TECH["A"]["other"] = (float(W["other"].mean()) * 1000 / 0.93,) + TECH["A"]["other"][1:]
     TAG += "_shape"
+# GASCURVE=1 (with FLEET, COSTS and FLEETMODE=output; notes/gas_in_slice.md): zone A's gas offers replaced by the learned
+# dynamic supply curve (gas_curve_fit.py, fitted on the 12 months before FIRST). GASCURVE_DRAWS names its posterior draws
+# (.npz); each prior draw takes one posterior draw, chosen by a separate generator so theta and day shocks stay those of
+# the run without the switch. Optional: GC_NQ (quantile levels, 8), GC_MAR (span blocks' minimum acceptance ratio, 0).
+GASCURVE = os.environ.get("GASCURVE") == "1"
+if GASCURVE:
+    assert FLEET and COSTS and FLEETMODE == "output" and not SHAPE, "GASCURVE needs FLEET, COSTS=1, FLEETMODE=output and no SHAPE"
+    GC = dict(np.load(os.environ["GASCURVE_DRAWS"])); GC_NQ, GC_MAR = int(os.environ.get("GC_NQ", 8)), float(os.environ.get("GC_MAR", 0.0))
+    TAG += "_gascurve"
+# PEAKDIV=1 (implied by GASCURVE=1): the thermal peak blocks of both zones divisible (minimum acceptance ratio 0, not 1);
+# also usable alone, as the control run for GASCURVE
+PEAKDIV = GASCURVE or os.environ.get("PEAKDIV") == "1"
+if PEAKDIV and not GASCURVE: TAG += "_peakdiv"
 STORE = {z: dict(v) for z, v in V.STORAGE.items()}
 if FLEET: STORE["A"] = dict(P=6500.0, E=40000.0, soc0=20000.0, eta=0.75)
 DAYS = pd.date_range(os.environ.get("FIRST", "2026-10-15"), periods=int(os.environ.get("NDAYS", 14)), freq="D", tz=TZ)
@@ -97,6 +110,11 @@ def run(args):
     if "flex0" in ABLATE: th["flex_share"] = 0.0
     if COSTS: info.coal_price = float(rng.lognormal(np.log(12.0), 0.25))
     if SHAPE: info.peak_factor = float(rng.lognormal(np.log(1.6), 0.25)); info.price_insensitive = {"A": {"other"}}
+    if PEAKDIV: info.peak_mar = 0.0
+    if GASCURVE:
+        j = int(np.random.default_rng(7_000_000 + k).integers(len(GC["A"]))); hb = np.digitize(V.HOURS, [6, 10, 16, 20])
+        info.gas_curve = {"A": dict(F=1000 * float(GC["F_last"][j]), A=1000 * float(GC["A"][j]), lam=float(GC["lam"][j]),
+                                    mu=GC["mu_b"][j][hb], s=GC["s_b"][j][hb], nq=GC_NQ, mar=GC_MAR)}
     try:
         m, acc, r = V.simulate(th, day, info)
     except Exception as e:
@@ -136,6 +154,8 @@ if __name__ == "__main__":
             "gen_inside_90": round(float(ginside.mean()), 3), "gen_bias_median_MW": round(float((R.obs_gen - R.gen_p50).mean())),
             "obs_gen_mean": round(float(R.obs_gen.mean())), "load_mean": round(float(R.load.mean())), "gas_range": [round(float(R.gas.min()), 1), round(float(R.gas.max()), 1)]}
     summ["ablate"] = ABLATE; summ["switches"] = dict(fleet=bool(FLEET), costs=COSTS, cond=COND)
+    if PEAKDIV: summ["switches"]["peakdiv"] = True
+    if GASCURVE: summ["switches"]["gascurve"] = os.environ["GASCURVE_DRAWS"]; summ["gascurve_nq_mar"] = [GC_NQ, GC_MAR]
     summ["median_error"] = round(float((R.obs_price - R.p50).median()), 1); summ["scarcity_share"] = round(float((R.p50 >= 500).mean()), 3)
     hh = R.index.tz_convert(TZ).hour; summ["median_error_by_4h"] = {f"{a:02d}-{a + 4:02d}": round(float((R.obs_price - R.p50)[(hh >= a) & (hh < a + 4)].median()), 1) for a in range(0, 24, 4)}
     summ["gen_residual_vs_load_plus_netpos_MW"] = round(float((R.obs_gen - (R.load + R.obs_netpos)).mean()))

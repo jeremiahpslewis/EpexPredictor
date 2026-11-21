@@ -4106,3 +4106,26 @@ every day up to D+1 (prices known), and missing for D+2. Earlier online layers u
   MET; lambda at its bound 1). A slow random walk on top absorbed the season (f1 -> 0.12-0.16) and was dropped.
   The straight line sits ~0.75-1 GW too low at zero HDD in summer; summer 2026 gas also ran 0.7-2 GW above summer 2025.
   Use: replace the carried-forward floor by the HDD floor as the point forecast; winter intervals not yet trustworthy.
+
+21.173 Learned gas curve inside the slice (delegated; notes/gas_in_slice.md, gas_curve_fit.py, gas_slice_check.py;
+  vslice.py / hist_window.py opt-in GASCURVE=1 with GASCURVE_DRAWS; reviewed: old seeds max diff 0.0, verify.py all checks
+  passed, demo unchanged - rerun here after the last edit). Representation: floor F at -20 EUR/MWh; A in 8 quantile
+  slices priced at 1.85 gas + 0.37 co2 + mu_b + s_b logit(q); share 1-lambda as hourly steps, share lambda as divisible
+  5-hour blocks over five staggered tilings (matches the variance of the +-3 h window); fleet beyond F+A as a backstop at
+  the 99.5% price; one posterior draw per prior draw from a refit on the 12 months before each window; floor from the
+  window's own month, days before the window only. Thermal peak blocks made divisible (peak_mar=0) because fill-or-kill
+  blocks next to divisible ones looped in the no-good cuts (35 of 560 August draws); PEAKDIV=1 is that change alone.
+                     inside 90%   band width   median error   scarcity
+    Aug baseline        0.539         53          +23.9          0.0%
+    Aug PEAKDIV         0.499         51          +25.4          0.0%
+    Aug GASCURVE        0.713        107          +33.2          0.0%
+    Feb baseline        0.607         85           -8.2          1.8%
+    Feb PEAKDIV         0.609         54           -7.1          1.4%
+    Feb GASCURVE        0.830         55           +1.0          0.1%
+  February clearly better (coverage +22 points at the same band width, level right, false scarcity gone). August worse
+  on the median (+33 vs +24); its coverage gain comes from a band twice as wide. In August the slice runs 0.7-1.7 GW less
+  gas than observed off-peak and 0.6 GW more in the evening; 37% of quarters clear at or below the lowest curve slice
+  (the night baseline ~110 vs observed ~150), 16% at or above the backstop. The coal/lignite sizing as the cause is
+  untested (lig_coal_curves task running). Open: a cut over fill-or-kill blocks only (clearing.py) instead of making
+  the peak blocks divisible; February's 95th percentile still reaches 500 in 13% of quarters; one summer window only.
+  The HDD floor (21.172) is not yet used here.

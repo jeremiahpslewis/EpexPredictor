@@ -51,6 +51,52 @@ class Info:
     # multiple of the "gaspeak" tranche (gas capacity beyond what usually runs: peakers, units needing a start)
     price_insensitive: dict | None = None
     peak_factor: float = 1.6
+    # opt-in (notes/gas_in_slice.md): zone -> learned gas supply curve, replacing that zone's gas offers. Keys: F, A (MW),
+    # lam, mu and s (EUR/MWh per quarter); optional nq (quantile levels), mar (blocks' minimum acceptance ratio), span_h,
+    # backstop_q (curve quantile at which unit capacity beyond F + A is offered). See gas_curve_offers().
+    gas_curve: dict | None = None
+    # opt-in (notes/gas_in_slice.md, addendum): minimum acceptance ratio of the thermal peak blocks; None = 1 (fill-or-kill).
+    # With the curve's divisible span blocks in the book, a fill-or-kill block that is paradoxically accepted cannot be cut
+    # off by the solver's no-good cuts (the master escapes each cut by changing a divisible block), so GASCURVE sets 0.
+    peak_mar: float | None = None
+
+
+def gc_tilings(span_h):
+    """span_h tilings of the day by span_h-hour spans at offsets 0, 1, ..., span_h - 1 h (spans cut at the day's edges): over
+    the tilings a quarter's spans average its margin with a triangular kernel of half-width span_h h; span_h = 5 gives the
+    variance (4 h^2) of the curve's centred +-3 h box window"""
+    return [sorted({0, 24} | set(range(o, 24, span_h))) for o in range(span_h)]
+GC_FLOOR_PRICE = -20.0                                            # the curve's floor F: price-taking, like must-run lignite
+
+
+def gas_curve_offers(z, gc, info, avail):
+    """
+    Zone z's gas offers from the learned curve  output = F + A sigmoid((m_eff - mu)/s),  m = price - (1.85 gas + 0.37 co2),
+    m_eff = m + lam (m_win - m). The floor F is offered at GC_FLOOR_PRICE in every quarter; A is cut into nq equal quantile
+    slices at q_i = (i - 0.5)/nq, priced at ref + mu_t + s_t logit(q_i); a share 1 - lam of each slice is offered as period
+    steps (responds to the quarter's price), a share lam as divisible span blocks over two staggered tilings of the day
+    (responds to the span's mean price, the windowed margin) over span_h staggered tilings of the day (gc_tilings). Unit capacity beyond F + A is offered as period steps at the
+    curve's backstop_q price. Returns (period steps [(t, q, p)], blocks, avail, split) with avail = netted + period + block.
+    """
+    T_ = len(avail); ref = 1.85 * info.gas + 0.37 * info.co2
+    F, A, lam = float(gc["F"]), float(gc["A"]), float(gc["lam"]); mu, s = np.asarray(gc["mu"], float), np.asarray(gc["s"], float)
+    nq, mar = int(gc.get("nq", 8)), float(gc.get("mar", 0.0)); qs = (np.arange(nq) + 0.5) / nq; tilings = gc_tilings(int(gc.get("span_h", 5)))
+    price = lambda q: ref + mu + s * np.log(q / (1 - q))                       # per quarter
+    avail = np.maximum(avail, F + A); rest = avail - F - A
+    steps, blocks = [], []
+    for t in range(T_):
+        steps.append((t, F, GC_FLOOR_PRICE))
+        for q in qs: steps.append((t, (1 - lam) * A / nq, float(price(q)[t])))
+        steps.append((t, float(rest[t]), float(price(gc.get("backstop_q", 0.995))[t])))
+    blk = np.zeros(T_)
+    for tiling in tilings:
+        for h0, h1 in zip(tiling[:-1], tiling[1:]):
+            span = (HOURS >= h0) & (HOURS < h1)
+            for i, q in enumerate(qs):
+                qq = np.where(span, lam * A / nq / len(tilings), 0.0); blk += qq
+                blocks.append(Block(f"{z} gas curve {h0:02d}-{h1:02d} q{i}", z, "sell", float(price(q)[span].mean()), [float(v) for v in qq], mar))
+    split = dict(netted=np.zeros(T_), period=avail - blk, block=blk, unoffered=np.zeros(T_))
+    return steps, blocks, avail, split
 
 
 def techs(info):
@@ -119,6 +165,10 @@ def build_book(theta, day, info: Info, storage=True, expected_prices=None):
             if k == "wind": avail[k] = spec[0] * np.clip(info.wind_cf[z] + day["wind_err"][z], 0, 1)
             elif k == "solar": avail[k] = spec[0] * np.clip(info.solar_cf[z] * (1 + day["solar_err"][z]), 0, 1)
             else: avail[k] = np.zeros(T) + np.maximum(spec[0] - np.asarray(info.outages.get(z, {}).get(k, 0.0)), 0.0) * (1 - day["forced"][z][k])
+            if k == "gas" and info.gas_curve is not None and z in info.gas_curve:     # opt-in: the learned curve instead
+                gsteps, gblocks, avail[k], split[k] = gas_curve_offers(z, info.gas_curve[z], info, avail[k])
+                steps += [[k, t, float(q), float(p_)] for t, q, p_ in gsteps]; blocks += gblocks
+                continue
             # withholding and blocks apply to AVAILABLE capacity, before any netting (so netting cannot change them)
             insens = k in ((info.price_insensitive or {}).get(z, ()))
             if k in ("wind", "solar") or insens:
@@ -141,7 +191,7 @@ def build_book(theta, day, info: Info, storage=True, expected_prices=None):
                 for dz, share in ladder: steps.append([k, t, float(q * share), float(c * (1 + dz * theta["spread"] / 0.08 * 0.5))])
             if blk.max() > 1e-6:      # peak block: running cost plus start cost spread over the block's energy
                 hours = PEAK.sum() * DT
-                blocks.append(Block(f"{z} {k} peak block", z, "sell", float(c + theta["start_cost"] / hours), [float(v) for v in blk], 1.0))
+                blocks.append(Block(f"{z} {k} peak block", z, "sell", float(c + theta["start_cost"] / hours), [float(v) for v in blk], 1.0 if info.peak_mar is None else info.peak_mar))
         # netting takes the cheapest period offers in each quarter (the deepest in the money), never block capacity
         short = np.zeros(T)
         for t in range(T):
@@ -150,9 +200,13 @@ def build_book(theta, day, info: Info, storage=True, expected_prices=None):
                 take = min(st[2], need); st[2] -= take; need -= take; split[st[0]]["netted"][t] += take; split[st[0]]["period"][t] -= take
                 if need <= 1e-9: break
             short[t] = need
+        gas_idx = []
         for k_, t, q, p_ in steps:
-            if q > 1e-6: orders.append(Order(z, t, "sell", q, p_))
+            if q > 1e-6:
+                if k_ == "gas": gas_idx.append(len(orders))
+                orders.append(Order(z, t, "sell", q, p_))
         acc[z] = dict(avail=avail, split=split, load=load, netted=netted, short=short)
+        if info.gas_curve is not None and z in info.gas_curve: acc[z]["gas_orders"] = gas_idx   # opt-in: for checks of gas dispatch
         # buy side: price-taking load less netting, flexible demand
         for t in range(T):
             orders.append(Order(z, t, "buy", float(load[t] - netted[t] - theta["flex_share"] * load[t]), 4000.0))
