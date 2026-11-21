@@ -106,8 +106,7 @@ def polish(supply, load, H, A, b, e, e0, lo, hi, p0, y0, act0=None, bnd0=None, i
         bneg = [br[i] for i in range(nb) if (br[i][1] == "hi" and nu[i] < -1e-6) or (br[i][1] == "lo" and nu[i] > 1e-6)]
         if not viol and not bviol and not neg and not bneg and np.max(np.abs(F)) < 1e-3:
             return pp, yy, ar, br, True
-        if viol:                                                       # add up to five most violated rows at once
-            for k in sorted(viol, key=lambda k: slack[k])[:5]: act.add(k)
+        if viol: act.add(min(viol, key=lambda k: slack[k]))
         elif bviol: bnd.add(bviol[0])
         elif neg: act.discard(min(neg, key=lambda k: mu[ar.index(k)]))
         elif bneg: bnd.discard(bneg[0])

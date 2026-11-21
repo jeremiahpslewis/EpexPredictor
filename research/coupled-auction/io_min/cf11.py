@@ -16,6 +16,7 @@ Domain per scenario:
 """
 import sys, pickle, json, time
 import numpy as np
+import cvxpy as cp
 from multiprocessing import Pool
 sys.path.insert(0, __file__.rsplit("/", 1)[0]); import net11 as N
 E_L, E_C, E_G, V_G, SMOOTH = 0.364, 0.341, 0.202, 3.0, 0.05
@@ -43,6 +44,29 @@ def make_supply(th, nb, r, outage=0.0):
         Snb = nb["sbar"] * (nb["al"] + nb["be"] * g); dSnb = nb["sbar"] * nb["be"] * g * (1 - g) / sc
         return 1000 * np.r_[S["L"] + S["C"] + S["G"], Snb], 1000 * np.r_[dS["L"] + dS["C"] + dS["G"], dSnb]
     return supply
+
+def conic_start(th, nb, r, load, A, b, lo, hi):
+    """Outage start point: welfare dual with exact logistic terms (Clarabel), average-unit outage (gas capacity - 1 GW);
+    the exact cheapest-unit cut is applied afterwards by the polish."""
+    x = r["de"]; c = {"L": th["a_L"] + th["h_L"] * E_L * x["tau"], "C": th["a_C"] + th["h_C"] * E_C * x["tau"], "G": th["h_G"] * (x["Pg"] + E_G * x["tau"]) + V_G}
+    F = {"L": th["F_L"], "C": th["F_C"], "G": th["phi0"] + th["phi1"] * x["hdd"]}
+    pz = cp.Variable(N.NZ); terms = []
+    for f in ("L", "C", "G"):
+        K = th[f"alpha_{f}"] * x[f"K_{f}"] - (1.0 if f == "G" else 0.0); Ff = min(F[f], K); s_ = th[f"sigma_{f}"] * c[f]
+        terms.append(1000 * (Ff * pz[0] + (K - Ff) * s_ * cp.logistic((pz[0] - c[f]) / s_)))
+    Lc = r["Lc"]
+    for i in range(N.NZ - 1):
+        sc = nb["sg"][i] * Lc; ai = nb["aa"][i] + nb["bb"][i] * Lc
+        terms.append(1000 * nb["sbar"][i] * (nb["al"][i] * pz[i + 1] + nb["be"][i] * sc * cp.logistic((pz[i + 1] - ai) / sc)))
+    mu = cp.Variable(len(b), nonneg=True); lam = cp.Variable(); nl = cp.Variable(N.NY, nonneg=True); nh = cp.Variable(N.NY, nonneg=True)
+    fh, fl = np.isfinite(hi), np.isfinite(lo)
+    obj = sum(terms) - load @ pz + b @ mu + lam * r["e0"] + hi[fh] @ nh[fh] - lo[fl] @ nl[fl]
+    con = [r["H"].T @ pz + A.T @ mu + r["e"] * lam + nh - nl == 0, nh[~fh] == 0, nl[~fl] == 0]
+    pr = cp.Problem(cp.Minimize(obj), con)
+    try: pr.solve(solver="CLARABEL")
+    except Exception: return None
+    if pz.value is None: return None
+    return np.asarray(pz.value), -con[0].dual_value
 
 def domain(r, eta):
     y = r["y"]; flow = r["A"] @ y
@@ -92,12 +116,17 @@ def work(args):
         bnd0 = [(j, s) for j, s in r["bnd"]] + [(j, "lo") for j in range(N.IA + 1, N.NY) if r["y"][j] < 0.5 and (j, "lo") not in r["bnd"]]
         if abs(r["y"][N.IA]) >= 999.5: bnd0.append((N.IA, "hi" if r["y"][N.IA] > 0 else "lo"))
         pb, yb, ab, bb, okb = N.polish(make_supply(th, nb, r), load, r["H"], A, b, r["e"], r["e0"], lo, hi, r["p"], r["y"], act0, list(set(bnd0)))
-        po, yo, ao, bo, oko = N.polish(make_supply(th, nb, r, 1.0), load, r["H"], A, b, r["e"], r["e0"], lo, hi, pb, yb, ab, bb)
+        po, yo, ao, bo, oko = N.polish(make_supply(th, nb, r, 1.0), load, r["H"], A, b, r["e"], r["e0"], lo, hi, pb, yb, ab, bb, outer=15)
+        start = "baseline"
+        if not oko:                                                           # conic start, then exact polish
+            cs = conic_start(th, nb, r, load, A, b, lo, hi)
+            if cs is not None:
+                po, yo, ao, bo, oko = N.polish(make_supply(th, nb, r, 1.0), load, r["H"], A, b, r["e"], r["e0"], lo, hi, cs[0], cs[1], outer=60); start = "conic"
         Sb, _ = de_supply(th, r["de"], pb[0]); So, _ = de_supply(th, r["de"], po[0], 1.0)
         nbs, nos = r["H"] @ yb, r["H"] @ yo
         out[name] = dict(ok=bool(okb and oko), base_err_p=float(np.abs(pb - r["p"]).max()), base_err_n=float(np.abs(nbs - r["n"]).max()),
                          dp=(po - pb).tolist(), dS=((nos - nbs) / 1000).tolist(), dL=So["L"] - Sb["L"], dC=So["C"] - Sb["C"], dG=So["G"] - Sb["G"],
-                         dimport=float(-(nos[0] - nbs[0]) / 1000), cap=bool(po.max() > 4000), **dflag)
+                         dimport=float(-(nos[0] - nbs[0]) / 1000), cap=bool(po.max() > 4000), start=start, **dflag)
     return out
 
 if __name__ == "__main__":
