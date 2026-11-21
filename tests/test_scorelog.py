@@ -55,3 +55,28 @@ def test_report_covers_both_logs(tmp_path):
 
 def test_report_without_logs(tmp_path):
     assert "no forecast log" in scorelog.main(str(tmp_path))
+
+
+def test_coverage_baseline_and_sample_size(tmp_path):
+    write_logs(tmp_path)
+    prices = scorelog.read_store(str(tmp_path / "prices_v3_DE_LU.json.gz"))["price"]
+    log = scorelog.with_last_week(ForecastLog.read(str(tmp_path / "forecastlog_DE_LU.csv.gz")), prices)
+    covered = scorelog.coverage(log, prices).set_index("lead")
+    assert covered.loc["first day", "issues"] == 8 and covered.loc["first day", "expected"] == 8 * 96
+    assert covered.loc["first day", "actual"] == 8 * 96
+    # the market model gave a forecast on every other day only
+    assert covered.loc["first day", "market"] == 4 * 96 and covered.loc["first day", "price"] == 8 * 96
+    # prices start a day before the first issue, so last week is there only from the eighth day of target times on
+    assert 0 < covered.loc["first day", "last_week"] < 8 * 96
+    text = scorelog.main(str(tmp_path))
+    assert "8 issues on 8 days of issue logged" in text
+    assert "fewer than 28, too few to conclude" in text
+    assert "last_week" in text
+
+
+def test_a_log_without_actual_prices_yet(tmp_path):
+    write_logs(tmp_path, days=1)
+    index = pd.date_range(START - timedelta(days=1), START, freq="15min", name="time")
+    pd.DataFrame({"price": 10.0}, index=index).to_json(tmp_path / "prices_v3_DE_LU.json.gz", compression="gzip")
+    text = scorelog.main(str(tmp_path))
+    assert "1 issues on 1 days of issue logged" in text and "0 with an actual price" in text and "nothing to score yet" in text

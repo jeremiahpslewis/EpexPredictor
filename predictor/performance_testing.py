@@ -2,12 +2,12 @@
 
 import asyncio
 import logging
-import math
 import pandas as pd
 from datetime import datetime, timedelta
 import os
 
 import model.pricepredictor as pred
+from backtest_metrics import Metrics, last_week, table
 from model.europeweather import EuropeWeather
 from model.priceregion import PriceRegion, PriceRegionName
 
@@ -56,43 +56,8 @@ async def load_data(p : pred.PricePredictor):
         p.gasstore.get_data(learn_start, END)
     )
 
-def mse(df1: pd.Series, df2: pd.Series):
-    return (df1 - df2).pow(2).mean()
-
-def mae(df1: pd.Series, df2: pd.Series):
-    return (df1 - df2).abs().mean()
-
-
 # Set to False to fall back to the original single-stage (per-region) evaluation
 TWO_STAGE = True
-
-
-class Metrics:
-    """Collects 1d/2d/3d MAE+RMSE over a rolling backtest."""
-
-    def __init__(self):
-        self.d1_mae = []
-        self.d1_mse = []
-        self.d2_mae = []
-        self.d2_mse = []
-        self.d3_mae = []
-        self.d3_mse = []
-
-    def add(self, actual: pd.DataFrame, prediction: pd.DataFrame, d0, d1, d2, d3):
-        self.d1_mae.append(mae(actual.loc[d0:d1]["price"], prediction.loc[d0:d1]["price"]))
-        self.d2_mae.append(mae(actual.loc[d1:d2]["price"], prediction.loc[d1:d2]["price"]))
-        self.d3_mae.append(mae(actual.loc[d2:d3]["price"], prediction.loc[d2:d3]["price"]))
-
-        self.d1_mse.append(mse(actual.loc[d0:d1]["price"], prediction.loc[d0:d1]["price"]))
-        self.d2_mse.append(mse(actual.loc[d1:d2]["price"], prediction.loc[d1:d2]["price"]))
-        self.d3_mse.append(mse(actual.loc[d2:d3]["price"], prediction.loc[d2:d3]["price"]))
-
-    def summarize(self):
-        return (
-            round(math.sqrt(sum(self.d1_mse) / len(self.d1_mse)), 2), round(sum(self.d1_mae) / len(self.d1_mae), 2),
-            round(math.sqrt(sum(self.d2_mse) / len(self.d2_mse)), 2), round(sum(self.d2_mae) / len(self.d2_mae), 2),
-            round(math.sqrt(sum(self.d3_mse) / len(self.d3_mse)), 2), round(sum(self.d3_mae) / len(self.d3_mae), 2),
-        )
 
 
 async def run_many(coros):
@@ -135,8 +100,8 @@ async def main():
     learn_start = START - timedelta(days=LEARN_DAYS)
     learn_end = START
 
-    s1 = {name: Metrics() for name in EVAL_REGIONS}
-    s2 = {name: Metrics() for name in EVAL_REGIONS}
+    models = ("stage1", "stage2", "last_week") if TWO_STAGE else ("stage1", "last_week")
+    metrics = {name: Metrics(models) for name in EVAL_REGIONS}
 
     iterations = 0
     while learn_end < END - timedelta(days=3):
@@ -174,13 +139,15 @@ async def main():
         actuals = {}
         for name in EVAL_REGIONS:
             stage1[name].set_horizon_cutoff(None)
-            actuals[name] = await stage1[name].pricestore.get_data(d0, d3)
+            # from a week before d0, for the same-slot-last-week baseline (those prices are known at d0)
+            actuals[name] = (await stage1[name].pricestore.get_data(d0 - timedelta(days=7), d3))["price"]
             stage1[name].set_horizon_cutoff(learn_end)
 
         for name in EVAL_REGIONS:
-            s1[name].add(actuals[name], preds1[name], d0, d1, d2, d3)
+            predictions = {"stage1": preds1[name]["price"], "last_week": last_week(actuals[name], d0, d3)}
             if TWO_STAGE:
-                s2[name].add(actuals[name], preds2[name], d0, d1, d2, d3)
+                predictions["stage2"] = preds2[name]["price"]
+            metrics[name].add(actuals[name], predictions, d0, d1, d2, d3)
 
         learn_start += timedelta(days=1)
         learn_end += timedelta(days=1)
@@ -189,18 +156,13 @@ async def main():
 
     print()
 
-    def print_table(title: str, metrics):
-        print(title)
-        print("| Region | 1d RMSE | 1d MAE | 2d RMSE | 2d MAE | 3d RMSE | 3d MAE |")
-        print("|--------|---------|--------|---------|--------|---------|--------|")
-        for name in EVAL_REGIONS:
-            d1_rmse, d1_mae, d2_rmse, d2_mae, d3_rmse, d3_mae = metrics[name].summarize()
-            print(f"| {name.ljust(5)}  | {str(d1_rmse).ljust(7)} | {str(d1_mae).ljust(6)} | {str(d2_rmse).ljust(7)} | {str(d2_mae).ljust(6)} | {str(d3_rmse).ljust(7)} | {str(d3_mae).ljust(6)} |")
-        print()
-
-    print_table(f"Stage 1 (baseline, per-region, iterations={iterations}):", s1)
-    if TWO_STAGE:
-        print_table(f"Stage 2 (2-stage, + cross-region forecasts, iterations={iterations}):", s2)
+    print(f"Rolling backtest with historical weather: windows starting {START.date()} to {(learn_end - timedelta(days=1)).date()} "
+          f"(UTC midnight), {iterations} windows, {LEARN_DAYS}-day training window, "
+          f"{'two-stage' if TWO_STAGE else 'single-stage'}. Day k = the 24 hours [d0 + k - 1, d0 + k) UTC after the training end.")
+    print("Prices and errors in ct/kWh. Errors on the quarter hours where every model and the actual price are there (Common).")
+    print()
+    print(table({name.value: metrics[name] for name in EVAL_REGIONS}))
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -6,6 +6,12 @@ Scores the forecast logs against what followed: how good each forecaster was, by
 Reads forecastlog_<zone>.csv.gz and coreforecastlog_<zone>.csv.gz against the stored prices, and
 loadforecastlog_<zone>.csv.gz against the stored published residual load. Each target time counts once per issue it
 was forecast in. The comparison with the tree models is paired, and its range comes from resampling whole days of issue (5 to 95 %).
+
+These are the forecasts as they were issued, with the weather forecast of the time. They are a different thing from
+the rolling backtest in performance_testing.py, which uses historical weather. The price log is also scored against
+a same-slot-last-week baseline (the actual price 7 x 24 hours before the target time, known when the forecast was
+issued), and each lead reports how many quarter hours were due, how many have an actual price and how many each
+forecaster covered. With fewer than MIN_DAYS days of issue the figures are printed but no conclusion should be drawn.
 """
 
 import os
@@ -18,6 +24,35 @@ from .model.forecastlog import ForecastLog
 
 # quarter hours after the last known value: name -> (from, to)
 LEADS = {"first 6 hours": (0, 24), "first day": (0, 96), "second day": (96, 192)}
+# days of issue below which the figures are reported with the conclusion left open
+MIN_DAYS = 28
+SLOT = pd.Timedelta(minutes=15)
+
+
+def with_last_week(log: pd.DataFrame, actual: pd.Series) -> pd.DataFrame:
+    """Adds the same-slot-last-week baseline: the actual price 7 x 24 hours before each target time."""
+    return log.assign(last_week=actual.reindex(log["time"] - pd.Timedelta(days=7)).to_numpy())
+
+
+def coverage(log: pd.DataFrame, actual: pd.Series) -> pd.DataFrame:
+    """
+    For each lead: the issues, the quarter hours due (issues x quarter hours of the lead), those with an actual
+    price, and for each forecaster those with an actual price and its forecast.
+    """
+    names = [c for c in log.columns if c not in ("time", "issued", "last_known")]
+    issues = log[["issued", "last_known"]].drop_duplicates()
+    lead = ((log["time"] - log["last_known"]) / SLOT).round().astype(int) - 1
+    has_actual = actual.reindex(log["time"]).notna().to_numpy()
+    rows = []
+    for name, (first, last) in LEADS.items():
+        due = [last_known + (k + 1) * SLOT for last_known in issues["last_known"] for k in range(first, last)]
+        row = {"lead": name, "issues": len(issues), "days": issues["issued"].dt.floor("D").nunique(),
+               "expected": len(due), "actual": int(actual.reindex(pd.DatetimeIndex(due)).notna().sum()) if due else 0}
+        part = ((lead >= first) & (lead < last)).to_numpy() & has_actual
+        for forecast in names:
+            row[forecast] = int((part & log[forecast].notna().to_numpy()).sum())
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def read_store(path: str) -> pd.DataFrame:
@@ -59,15 +94,25 @@ def score(log: pd.DataFrame, actual: pd.Series, reference: str = "trees", seed: 
     return pd.DataFrame(rows)
 
 
-def report(title: str, unit: str, table: pd.DataFrame) -> str:
-    if len(table) == 0:
-        return f"{title}: nothing to score yet"
+def report(title: str, unit: str, table: pd.DataFrame, covered: pd.DataFrame | None = None) -> str:
     lines = [title]
+    if covered is not None and len(covered):
+        first = covered.iloc[0]
+        lines.append(f"  {int(first['issues'])} issues on {int(first['days'])} days of issue logged")
+        names = [c for c in covered.columns if c not in ("lead", "issues", "days", "expected", "actual")]
+        for _, row in covered.iterrows():
+            lines.append(f"  {row['lead']}: {int(row['expected'])} quarter hours due, {int(row['actual'])} with an actual price; covered "
+                         + ", ".join(f"{n} {int(row[n])}" for n in names))
+    if len(table) == 0:
+        lines.append("  nothing to score yet")
+        return "\n".join(lines) if covered is not None else f"{title}: nothing to score yet"
     for lead in LEADS:
         part = table[table["lead"] == lead]
         if len(part) == 0:
             continue
-        lines.append(f"  {lead} ({int(part['days'].max())} days of issue)")
+        days = int(part['days'].max())
+        caveat = f"; fewer than {MIN_DAYS}, too few to conclude" if days < MIN_DAYS else ""
+        lines.append(f"  {lead} ({days} days of issue{caveat})")
         for _, row in part.iterrows():
             line = f"    {row['forecast']:10s} {row['mae']:6.3f} {unit}"
             if pd.notna(row.get("change")):
@@ -83,7 +128,9 @@ def main(datadir: str, zone: str = "DE_LU") -> str:
     path = os.path.join(datadir, f"forecastlog_{zone}.csv.gz")
     if os.path.exists(path):
         prices = read_store(os.path.join(datadir, f"prices_v3_{zone}.json.gz"))["price"]
-        out.append(report("Price forecast, mean absolute error", "ct/kWh", score(ForecastLog.read(path), prices)))
+        log = with_last_week(ForecastLog.read(path), prices)
+        out.append(report("Price forecast as issued (price = the issued blend; last_week = same slot a week before), mean absolute error",
+                          "ct/kWh", score(log, prices), coverage(log, prices)))
     else:
         out.append(f"no forecast log at {path}")
     path = os.path.join(datadir, f"loadforecastlog_{zone}.csv.gz")

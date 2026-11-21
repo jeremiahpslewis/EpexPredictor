@@ -1,7 +1,7 @@
 # EPEX day-ahead price prediction
 
 This is a simple statistical model to predict EPEX day-ahead prices based on various parameters.
-It works to a reasonably good degree. Better than many of the commercial solutions.
+It works to a reasonably good degree; see [Model performance](#model-performance) for how it was measured.
 This repository includes
 - The self-training prediction model itself
 - A simple FastAPI app to get a REST API up
@@ -112,16 +112,35 @@ With Timestral switched on and a data directory set, every forecast that is issu
 A time for which one of the inputs is missing, for example because the weather service could not be reached for several days, gets no forecast, so the output of the API can end earlier than usual. The load forecast is the exception: where it is missing, a forecast is still made.
 
 ## Model performance
-For performance testing, see `predictor/performance_testing.py`. It runs a rolling backtest of the full 2-stage stack: stage-1 models for all regions, then stage-2 models using the stage-1 forecasts of all regions as cross-features (set `TWO_STAGE = False` to fall back to the original single-stage evaluation).
+There are two separate kinds of evaluation. Their figures are not comparable with each other.
 
-Remarks:
-- Tests were run in 2026, with data from 2025-09-01 to 2026-09-01. The model is tuned for 15 minute pricing.
-- The model uses a 540-day rolling training window
-- The table below was measured with the previous setup (180-day training window, no gas-relative model, no Europe-wide weather features) and still has to be regenerated
-- Tests were done with historical weather data. If the weather forecast is wrong, performance might be slightly worse in practice
-- The residual load input and Timestral are not part of the table either. They were backtested for Germany with forecasts made at 14:00 for the day after tomorrow, using the weather as it was forecast at that time (at least 48 hours ahead). Mean absolute error of the first 14 hours of that day, autumn 2026 (66 forecasts) / spring-summer 2026 (50 forecasts): 1.86 / 1.50 ct/kWh without them, 1.72 / 1.30 with the residual load input, and 1.59 / 1.30 with Timestral-123M on top. For 00:00-08:00 alone: 1.65 / 1.06, 1.49 / 0.87 and 1.30 / 0.80. Timestral on its own was not better than the tree models
+### Rolling backtest with historical weather
+`predictor/performance_testing.py` runs a rolling backtest of the full two-stage stack. Stage-1 models are trained for all regions, then stage-2 models are trained with the stage-1 forecasts of all regions as cross features. Set `TWO_STAGE = False` to fall back to the single-stage evaluation. Run it from the repository root:
 
-Results (1/2/3-day ahead prediction):
+```bash
+EPEXPREDICTOR_DATADIR=./data EPEXPREDICTOR_ENTSOE_API_KEY=... python predictor/performance_testing.py
+```
+
+The configuration is set by the constants at the top of the script: `START` 2025-09-01 and `END` 2026-09-01 (UTC), `LEARN_DAYS` 540, all 13 regions in `CROSS_REGIONS` and `EVAL_REGIONS`, two-stage. One window starts at each UTC midnight from `START` to four days before `END`, so that all three forecast days end by `END`. Each window is trained on the `LEARN_DAYS` before its start, with every data store cut off at the start, so no later price is used. It then forecasts three forecast days. Day k is the 24 hours [start + k − 1 days, start + k days) in UTC. The intervals are half-open, so every quarter hour belongs to exactly one day. The weather is the historical weather, not the forecast that was available at the time, so live errors can be larger.
+
+For each region and forecast day the script prints:
+- **Expected:** the quarter hours of that day over all windows.
+- **Actual:** those with an actual price.
+- **Covered:** for each model, those with an actual price and a forecast of that model, with the share of Actual. A model gives no forecast where a required input is missing, so coverage below 100 % means prices that were not issued.
+- **Common:** those with an actual price and a forecast of every model.
+- **MAE and RMSE** of stage 1, stage 2 and the same-slot-last-week baseline, on the Common quarter hours only, so all three are compared on the same timestamps. The baseline is the actual price 7 × 24 hours earlier, which is known when the window starts. Errors are pooled over the quarter hours of all windows.
+- **MAE relative to the baseline:** below 1 means better than last week's price.
+
+Prices and errors are in ct/kWh (EUR/MWh ÷ 10).
+
+The table for the current configuration has not been generated yet. Running it is several hours of CPU time per region.
+
+The table below is from an earlier version and is kept for reference only:
+- **Configuration:** 180-day training window, no gas-relative model, no Europe-wide weather features, two-stage, data 2025-09-01 to 2026-09-01, historical weather.
+- **Metric:** the old one. The quarter hour at each day boundary was counted in two days, errors were averaged per window rather than pooled, and there was no coverage count and no baseline.
+- **Not included:** the residual load input and Timestral.
+
+Results, ct/kWh (1-, 2- and 3-day-ahead):
 | Region | 1d RMSE | 1d MAE | 2d RMSE | 2d MAE | 3d RMSE | 3d MAE |
 |--------|---------|--------|---------|--------|---------|--------|
 | DE     | 2.87    | 1.62   | 3.17    | 1.84   | 3.26    | 1.92   |
@@ -138,6 +157,28 @@ Results (1/2/3-day ahead prediction):
 | PT     | 1.97    | 1.38   | 2.43    | 1.75   | 2.6     | 1.87   |
 | FR     | 2.69    | 1.75   | 3.15    | 2.15   | 3.31    | 2.27   |
 
+#### Residual load input and Timestral (Germany)
+These were backtested separately:
+- forecasts made at 14:00 for the day after tomorrow;
+- the weather as it was forecast at that time, at least 48 hours ahead;
+- mean absolute error in ct/kWh of the first 14 hours of that day;
+- autumn 2026 (66 forecasts) / spring–summer 2026 (50 forecasts).
+
+| | Whole 14 hours | 00:00–08:00 only |
+|---|---|---|
+| Without them | 1.86 / 1.50 | 1.65 / 1.06 |
+| With the residual load input | 1.72 / 1.30 | 1.49 / 0.87 |
+| With Timestral-123M on top | 1.59 / 1.30 | 1.30 / 0.80 |
+
+Timestral on its own was not better than the tree models.
+
+### Forecasts as issued (Germany)
+`python -m predictor.scorelog <data directory>` scores the forecast log described above. These are the forecasts the service actually issued, with the weather forecast of the time. It reports the following, in ct/kWh, for the first six hours, the first day and the second day after the last known price:
+- the issues and days of issue logged;
+- the quarter hours due, those with an actual price, and those each forecaster covered;
+- the mean absolute error of the tree models, Timestral, the market model, the issued blend (`price`) and the same-slot-last-week baseline (`last_week`).
+
+With fewer than 28 days of issue the figures are printed with the conclusion left open. No result from the log is published here yet.
 
 Some observations:
 - At night, predictions are typically within 0.5 ct/kWh
