@@ -10,7 +10,7 @@ y (ny = 22):
 Zone balance: n = H y (MW, net export inside the system); S_z(p_z) - D_z - u_z - X_z = n_z.
 Equilibrium (welfare optimum): S(p) - load = H y,  H'p + A_act' mu + e lam + bound multipliers = 0, active rows tight.
 """
-import numpy as np
+import numpy as np, time as _time
 
 CORE = ["DE", "FR", "NL", "BE", "AT", "CZ", "PL"]; NORD = ["DK_1", "DK_2", "SE_4", "NO_2"]; Z = CORE + NORD
 ENT = {"DE": "DE_LU", **{z: z for z in Z if z != "DE"}}
@@ -64,7 +64,7 @@ def price_subspace(H, AB, e, tol=1e-4):
     Uq, _, _ = np.linalg.svd(Q, full_matrices=True)
     return Q, Uq[:, Q.shape[1]:]
 
-def polish(supply, load, H, A, b, e, e0, lo, hi, p0, y0, act0=None, bnd0=None, iters=40, outer=200):
+def polish(supply, load, H, A, b, e, e0, lo, hi, p0, y0, act0=None, bnd0=None, iters=40, outer=200, deadline=None):
     """Exact equilibrium by active-set Newton. supply(p) -> (S, dS) in MW. Starts from (p0, y0) and an optional active
     set; adds the most violated row or bound, drops the most negative multiplier, until KKT holds.
     Returns p, y, active rows, active bounds (index, side), ok."""
@@ -73,6 +73,7 @@ def polish(supply, load, H, A, b, e, e0, lo, hi, p0, y0, act0=None, bnd0=None, i
     bnd = {(j, "hi" if hi[j] - y0[j] < y0[j] - lo[j] else "lo") for j in range(ny) if np.isfinite(hi[j]) and (hi[j] - y0[j] < 1.0 or y0[j] - lo[j] < 1.0)} if bnd0 is None else set(bnd0)
     p, y = p0.copy(), y0.copy()
     for _o in range(outer):
+        if deadline is not None and _time.time() > deadline: break       # time budget exhausted: not converged
         ar = sorted(act); br = sorted(bnd); na, nb = len(ar), len(br)
         Eb = np.zeros((nb, ny)); bv = np.zeros(nb)
         for i, (j, side) in enumerate(br): Eb[i, j] = 1.0; bv[i] = hi[j] if side == "hi" else lo[j]
