@@ -111,7 +111,7 @@ def work(args):
     th, nb, r = args; out = {}
     S0, _ = make_supply(th, nb, r)(r["p"]); load = S0 - r["n"]                   # = D + X + 1000 u: shocks recovered at this draw
     for name, eta in SCEN:
-        dl = time.time() + 20.0                                            # time budget per scenario (s)
+        dl = time.time() + 10.0                                            # time budget per scenario (s)
         A, b, lo, hi, dflag = domain(r, eta)
         act0 = list(range(len(b) - len(r["A_sp"]) - len(r["A_inf"]) - dflag["eq_rows"], len(b)))          # binding rows: shadow, inferred, equality copies
         bnd0 = [(j, s) for j, s in r["bnd"]] + [(j, "lo") for j in range(N.IA + 1, N.NY) if r["y"][j] < 0.5 and (j, "lo") not in r["bnd"]]
@@ -122,7 +122,7 @@ def work(args):
         if not oko:                                                           # conic start, then exact polish
             cs = conic_start(th, nb, r, load, A, b, lo, hi)
             if cs is not None:
-                po, yo, ao, bo, oko = N.polish(make_supply(th, nb, r, 1.0), load, r["H"], A, b, r["e"], r["e0"], lo, hi, cs[0], cs[1], outer=60, deadline=dl + 10.0); start = "conic"
+                po, yo, ao, bo, oko = N.polish(make_supply(th, nb, r, 1.0), load, r["H"], A, b, r["e"], r["e0"], lo, hi, cs[0], cs[1], outer=60, deadline=dl + 5.0); start = "conic"
         Sb, _ = de_supply(th, r["de"], pb[0]); So, _ = de_supply(th, r["de"], po[0], 1.0)
         nbs, nos = r["H"] @ yb, r["H"] @ yo
         out[name] = dict(ok=bool(okb and oko), base_err_p=float(np.abs(pb - r["p"]).max()), base_err_n=float(np.abs(nbs - r["n"]).max()),
