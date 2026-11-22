@@ -130,17 +130,30 @@ def work(args):
     return out
 
 if __name__ == "__main__":
+    # one checkpoint file per (posterior, draw); draws interleaved across posteriors so partial results cover both;
+    # a rerun skips draws already done, and the combined file is rebuilt from all checkpoints at the end
+    import os, glob
     d = [r for r in pickle.load(open(RECS, "rb"))["recs"] if r["kind"] == "outage"]
-    jobs = []
+    flags = lambda r: dict(pub_excl=bool((r["A"] @ r["y"] - r["b_pub"]).max() > 5), generic="generic" in (r["aug"] or {}).get("added", []),
+                           ahc=len(r["active_vh"]) > 0, link_missing=any(v["missing"] for v in r["links"].values()))
+    plan = []
     for post in POSTS:
-        P = dict(np.load(post, allow_pickle=True)); nS = len(P["h_G"]); pick = np.linspace(0, nS - 1, ND).astype(int)
-        for i in pick:
-            th = {k: float(P[k][i]) for k in [str(x) for x in P["de_keys"]]}
-            nb = dict(sbar=P["sbar"][1:], al=P["al"][i], be=P["be"][i], aa=P["aa"][i], bb=P["bb"][i], sg=P["sg"][i])
-            for r in d: jobs.append((post, int(i), th, nb, r))
+        P = dict(np.load(post, allow_pickle=True)); nS = len(P["h_G"])
+        for k, i in enumerate(np.linspace(0, nS - 1, ND).astype(int)): plan.append((k, post, P, int(i)))
+    plan.sort(key=lambda x: x[0])
     t0 = time.time()
-    with Pool(4) as pool: res = pool.map(work, [(th, nb, r) for _, _, th, nb, r in jobs], chunksize=8)
-    rows = [dict(post=post, draw=i, t=str(r["t"]), flags=dict(pub_excl=bool((r["A"] @ r["y"] - r["b_pub"]).max() > 5),
-                 generic="generic" in (r["aug"] or {}).get("added", []), ahc=len(r["active_vh"]) > 0,
-                 link_missing=any(v["missing"] for v in r["links"].values())), res=o) for (post, i, th, nb, r), o in zip(jobs, res)]
-    pickle.dump(rows, open(OUTP + ".pkl", "wb")); print(f"{len(rows)} draw-MTU results in {time.time()-t0:.0f}s")
+    with Pool(4) as pool:
+        for k, post, P, i in plan:
+            tag = os.path.basename(post).replace(".npz", ""); ck = f"{OUTP}_{tag}_d{i}.pkl"
+            if os.path.exists(ck): print("skip", ck, flush=True); continue
+            th = {kk: float(P[kk][i]) for kk in [str(x) for x in P["de_keys"]]}
+            nb = dict(sbar=P["sbar"][1:], al=P["al"][i], be=P["be"][i], aa=P["aa"][i], bb=P["bb"][i], sg=P["sg"][i])
+            res = []
+            for j, o in enumerate(pool.imap(work, [(th, nb, r) for r in d], chunksize=4)):
+                res.append(o)
+                if (j + 1) % 52 == 0: print(f"  {tag} draw {i}: {j + 1}/{len(d)} MTUs, {time.time() - t0:.0f}s", flush=True)
+            rows = [dict(post=post, draw=i, t=str(r["t"]), flags=flags(r), res=o) for r, o in zip(d, res)]
+            pickle.dump(rows, open(ck + ".tmp", "wb")); os.replace(ck + ".tmp", ck)
+            print(f"done {tag} draw {i} at {time.time() - t0:.0f}s", flush=True)
+    rows = [x for f in sorted(glob.glob(f"{OUTP}_*_d*.pkl")) for x in pickle.load(open(f, "rb"))]
+    pickle.dump(rows, open(OUTP + ".pkl", "wb")); print(f"{len(rows)} draw-MTU results combined")
