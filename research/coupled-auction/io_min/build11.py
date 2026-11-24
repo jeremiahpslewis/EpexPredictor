@@ -93,6 +93,10 @@ for t, kind in MTUS:
         for l in N.LINKS:
             f = float(LINKF[l].asof(t)) if LINKF[l] is not None else 0.0
             y[N.IF[l]], y[N.IF[l] + 1] = max(f, 0.0), max(-f, 0.0)
+            # under advanced hybrid coupling the market result for the link is the JAO virtual-hub net position
+            # (NP_VH = -f+/(1 - l_ab) + f-); schedules can differ by tens of MW, which would break the Core balance
+            if l[2] in active_vh and pd.notna(npr.get(f"hub_{l[2]}")):
+                v = g(l[2]); y[N.IF[l]], y[N.IF[l] + 1] = max(-v, 0.0) * (1 - N.LOSS.get((l[0], l[1]), 0.0)), max(v, 0.0)
             lflags[l[2]] = dict(missing=bool(MISS.reindex([t]).fillna(False).get(f"{N.ENT[l[0]]}-{N.ENT[l[1]]}", pd.Series([False])).iloc[0]) if f"{N.ENT[l[0]]}-{N.ENT[l[1]]}" in MISS else False,
                                 outage_zero=bool(abs(f) < 0.5 and COV[l].asof(t)), win_out=float(WIN[l][0].asof(t)), win_in=float(WIN[l][1].asof(t)))
         omit_np = np.array([g(o) for o in N.OMIT]); e0 = -omit_np.sum()
