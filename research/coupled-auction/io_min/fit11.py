@@ -87,17 +87,34 @@ B = dict(np.load(BASIN)); init = {k: np.median(B[k]) for k in DE_KEYS}
 init.update(m_al=0.4, t_al=0.1, m_lb=0.0, t_lb=0.1, m_a=0.0, t_a=10.0, m_b=1.0, t_b=0.1, m_ls=np.log(0.4), t_ls=0.2,
             zz=np.zeros((5, NBz)), mu_de=float(np.median(B["mu"][:, 0])) if "mu" in B else -2.0, sd_u=np.full(N.NZ, 1.5), nu=5.0,
             sd_q=np.full(3, 1.5), beta_q=np.zeros(3), nu_q=5.0)
+# start the neighbour, shock and measurement blocks at a previous eleven-zone posterior when BASIN is one (it has zz)
+if "zz" in B:
+    for k in ["m_al", "t_al", "m_lb", "t_lb", "m_a", "t_a", "m_b", "t_b", "m_ls", "t_ls", "zz", "sd_u", "nu", "sd_q", "beta_q", "nu_q", "mu_de"]:
+        if k in B: init[k] = np.median(B[k], axis=0)
 if ENDS: init.update(m_lo=-10.0, s_lo=10.0, m_hi=250.0, s_hi=50.0, rho_L=0.5, rho_C=0.5, rho_G=0.5, k_lo_de=1.0, k_hi_de=0.5, k_lo_nb=0.05, k_hi_nb=0.05)
-t0 = time.time()
-mc = MCMC(NUTS(model, init_strategy=init_to_value(values={k: jnp.asarray(v) for k, v in init.items()}), target_accept_prob=0.85, max_tree_depth=8),
-          num_warmup=WARM, num_samples=NS, num_chains=NC, chain_method="parallel", progress_bar=True)
-mc.run(jax.random.PRNGKey(3))
-G = mc.get_samples(group_by_chain=True); summ = numpyro.diagnostics.summary(G)
-rh = {k: float(np.nanmax(s["r_hat"])) for k, s in summ.items()}
-print(f"{time.time()-t0:.0f}s divergences {int(np.asarray(mc.get_extra_fields()['diverging']).sum())} max r-hat {max(rh.values()):.3f} ({max(rh, key=rh.get)})")
 END_KEYS = ["m_lo", "s_lo", "m_hi", "s_hi", "rho_L", "rho_C", "rho_G", "k_lo_de", "k_hi_de", "k_lo_nb", "k_hi_nb"] if ENDS else []
-for c in range(NC): print(f"  chain {c}:", {k: round(float(np.median(np.asarray(G[k][c]))), 3) for k in ["F_L", "F_C", "phi0", "sigma_L", "sigma_C", "sigma_G", "alpha_G", "h_G", "mu_de", "m_a", "m_ls"] + END_KEYS})
-Sm = mc.get_samples()
-print("neighbours (median): al", np.round(np.median(np.asarray(Sm["al"]), 0), 2).tolist(), "\n  be", np.round(np.median(np.asarray(Sm["be"]), 0), 2).tolist(),
-      "\n  aa", np.round(np.median(np.asarray(Sm["aa"]), 0), 1).tolist(), "\n  bb", np.round(np.median(np.asarray(Sm["bb"]), 0), 2).tolist(), "\n  sg", np.round(np.median(np.asarray(Sm["sg"]), 0), 2).tolist())
-np.savez(OUT, **{k: np.asarray(v) for k, v in Sm.items()}, sbar=np.asarray(sbar), de_keys=np.array(DE_KEYS + END_KEYS))
+
+def save(samples, path):
+    np.savez(path, **{k: np.asarray(v) for k, v in samples.items()}, sbar=np.asarray(sbar), de_keys=np.array(DE_KEYS + END_KEYS))
+
+if __name__ == "__main__":
+    # warmup, then sampling in blocks of BLOCK draws per chain; after each block the draws so far are saved to OUT, so a
+    # stopped run keeps everything up to its last completed block. Progress goes to stdout (redirect it to a log file).
+    BLOCK = int(os.environ.get("BLOCK", "100")); t0 = time.time()
+    mc = MCMC(NUTS(model, init_strategy=init_to_value(values={k: jnp.asarray(v) for k, v in init.items()}), target_accept_prob=0.85, max_tree_depth=8),
+              num_warmup=WARM, num_samples=min(BLOCK, NS), num_chains=NC, chain_method="parallel", progress_bar=False)
+    mc.run(jax.random.PRNGKey(3)); blocks = [mc.get_samples(group_by_chain=True)]; div = int(np.asarray(mc.get_extra_fields()["diverging"]).sum())
+    print(f"warmup + block 1 done at {time.time() - t0:.0f}s", flush=True)
+    while sum(b["h_G"].shape[1] for b in blocks) < NS:
+        save({k: np.concatenate([np.asarray(b[k]) for b in blocks], 1).reshape((-1,) + np.asarray(blocks[0][k]).shape[2:]) for k in blocks[0]}, OUT)
+        mc.post_warmup_state = mc.last_state; mc.run(mc.post_warmup_state.rng_key)
+        blocks.append(mc.get_samples(group_by_chain=True)); div += int(np.asarray(mc.get_extra_fields()["diverging"]).sum())
+        print(f"block {len(blocks)} done at {time.time() - t0:.0f}s", flush=True)
+    G = {k: np.concatenate([np.asarray(b[k]) for b in blocks], 1) for k in blocks[0]}; summ = numpyro.diagnostics.summary(G)
+    rh = {k: float(np.nanmax(s_["r_hat"])) for k, s_ in summ.items()}
+    print(f"{time.time()-t0:.0f}s divergences {div} max r-hat {max(rh.values()):.3f} ({max(rh, key=rh.get)})", flush=True)
+    for c in range(NC): print(f"  chain {c}:", {k: round(float(np.median(G[k][c])), 3) for k in ["F_L", "F_C", "phi0", "sigma_L", "sigma_C", "sigma_G", "alpha_G", "h_G", "mu_de", "m_a", "m_ls"] + END_KEYS})
+    Sm = {k: v.reshape((-1,) + v.shape[2:]) for k, v in G.items()}
+    print("neighbours (median): al", np.round(np.median(Sm["al"], 0), 2).tolist(), "\n  be", np.round(np.median(Sm["be"], 0), 2).tolist(),
+          "\n  aa", np.round(np.median(Sm["aa"], 0), 1).tolist(), "\n  bb", np.round(np.median(Sm["bb"], 0), 2).tolist(), "\n  sg", np.round(np.median(Sm["sg"], 0), 2).tolist())
+    save(Sm, OUT)

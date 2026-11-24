@@ -13,7 +13,9 @@ from multiprocessing import Pool
 RECS, POST, OUT, NMTU, SEED = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5])
 sys.argv = ["cf11.py", RECS, "/dev/null", "1", POST]
 sys.path.insert(0, __file__.rsplit("/", 1)[0]); import cf11 as C, net11 as N, solve11 as V
-TRUE_ENDS = dict(m_lo=-15.0, s_lo=8.0, m_hi=220.0, s_hi=40.0, rho_L=0.4, rho_C=0.5, rho_G=0.3, k_lo_de=3.0, k_hi_de=1.5, k_lo_nb=0.10, k_hi_nb=0.08)
+import os
+TRUE_ENDS = json.loads(os.environ["ENDS_TRUTH"]) if os.environ.get("ENDS_TRUTH") else \
+    dict(m_lo=-15.0, s_lo=8.0, m_hi=220.0, s_hi=40.0, rho_L=0.4, rho_C=0.5, rho_G=0.3, k_lo_de=3.0, k_hi_de=1.5, k_lo_nb=0.10, k_hi_nb=0.08)
 P = dict(np.load(POST, allow_pickle=True)); med = lambda k: np.median(P[k], axis=0)
 DE_KEYS = [str(x) for x in P["de_keys"]][:15]
 TH = {k: float(med(k)) for k in DE_KEYS} | TRUE_ENDS

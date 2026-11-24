@@ -67,3 +67,29 @@ Holdout prediction records are built by a separate script that does not open tho
 - O5: the window is entirely under advanced hybrid coupling, where 95–97% of MTUs needed inferred constraints in
   training. The eleven-zone model cannot use inferred constraints out of sample, so its net-import accuracy may
   suffer most here.
+
+## Addendum 1 (2026-11-24, before any holdout record; after a dry run on two training days)
+
+- **Infeasible domain.** If the published domain for an MTU is infeasible for the solver, the forecast retries once
+  with every RAM raised by 10% of |RAM| + 50 MW, and the share of such solves is reported. If that also fails, the
+  solve is a miss.
+- **Misses at draw level.** Every missed solve is replaced by the training-window mean (price, net import) before the
+  median over draws is taken. A median over converged draws only would drop the steep cases.
+- **Wind and solar forecasts.** ENTSO-E publishes the day-ahead wind and solar forecast by 18:00 on D−1, after the
+  noon gate (Transparency Regulation, Art. 14.1(d)). The load forecast is published before the gate. All three
+  structural forecasts use the published wind/solar forecast as a stand-in for participants' own pre-gate forecasts.
+  This is a known deviation from a strict pre-gate information set, and it applies equally to both models. The naive
+  forecast does not use it. The JAO final-domain publication time is taken as before the gate; it has not been
+  verified independently here.
+- **Two-zone inputs.** German residual demand is rl_h − (other + psgen + pump − ch) at h − 24 h, with the realised
+  components lagged, as for the eleven-zone model.
+- **Starting values.** The training-window refits start their chains at the medians of the earlier eleven-zone and
+  two-zone posteriors, which were fitted on data including the holdout. Only the starting point is shared; the
+  posteriors are from training data. This is disclosed rather than avoided.
+- **Dry run** (two training days, earlier posteriors, plumbing only): forecasters and scorer ran end to end. A swap
+  test on those days attributed most of the price error to the shock carry-over:
+  - own shocks and exchanges on the pre-gate domain: price MAE 4.3, import MAE 0.43 GW;
+  - with lagged exchanges: 5.2 and 0.88;
+  - with lagged shocks too: 15.3 and 1.73.
+- **Resolution.** The quarter-hour −n_DE differs from the hourly `m` by up to 3 GW; at hourly means the two agree
+  within 0.05 GW. Scoring is hourly.

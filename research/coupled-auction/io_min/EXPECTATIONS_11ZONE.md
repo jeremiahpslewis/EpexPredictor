@@ -69,3 +69,25 @@ Result (2026-11-24): S1 met (98.3%); S2 met (99th percentile difference 0.016, 0
 weighted ratio falls from 0.68 to 0.59, and the 1,035 newly converged draw-MTUs have a mean slope of 12.3 and a median
 of 3.3); S4 met (99th-percentile replay error 0.027). By band: low 0.61, middle 0.69, high 0.48; generic MTUs 0.42.
 The reference for the curve-end change is therefore 0.59, not 0.68.
+
+## Curve-end recovery screen (written 2026-11-24, before the run)
+
+Data: 600 training-window MTUs simulated by `ends_sim.py`, with the old-curve posterior medians for everything else.
+Two truths:
+- **Case A (ends present, off the prior centres).** m_lo = −35, s_lo = 4, m_hi = 150, s_hi = 100,
+  ρ = (0.15, 0.8, 0.2), k_lo,DE = 8, k_hi,DE = 4, k_lo,nb = 0.5, k_hi,nb = 0.35. Each is 1.3–1.8 prior sd from its
+  prior centre.
+- **Case N (null).** No end segments: all k = 0 and ρ = 1, so nothing sheds.
+
+MAP fits (`map11.py`) start from two dispersed points: the prior centres, and a far point (m_lo = −60, s_lo = 25,
+m_hi = 350, s_hi = 20, ρ = 0.9, k_lo,DE = 0.5, k_hi,DE = 0.2, k_lo,nb = 0.02, k_hi,nb = 0.02).
+
+Thresholds:
+- R1 (case A). From both starts, the MAP end parameters that are identified at the simulated price range are
+  recovered: k_lo,DE and k_hi,DE within ±35%, m_lo and m_hi within ±15 EUR/MWh.
+- R2 (case N, no invented slope). MAP k_lo,DE < 1.5 GW, k_hi,DE < 1.0 GW, k_lo,nb < 0.1 and k_hi,nb < 0.1. In other
+  words, the Jacobian term does not create end segments that are not there.
+- R3 (stability). The two starts agree on case A within the R1 tolerances.
+
+If R2 fails, the specification is not used as is: the end segments would come from the likelihood's reward for slope,
+not from the data. If R1 or R3 fails, a NUTS recovery is requested before any real fit.
