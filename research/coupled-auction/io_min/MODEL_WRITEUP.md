@@ -10,6 +10,17 @@ Status (2026-11-24). This file consolidates the eleven-zone model as fitted and 
 Everything below is price-taking unless it is labelled strategic (section 10). The strategic part is analytic and not
 estimated.
 
+**Headline result (section 7).** A 1 GW German gas outage, announced before the auction, with the published network
+domain:
+- **Price.** The German price rises by a median of +2.2 EUR/MWh across MTUs; the mean is +3.0 to +3.1.
+- **Who replaces it.** Per GW actually removed, imports replace 0.61 GW and German plants 0.39 GW (lignite 0.11, coal
+  0.07, other gas 0.21).
+- **Network headroom.** Tightening headroom to 10% raises the median to +2.8, which is not material by the
+  pre-registered rule.
+- **Two caveats.** The mean is pulled up by a tail that the external check finds too steep: the model's weighted
+  demand slope is 3.50 against an empirical 2.38 (section 9). Solver failures at tight headroom are concentrated in
+  steep cases (section 8).
+
 ## 1. Market, time and information
 
 Eleven zones are modelled: DE_LU, the six other Core zones FR, NL, BE, AT, CZ, PL, and the four Nordic zones linked to
@@ -254,12 +265,13 @@ as ΔG + 1, so it counts the gas not removed as German replacement. It therefore
 understates imports. ΔpDE is unaffected as a number, but it is a response to less than 1 GW in those MTUs.
 `fullcut11.py` recomputes everything on the MTUs where the full 1 GW is removed in every scenario.
 
-**Result per GW actually removed** (full-cut panel, 2,428 draw-MTUs, mean over MTUs):
+**Result per GW actually removed** (full-cut panel, 2,428 draw-MTUs). The median across MTUs comes first,
+because the mean is pulled up by the tail found in section 9:
 
-| Headroom | ΔpDE mean (median) | German net imports | DE own (lignite / coal / other gas) |
+| Headroom | ΔpDE median (mean), EUR/MWh | German net imports | DE own (lignite / coal / other gas) |
 |---|---|---|---|
-| replay = η 1.00 | +3.04 / +3.10 (+2.24 / +2.25) | 0.61 | 0.39 (0.11 / 0.07 / 0.21) |
-| η = 0.10 | +3.73 / +3.83 (+2.81 / +2.85) | 0.53 | 0.47 (0.13 / 0.08–0.09 / 0.25) |
+| replay = η 1.00 | +2.24 / +2.25 (+3.04 / +3.10) | 0.61 | 0.39 (0.11 / 0.07 / 0.21) |
+| η = 0.10 | +2.81 / +2.85 (+3.73 / +3.83) | 0.53 | 0.47 (0.13 / 0.08–0.09 / 0.25) |
 
 Each pair is mode 0 / mode 1. Replacement by zone at replay, per GW removed: NL 0.14, BE 0.09, DK1 0.08, PL 0.07,
 CZ 0.06, AT 0.05, NO2 0.05, FR 0.04, DK2 0.02, SE4 0.004. The reading rule on this panel: median +26% in both basins,
