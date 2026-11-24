@@ -30,3 +30,24 @@ Expectations, with thresholds fixed before running:
 - W5, re-clear. With shocks recovered at any θ, re-clearing the eleven zones on the published domain reproduces the
   observed prices within 0.5 EUR/MWh and the zonal net positions within 20 MW. A miss shows a missing piece of the
   domain, not a wrong θ.
+
+## External slope check, eleven-zone (written 2026-11-24, before the run)
+
+Estimand. The model's dp_DE/dD_DE: re-clear with German demand +1 GW, holding neighbour demand, rest-of-Europe
+exchanges and inferred rows at their recovered or observed values, on the replay domain. It is evaluated on the random
+fit-sample MTUs, which represent the period, not the outage sample. It is weighted the same way as the two-zone check
+(`cf.py`: squared residual German demand of the hour) and compared with the same empirical net slope: 2.38
+[2.17, 2.60] overall, by daily-price tercile low 2.61, middle 2.10, high 2.37. Scarcity MTUs, those with a
+re-cleared price above 4000, are masked and counted. The check does not feed back into the model.
+
+Expectations and thresholds:
+- E1, direction: the model is still steeper than the empirical slope. Rest-of-Europe exchanges and inferred rows are
+  held, so imports can respond less than they did in the data. Met if empirical / model < 1.
+- E2, improvement on the benchmark: the ratio is closer to 1 than the two-zone 0.67, because ten neighbour curves
+  and the flow-based domain now carry part of the 1 GW. Met if the ratio is above 0.75. Material agreement (in
+  [0.8, 1.25]) is not expected.
+- E3, pattern: the gap is largest in the high-price tercile, as in the two-zone check, and larger in AHC and generic
+  MTUs, where more flows are held.
+- E4, sanity: on the outage MTUs, the demand-shock ΔpDE is within 25% of the outage ΔpDE at the median (a 1 GW
+  outage and 1 GW of extra demand differ only through the gas floor cut and the fuel split). A larger gap points to a
+  bug.
