@@ -64,6 +64,10 @@ The slice prices too step-like: nights too low and evenings too high, with coal 
 - This session coordinates. Modellers get self-contained briefs and work only in their own new files or in opt-in
   switches. Their results are checked against their files, figures and the reproducibility checks before they are
   committed.
+- Long runs: any run (a fit, a study, a rebuild, a fetch) expected to take more than 20 minutes needs the user's
+  explicit approval, every time; approval of one run does not carry over to the next or to a rerun. Before asking,
+  consult the advisor to identify blockers and design errors, and report its findings with the request, together with
+  the expected run time and what a stop would lose.
 - Branch `claude/eager-fermat-vyfgf0` only.
 - Secrets and licensed data:
   - the ENTSO-E key stays in `$SP/entsoe/key`; it is never printed or committed;
