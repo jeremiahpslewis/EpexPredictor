@@ -144,3 +144,10 @@ Diagnostics on the R2 failure (2026-11-24):
   solves (25 of 1,839) sit at ordinary prices (€74–91), so they are solver failures, not missing equilibria.
 - **Status.** The cause is partly the simulation's dropped draws and partly unexplained. The specification is still
   not used.
+
+## Slope check on the training window, current curves (written 2026-11-24, before the run)
+
+Model: the training-window refit of the current curves (`post_train_old.npz`), 8 draws evenly spaced. MTUs: the
+training fit-sample records. Empirical slope: the cf.py recipe on training hours only. Solver: interior point.
+This is the reference for the curve-end specification, so no threshold applies. Expected: a weighted ratio near the
+full-period 0.59 (0.5–0.7), with the high-price band lowest.

@@ -68,14 +68,27 @@ if __name__ == "__main__":
     print("converged share", R.ok.mean().round(3), " capped", int(R.cap.sum()), " errors", int(R.get("error", pd.Series(dtype=str)).notna().sum()))
     if KIND != "fit": sys.exit()
     # weights and price terciles exactly as in cf.py: residualised German demand of the hour (day and hour-month-weekend cells)
+    import os
     Pn = pd.read_parquet(f"{PANEL}/panel.parquet")
-    dfe = pd.DataFrame({"p": Pn.p.to_numpy(), "D": Pn.DDE.to_numpy(), "day": Pn.day.to_numpy(),
+    TRAIN_END = os.environ.get("TRAIN_END")                     # restrict the empirical side to training hours (prereg/HOLDOUT.md)
+    if TRAIN_END: Pn = Pn[Pn.index < pd.Timestamp(TRAIN_END, tz="UTC")]
+    dfe = pd.DataFrame({"p": Pn.p.to_numpy(), "D": Pn.DDE.to_numpy(), "DN": Pn.DN.to_numpy(), "day": Pn.day.to_numpy(),
                         "hour": Pn.hour.to_numpy(), "month": Pn.index.month, "wk": (Pn.day.dt.dayofweek >= 5).astype(int)}, index=Pn.index)
     cell = dfe.hour.astype(str) + "_" + dfe.month.astype(str) + "_" + dfe.wk.astype(str)
     r_ = dfe.D - dfe.D.groupby(dfe.day).transform("mean"); Dr = r_ - r_.groupby(cell).transform("mean")
     lev = pd.qcut(dfe.p.groupby(dfe.day).transform("mean"), 3, labels=["low", "middle", "high"])
     hr = pd.DatetimeIndex(R.t).floor("h"); R["w"] = Dr.reindex(hr).to_numpy() ** 2; R["lev"] = lev.reindex(hr).to_numpy()
     EMP = {"all": (2.383, 2.174, 2.599), "low": (2.612, 2.317, 2.931), "middle": (2.097, 1.788, 2.419), "high": (2.370, 1.936, 2.761)}
+    if TRAIN_END:                                               # recompute the empirical net slope (cf.py recipe) on training hours
+        rp_ = dfe.p - dfe.p.groupby(dfe.day).transform("mean"); pr = rp_ - rp_.groupby(cell).transform("mean")
+        rn_ = dfe.DN - dfe.DN.groupby(dfe.day).transform("mean"); DNr = rn_ - rn_.groupby(cell).transform("mean")
+        rng_ = np.random.default_rng(0); EMP = {}
+        for name, mk in [("all", np.ones(len(dfe), bool))] + [(l, (lev == l).to_numpy()) for l in ("low", "middle", "high")]:
+            X_ = np.c_[Dr[mk], DNr[mk]]; y_ = pr[mk].to_numpy(); b_ = np.linalg.lstsq(X_, y_, rcond=None)[0][0]
+            days_ = dfe.day[mk].to_numpy(); ud = np.unique(days_); ix = pd.Series(np.arange(mk.sum())).groupby(days_).apply(np.array).to_dict()
+            bs = [np.linalg.lstsq(X_[ii], y_[ii], rcond=None)[0][0] for ii in (np.concatenate([ix[d] for d in rng_.choice(ud, len(ud))]) for _ in range(300))]
+            EMP[name] = (float(b_), float(np.quantile(bs, .05)), float(np.quantile(bs, .95)))
+        print("empirical slope on training hours:", {k: round(v[0], 3) for k, v in EMP.items()})
     out = {}
     for name, mk in [("all", np.ones(len(R), bool))] + [(l, (R.lev == l).to_numpy()) for l in ("low", "middle", "high")] + \
                     [("ahc", R.ahc.to_numpy()), ("non-ahc", ~R.ahc.to_numpy()), ("generic", R.generic.to_numpy())]:
