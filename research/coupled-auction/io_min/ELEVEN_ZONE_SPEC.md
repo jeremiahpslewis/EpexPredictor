@@ -1,7 +1,15 @@
 # Eleven-zone structural model of the day-ahead auction: specification and worked inversion
 
-Status (2026-11-21): specified, with the inversion worked in one coupled and one congested MTU. Not yet fitted; the
-outage counterfactual has not been run. The two-zone model in this folder (`model.py`, `run_fit.py`) is the benchmark.
+Status (2026-11-21): specified, with the inversion worked in one coupled and one congested MTU. The two-zone model in
+this folder (`model.py`, `run_fit.py`) is the benchmark.
+
+> **Update (2026-11-24).** The model has since been fitted and the outage study run. `MODEL_WRITEUP.md` is the current
+> consolidated statement and supersedes section 6 below. Two changes to what follows:
+> - under advanced hybrid coupling, the link quantities are taken from the JAO virtual-hub net positions, not the
+>   ENTSO-E schedules;
+> - both link directions are separate variables (f⁺, f⁻ ≥ 0, received quantities with fixed loss factors).
+>
+> See `prereg/PREREG_OUTAGE.md`, addenda 1 and 3.
 
 ## 1. Zones, time and information
 
