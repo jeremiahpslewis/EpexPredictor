@@ -172,3 +172,21 @@ expectation (0.5–0.7, high band lowest). This is the reference the curve-end s
   | 0.4 | −29 to −42 | −0.8 to +2.0 | +1.1 |
 
   The bias appears with realistic heavy-tailed shocks. Its cause is not found.
+
+## Option A: floor shedding only (written 2026-11-24, before the screen)
+
+Specification (fit11 ENDS=2): each German fuel's floor sheds a share shed_f ∈ [0, 1] at negative prices, around a
+shared centre m_lo and scale s_lo. The prior is Beta(1, 3), whose mode is 0, so "no shedding" is allowed. There are
+no free curtailment or scarcity terms. Shedding is observed directly in fuel outputs at low prices.
+
+The screen uses MAP fits from two starts (centre: shed 0.2, m_lo −10; far: shed 0.7, m_lo −40, s_lo 20), shock scale
+1, an exact posterior draw (100), extremes kept, 1,800 training-window MTUs. Two truths:
+- **A2 (shedding present).** shed = (0.85, 0.20, 0.80), m_lo = −35, s_lo = 4.
+- **N2 (null).** shed = 0.
+
+Thresholds:
+- R1′ (A2): each shed_f within ±0.2 of truth and m_lo within ±15, from both starts.
+- R2′ (N2): each shed_f < 0.15 from both starts (no invented shedding).
+- R3′: the two starts agree within the R1′ tolerances.
+
+If R2′ fails, option A is not used either.

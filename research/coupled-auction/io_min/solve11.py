@@ -29,13 +29,14 @@ def curves_logistic(th, nb, r, de_key="de"):
         sb = nb["sbar"][i]; const[i + 1] += sb * nb["al"][i]
         terms.append((i + 1, sb * nb["be"][i], nb["aa"][i] + nb["bb"][i] * Lc, nb["sg"][i] * Lc))
     if "m_lo" in th:                                                          # curve ends (fit11 ENDS=1)
-        lo_, hi_ = (th["m_lo"], th["s_lo"]), (th["m_hi"], th["s_hi"])
+        lo_, hi_ = (th["m_lo"], th["s_lo"]), (th.get("m_hi", 250.0), th.get("s_hi", 50.0))
         for f in ("L", "C", "G"):
             K = th[f"alpha_{f}"] * x[f"K_{f}"]; Ff = -SMOOTH * np.logaddexp(-F[f] / SMOOTH, -K / SMOOTH); B = (1 - th[f"rho_{f}"]) * Ff
             const[0] -= B; terms.append((0, B, *lo_))
-        const[0] -= th["k_lo_de"]; terms += [(0, th["k_lo_de"], *lo_), (0, th["k_hi_de"], *hi_)]
-        for i in range(N.NZ - 1):
-            sb = nb["sbar"][i]; const[i + 1] -= sb * th["k_lo_nb"]; terms += [(i + 1, sb * th["k_lo_nb"], *lo_), (i + 1, sb * th["k_hi_nb"], *hi_)]
+        if "k_lo_de" in th:                                                    # full curve ends (ENDS=1); absent under shedding only (ENDS=2)
+            const[0] -= th["k_lo_de"]; terms += [(0, th["k_lo_de"], *lo_), (0, th["k_hi_de"], *hi_)]
+            for i in range(N.NZ - 1):
+                sb = nb["sbar"][i]; const[i + 1] -= sb * th["k_lo_nb"]; terms += [(i + 1, sb * th["k_lo_nb"], *lo_), (i + 1, sb * th["k_hi_nb"], *hi_)]
     return const, terms
 
 def supply_fn(const, terms):

@@ -18,7 +18,7 @@ sys.path.insert(0, __file__.rsplit("/", 1)[0]); import model as Mo, net11 as N
 jax.config.update("jax_enable_x64", True)
 RECS, BASIN, OUT = sys.argv[1:4]; WARM, NS, NC = map(int, sys.argv[4:7]); numpyro.set_host_device_count(NC)
 KQ = 4.0
-import os; ENDS = os.environ.get("ENDS", "0") == "1"                     # curve ends: floor shedding, curtailment, scarcity
+import os; ENDS_MODE = os.environ.get("ENDS", "0"); ENDS = ENDS_MODE == "1"; SHED = ENDS_MODE == "2"   # 2: floor shedding only                     # curve ends: floor shedding, curtailment, scarcity
 _pk = pickle.load(open(RECS, "rb")); d = _pk["recs"]; SBAR_FIXED = _pk.get("sbar")      # simulated data carry the true scale
 d = [r for r in d if r["kind"] == "fit" and not any(v["missing"] for v in r["links"].values()) and r.get("resid_pV", 0.0) <= 0.05]   # prices must lie in V (as build11 ensures)
 NMAX = int(sys.argv[7]) if len(sys.argv) > 7 else len(d); d = d[::max(1, len(d) // NMAX)][:NMAX]
@@ -54,6 +54,15 @@ def model():
             S[f] = S[f] - (1 - rho) * Ff * (1 - g_lo[:, 0]); dS[f] = dS[f] + (1 - rho) * Ff * dg_lo[:, 0]
         k_lo_de = numpyro.sample("k_lo_de", dist.HalfNormal(5.0)); k_hi_de = numpyro.sample("k_hi_de", dist.HalfNormal(3.0))
         k_lo_nb = numpyro.sample("k_lo_nb", dist.HalfNormal(0.3)); k_hi_nb = numpyro.sample("k_hi_nb", dist.HalfNormal(0.2))
+    if SHED:
+        # option A: German floors shed at negative prices, by a share shed_f of the floor (prior Beta(1, 3): mode at 0,
+        # so no shedding is allowed), around a shared centre m_lo and scale s_lo. Identified by fuel outputs at low prices.
+        m_lo = numpyro.sample("m_lo", dist.Normal(-10.0, 15.0)); s_lo = numpyro.sample("s_lo", dist.LogNormal(np.log(10.0), 0.5))
+        g_lo = jax.nn.sigmoid((p[:, 0] - m_lo) / s_lo); dg_lo = g_lo * (1 - g_lo) / s_lo; Fl = Mo.floors(th, xde)
+        for f in ("L", "C", "G"):
+            sh = numpyro.sample(f"shed_{f}", dist.Beta(1.0, 3.0)); numpyro.deterministic(f"rho_{f}", 1 - sh)
+            K = th[f"alpha_{f}"] * xde[f"K_{f}"]; Ff = -Mo.SMOOTH * jnp.logaddexp(-Fl[f] / Mo.SMOOTH, -K / Mo.SMOOTH)
+            S[f] = S[f] - sh * Ff * (1 - g_lo); dS[f] = dS[f] + sh * Ff * dg_lo
     S_de = S["L"] + S["C"] + S["G"]; dS_de = dS["L"] + dS["C"] + dS["G"]
     if ENDS:
         S_de = S_de - k_lo_de * (1 - g_lo[:, 0]) + k_hi_de * g_hi[:, 0]; dS_de = dS_de + k_lo_de * dg_lo[:, 0] + k_hi_de * dg_hi[:, 0]
@@ -91,8 +100,9 @@ init.update(m_al=0.4, t_al=0.1, m_lb=0.0, t_lb=0.1, m_a=0.0, t_a=10.0, m_b=1.0, 
 if "zz" in B:
     for k in ["m_al", "t_al", "m_lb", "t_lb", "m_a", "t_a", "m_b", "t_b", "m_ls", "t_ls", "zz", "sd_u", "nu", "sd_q", "beta_q", "nu_q", "mu_de"]:
         if k in B: init[k] = np.median(B[k], axis=0)
+if SHED: init.update(m_lo=-10.0, s_lo=10.0, shed_L=0.2, shed_C=0.2, shed_G=0.2)
 if ENDS: init.update(m_lo=-10.0, s_lo=10.0, m_hi=250.0, s_hi=50.0, rho_L=0.5, rho_C=0.5, rho_G=0.5, k_lo_de=1.0, k_hi_de=0.5, k_lo_nb=0.05, k_hi_nb=0.05)
-END_KEYS = ["m_lo", "s_lo", "m_hi", "s_hi", "rho_L", "rho_C", "rho_G", "k_lo_de", "k_hi_de", "k_lo_nb", "k_hi_nb"] if ENDS else []
+END_KEYS = ["m_lo", "s_lo", "m_hi", "s_hi", "rho_L", "rho_C", "rho_G", "k_lo_de", "k_hi_de", "k_lo_nb", "k_hi_nb"] if ENDS else (["m_lo", "s_lo", "rho_L", "rho_C", "rho_G"] if SHED else [])
 
 def save(samples, path):
     np.savez(path, **{k: np.asarray(v) for k, v in samples.items()}, sbar=np.asarray(sbar), de_keys=np.array(DE_KEYS + END_KEYS))

@@ -17,7 +17,9 @@ guide = AutoDelta(F.model, init_loc_fn=init_to_value(values={k: jnp.asarray(v) f
 svi = SVI(F.model, guide, numpyro.optim.Adam(0.01), Trace_ELBO())
 res = svi.run(jax.random.PRNGKey(0), STEPS, progress_bar=False)
 mp = {k.replace("_auto_loc", ""): np.asarray(v) for k, v in guide.median(res.params).items()}
-ends = {k: float(mp[k]) for k in F.END_KEYS}
+for f in "LCG":
+    if f"shed_{f}" in mp: mp[f"rho_{f}"] = 1 - mp[f"shed_{f}"]
+ends = {k: float(mp[k]) for k in F.END_KEYS if k in mp}
 # implied slopes by band at the observed prices (truth comparison is done by the caller)
 p = np.asarray(F.p); bands = {"<=0": p[:, 0] <= 0, "0-40": (p[:, 0] > 0) & (p[:, 0] <= 40), "40-200": (p[:, 0] > 40) & (p[:, 0] <= 200), ">200": p[:, 0] > 200}
 out = dict(label=LABEL, final_loss=float(res.losses[-1]), loss_drop_last_500=float(res.losses[-500] - res.losses[-1]), ends=ends,
