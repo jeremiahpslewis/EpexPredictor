@@ -86,7 +86,9 @@ def model():
     sd = numpyro.sample("sd_u", dist.HalfNormal(5.0).expand([N.NZ])); Lk = numpyro.sample("Lcorr", dist.LKJCholesky(N.NZ, 4.0))
     nu = numpyro.sample("nu", dist.Gamma(4.0, 0.8))
     Mt = jnp.einsum("tzk,tz,tzl->tkl", Qp, dS_all, Qp) + jax.vmap(jnp.diag)(pad)
-    numpyro.factor("lik", dist.MultivariateStudentT(nu, jnp.zeros(N.NZ), sd[:, None] * Lk).log_prob(u - mu).sum() + jnp.linalg.slogdet(Mt)[1].sum())
+    lp_u = dist.MultivariateStudentT(nu, jnp.zeros(N.NZ), sd[:, None] * Lk).log_prob(u - mu); lp_j = jnp.linalg.slogdet(Mt)[1]
+    if os.environ.get("LIK_PARTS") == "1": numpyro.deterministic("lik_u", lp_u); numpyro.deterministic("lik_jac", lp_j)   # diagnostics
+    numpyro.factor("lik", lp_u.sum() + lp_j.sum())
     sq = numpyro.sample("sd_q", dist.HalfNormal(2.0).expand([3])); bq = numpyro.sample("beta_q", dist.Normal(0, 0.3).expand([3]))
     nuq = numpyro.sample("nu_q", dist.Gamma(4.0, 0.8))
     for i, (f, col) in enumerate((("L", "lig"), ("C", "coal"), ("G", "gasg"))):

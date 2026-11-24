@@ -190,3 +190,33 @@ Thresholds:
 - R3′: the two starts agree within the R1′ tolerances.
 
 If R2′ fails, option A is not used either.
+
+Result (MAP screen, option A):
+
+| Case, start | shed L | shed C | shed G | m_lo |
+|---|---|---|---|---|
+| A2 truth | 0.85 | 0.20 | 0.80 | −35 |
+| A2, centre / far | 0.79 / 0.79 | 0.17 / 0.17 | 0.80 / 0.80 | −34.3 / −34.3 |
+| N2 truth | 0 | 0 | 0 | — |
+| N2, centre / far | 0.62 / 0.62 | 0.00 / 0.00 | 0.32 / 0.32 | +3.1 / +2.7 |
+
+Verdicts:
+- **R1′ met** and **R3′ met**: shedding is recovered when present, identically from both starts.
+- **R2′ not met**: on null data the fit invents lignite and gas shedding centred near +3 EUR/MWh. By the rule above,
+  option A is not used as is.
+
+Decomposition at the exact truth: the invented shedding gains +8.4 nats in the Jacobian term and loses −5.3 in the
+shock density, net +3.1 (+0.5 from fuel outputs). The gain is spread over the 37 MTUs priced in (−20, 30], with no
+outliers. A net gain of about 3.6 for three parameters is the size chance produces, so the screen lacks power at 37
+informative MTUs.
+
+### Follow-up diagnostic (written before running; a new test, not a rerun of R2′)
+
+Null data simulated on 1,000 training MTUs selected **by inputs**: half from hours whose observed price was at most
+€20 (high renewables), half at random. Selection is on the MTU and its inputs; outcomes are re-simulated, so this is
+valid. Same MAP screen and starts.
+- D1: each shed_f < 0.15 from both starts.
+- D2 (case A2 on the same MTUs): R1′ tolerances.
+
+If D1 is met, the R2′ failure was a power problem, and option A goes to a training fit (with approval). If D1 fails,
+option A is dropped and the curve ends stay as they are.

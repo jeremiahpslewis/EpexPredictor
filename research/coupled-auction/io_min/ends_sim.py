@@ -62,7 +62,10 @@ def one(args):
 
 if __name__ == "__main__":
     d = [r for r in pickle.load(open(RECS, "rb"))["recs"] if r["kind"] == "fit" and not any(v["missing"] for v in r["links"].values())]
-    d = d[:: max(1, len(d) // NMTU)][:NMTU]
+    if os.environ.get("LOWSEL") == "1":                     # diagnostic: half the MTUs from hours whose observed price was <= 20 (selection on inputs)
+        rs = np.random.default_rng(SEED); low = [r for r in d if r["p"][0] <= 20]; rest = [r for r in d if r["p"][0] > 20]
+        d = [low[j] for j in rs.choice(len(low), min(len(low), NMTU // 2), replace=False)] + [rest[j] for j in rs.choice(len(rest), NMTU - min(len(low), NMTU // 2), replace=False)]
+    else: d = d[:: max(1, len(d) // NMTU)][:NMTU]
     with Pool(4) as pool: out = pool.map(one, list(enumerate(d)))
     drops = [r for r in out if "drop" in r]; recs = [r for r in out if "drop" not in r]
     print("dropped:", len(drops), {k: sum(d["drop"] == k for d in drops) for k in ("solve failed", "price range")},
