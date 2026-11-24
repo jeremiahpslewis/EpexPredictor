@@ -91,3 +91,27 @@ Thresholds:
 
 If R2 fails, the specification is not used as is: the end segments would come from the likelihood's reward for slope,
 not from the data. If R1 or R3 fails, a NUTS recovery is requested before any real fit.
+
+Result (2026-11-24, MAP screen):
+
+| Case, start | k_lo,DE | k_hi,DE | m_lo | m_hi | k_lo,nb | k_hi,nb | ρ (L, C, G) |
+|---|---|---|---|---|---|---|---|
+| A truth | 8 | 4 | −35 | 150 | 0.5 | 0.35 | 0.15, 0.8, 0.2 |
+| A, centre | 7.88 | 3.44 | −36.3 | 234 | 0.50 | 0.06 | 0.40, 0.52, 0.41 |
+| A, far | 8.02 | 0.72 | −36.3 | 313 | 0.50 | 0.12 | 0.41, 0.52, 0.41 |
+| N truth | 0 | 0 | — | — | 0 | 0 | 1, 1, 1 |
+| N, centre | 3.79 | 1.87 | −6.0 | 268 | 0.02 | 0.11 | 0.48, 0.61, 0.75 |
+| N, far | 4.02 | 2.21 | −19.3 | 314 | 0.02 | 0.12 | 0.49, 0.58, 0.75 |
+
+Verdicts:
+- **R1: partly met.** The low end is recovered (k_lo,DE, m_lo, k_lo,nb). The scarcity segment is not (m_hi off by
+  84–163, k_hi,nb off by a factor of 3–6). The floor-shedding shares ρ are not recovered (not in R1, reported).
+- **R2: not met.** On null data the fit invents about 4 GW of German curtailment and about 2 GW of scarcity supply,
+  from both starts. With all other parameters held at the simulation values, the price-system likelihood term is about
+  10 nats higher at the invented ends than at the null, far more than three extra parameters gain by chance.
+- **R3: not met for scarcity** (k_hi,DE 3.44 vs 0.72 across starts). Met for the low end.
+
+Caveats: the MAP losses were still falling by about 2 per 500 steps, and the neighbour truth in the fit
+parameterisation is approximate (medians of hyperparameters and offsets, not of the curves).
+
+By the rule written above, this specification is not used as is.
