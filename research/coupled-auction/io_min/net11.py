@@ -89,7 +89,9 @@ def polish(supply, load, H, A, b, e, e0, lo, hi, p0, y0, act0=None, bnd0=None, i
             J[:nz, :nz] = np.diag(dS); J[:nz, nz:nz + ny] = -H
             J[nz:nz + ny, :nz] = H.T; J[nz:nz + ny, nz + ny:nz + ny + na] = A[ar].T; J[nz:nz + ny, nz + ny + na] = e; J[nz:nz + ny, nz + ny + na + 1:] = Eb.T
             r2 = nz + ny; J[r2:r2 + na, nz:nz + ny] = A[ar]; J[r2 + na, nz:nz + ny] = e; J[r2 + na + 1:, nz:nz + ny] = Eb
-            dx = np.linalg.lstsq(J, -F, rcond=None)[0]
+            if not (np.all(np.isfinite(J)) and np.all(np.isfinite(F))): return p, y, sorted(act), sorted(bnd), False   # non-finite step: not converged
+            try: dx = np.linalg.lstsq(J, -F, rcond=None)[0]
+            except np.linalg.LinAlgError: return p, y, sorted(act), sorted(bnd), False
             m = np.max(np.abs(dx[:nz])); dx = dx * min(1.0, 50.0 / m) if m > 0 else dx
             f0 = np.linalg.norm(F); t = 1.0
             for _ls in range(30):
