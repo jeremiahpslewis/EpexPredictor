@@ -21,6 +21,7 @@ from multiprocessing import Pool
 sys.path.insert(0, __file__.rsplit("/", 1)[0]); import net11 as N
 E_L, E_C, E_G, V_G, SMOOTH = 0.364, 0.341, 0.202, 3.0, 0.05
 RECS, OUTP, ND = sys.argv[1], sys.argv[2], int(sys.argv[3]); POSTS = sys.argv[4:]
+BUDGET, OUTER_OUT = 10.0, 15                                             # solve limits per scenario (s; outage outer iterations)
 SCEN = [("replay", None), ("eta0.10", 0.10), ("eta0.25", 0.25), ("eta0.50", 0.50), ("eta1.00", 1.00)]
 
 def sig(z): return 1 / (1 + np.exp(-np.clip(z, -60, 60)))
@@ -121,14 +122,14 @@ def work(args):
 def work_one(th, nb, r, name, eta):
     S0, _ = make_supply(th, nb, r)(r["p"]); load = S0 - r["n"]                   # = D + X + 1000 u: shocks recovered at this draw
     if True:
-        dl = time.time() + 10.0                                            # time budget per scenario (s)
+        dl = time.time() + BUDGET                                            # time budget per scenario (s)
         A, b, lo, hi, dflag = domain(r, eta)
         dflag["obs_viol"] = float(max((A @ r["y"] - b).max(initial=0.0), (r["y"] - hi).max(), (lo - r["y"]).max(), 0.0))   # MW
         act0 = list(range(len(b) - len(r["A_sp"]) - len(r["A_inf"]) - dflag["eq_rows"], len(b)))          # binding rows: shadow, inferred, equality copies
         bnd0 = [(j, s) for j, s in r["bnd"]] + [(j, "lo") for j in range(N.IA + 1, N.NY) if r["y"][j] < 0.5 and (j, "lo") not in r["bnd"]]
         if abs(r["y"][N.IA]) >= 999.5: bnd0.append((N.IA, "hi" if r["y"][N.IA] > 0 else "lo"))
         pb, yb, ab, bb, okb = N.polish(make_supply(th, nb, r), load, r["H"], A, b, r["e"], r["e0"], lo, hi, r["p"], r["y"], act0, list(set(bnd0)), deadline=dl)
-        po, yo, ao, bo, oko = N.polish(make_supply(th, nb, r, 1.0), load, r["H"], A, b, r["e"], r["e0"], lo, hi, pb, yb, ab, bb, outer=15, deadline=dl)
+        po, yo, ao, bo, oko = N.polish(make_supply(th, nb, r, 1.0), load, r["H"], A, b, r["e"], r["e0"], lo, hi, pb, yb, ab, bb, outer=OUTER_OUT, deadline=dl)
         start = "baseline"
         if not oko:                                                           # conic start, then exact polish
             cs = conic_start(th, nb, r, load, A, b, lo, hi)
