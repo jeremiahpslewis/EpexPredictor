@@ -18,7 +18,8 @@ sys.path.insert(0, __file__.rsplit("/", 1)[0]); import model as Mo, net11 as N
 jax.config.update("jax_enable_x64", True)
 RECS, BASIN, OUT = sys.argv[1:4]; WARM, NS, NC = map(int, sys.argv[4:7]); numpyro.set_host_device_count(NC)
 KQ = 4.0
-d = pickle.load(open(RECS, "rb"))["recs"]
+import os; ENDS = os.environ.get("ENDS", "0") == "1"                     # curve ends: floor shedding, curtailment, scarcity
+_pk = pickle.load(open(RECS, "rb")); d = _pk["recs"]; SBAR_FIXED = _pk.get("sbar")      # simulated data carry the true scale
 d = [r for r in d if r["kind"] == "fit" and not any(v["missing"] for v in r["links"].values())]
 NMAX = int(sys.argv[7]) if len(sys.argv) > 7 else len(d); d = d[::max(1, len(d) // NMAX)][:NMAX]
 T = len(d); print("fit MTUs:", T, " augmented:", sum(r["aug"] is not None for r in d), " generic:", sum("generic" in (r["aug"] or {}).get("added", []) for r in d))
@@ -31,14 +32,31 @@ de = {k: jnp.asarray(np.array([r["de"][k] for r in d])) for k in d[0]["de"]}
 xde = dict(Pg=de["Pg"], tau=de["tau"], hdd=de["hdd"], K_L=de["K_L"], K_C=de["K_C"], K_G=de["K_G"])
 Lc = arr("Lc")
 need = (D + X + n) / 1000.0                                                   # GW each zone must supply
-sbar = jnp.maximum(need.mean(0), 1.0)
+sbar = jnp.maximum(need.mean(0), 1.0) if SBAR_FIXED is None else jnp.asarray(SBAR_FIXED)
 DE_KEYS = ["alpha_L", "alpha_C", "alpha_G", "h_L", "a_L", "h_C", "a_C", "h_G", "sigma_L", "sigma_C", "sigma_G", "F_L", "F_C", "phi0", "phi1"]
 NBz = N.NZ - 1
 
 def model():
     th = {k: Mo.draw(k, Mo.BASE_PRIOR[k]) for k in DE_KEYS}
     S, dS = Mo.fuel_supply(th, xde, p[:, 0])
+    if ENDS:
+        # low end (shared centre m_lo, scale s_lo): floors shed to rho_f of their level, and curtailment / flexible
+        # demand removes up to k_lo (GW) at very negative prices; high end: up to k_hi of scarcity supply around m_hi.
+        # All are non-negative logistic terms, so supply stays monotone and its integral convex.
+        m_lo = numpyro.sample("m_lo", dist.Normal(-10.0, 15.0)); s_lo = numpyro.sample("s_lo", dist.LogNormal(np.log(10.0), 0.5))
+        m_hi = numpyro.sample("m_hi", dist.Normal(250.0, 75.0)); s_hi = numpyro.sample("s_hi", dist.LogNormal(np.log(50.0), 0.5))
+        g_lo = jax.nn.sigmoid((p - m_lo) / s_lo); dg_lo = g_lo * (1 - g_lo) / s_lo
+        g_hi = jax.nn.sigmoid((p - m_hi) / s_hi); dg_hi = g_hi * (1 - g_hi) / s_hi
+        Fl = Mo.floors(th, xde)
+        for f in ("L", "C", "G"):
+            rho = numpyro.sample(f"rho_{f}", dist.Beta(2.0, 2.0))
+            K = th[f"alpha_{f}"] * xde[f"K_{f}"]; Ff = -Mo.SMOOTH * jnp.logaddexp(-Fl[f] / Mo.SMOOTH, -K / Mo.SMOOTH)
+            S[f] = S[f] - (1 - rho) * Ff * (1 - g_lo[:, 0]); dS[f] = dS[f] + (1 - rho) * Ff * dg_lo[:, 0]
+        k_lo_de = numpyro.sample("k_lo_de", dist.HalfNormal(5.0)); k_hi_de = numpyro.sample("k_hi_de", dist.HalfNormal(3.0))
+        k_lo_nb = numpyro.sample("k_lo_nb", dist.HalfNormal(0.3)); k_hi_nb = numpyro.sample("k_hi_nb", dist.HalfNormal(0.2))
     S_de = S["L"] + S["C"] + S["G"]; dS_de = dS["L"] + dS["C"] + dS["G"]
+    if ENDS:
+        S_de = S_de - k_lo_de * (1 - g_lo[:, 0]) + k_hi_de * g_hi[:, 0]; dS_de = dS_de + k_lo_de * dg_lo[:, 0] + k_hi_de * dg_hi[:, 0]
     # pooled neighbours
     m_al = numpyro.sample("m_al", dist.Normal(0.4, 0.3)); t_al = numpyro.sample("t_al", dist.HalfNormal(0.3))
     m_lb = numpyro.sample("m_lb", dist.Normal(0.0, 0.5)); t_lb = numpyro.sample("t_lb", dist.HalfNormal(0.3))
@@ -51,6 +69,8 @@ def model():
     sg = numpyro.deterministic("sg", jnp.exp(m_ls + t_ls * zz[4]))
     sc = sg[None, :] * Lc[:, None]; zarg = (p[:, 1:] - aa[None, :] - bb[None, :] * Lc[:, None]) / sc
     g = jax.nn.sigmoid(zarg); S_nb = sbar[1:] * (al + be * g); dS_nb = sbar[1:] * be * g * (1 - g) / sc
+    if ENDS:
+        S_nb = S_nb + sbar[1:] * (k_lo_nb * (g_lo[:, 1:] - 1) + k_hi_nb * g_hi[:, 1:]); dS_nb = dS_nb + sbar[1:] * (k_lo_nb * dg_lo[:, 1:] + k_hi_nb * dg_hi[:, 1:])
     S_all = jnp.concatenate([S_de[:, None], S_nb], 1); dS_all = jnp.concatenate([dS_de[:, None], dS_nb], 1)
     u = S_all - need
     mu_de = numpyro.sample("mu_de", dist.Normal(-2.0, 5.0)); mu = jnp.zeros(N.NZ).at[0].set(mu_de)
@@ -67,6 +87,7 @@ B = dict(np.load(BASIN)); init = {k: np.median(B[k]) for k in DE_KEYS}
 init.update(m_al=0.4, t_al=0.1, m_lb=0.0, t_lb=0.1, m_a=0.0, t_a=10.0, m_b=1.0, t_b=0.1, m_ls=np.log(0.4), t_ls=0.2,
             zz=np.zeros((5, NBz)), mu_de=float(np.median(B["mu"][:, 0])) if "mu" in B else -2.0, sd_u=np.full(N.NZ, 1.5), nu=5.0,
             sd_q=np.full(3, 1.5), beta_q=np.zeros(3), nu_q=5.0)
+if ENDS: init.update(m_lo=-10.0, s_lo=10.0, m_hi=250.0, s_hi=50.0, rho_L=0.5, rho_C=0.5, rho_G=0.5, k_lo_de=1.0, k_hi_de=0.5, k_lo_nb=0.05, k_hi_nb=0.05)
 t0 = time.time()
 mc = MCMC(NUTS(model, init_strategy=init_to_value(values={k: jnp.asarray(v) for k, v in init.items()}), target_accept_prob=0.85, max_tree_depth=8),
           num_warmup=WARM, num_samples=NS, num_chains=NC, chain_method="parallel", progress_bar=True)
@@ -74,8 +95,9 @@ mc.run(jax.random.PRNGKey(3))
 G = mc.get_samples(group_by_chain=True); summ = numpyro.diagnostics.summary(G)
 rh = {k: float(np.nanmax(s["r_hat"])) for k, s in summ.items()}
 print(f"{time.time()-t0:.0f}s divergences {int(np.asarray(mc.get_extra_fields()['diverging']).sum())} max r-hat {max(rh.values()):.3f} ({max(rh, key=rh.get)})")
-for c in range(NC): print(f"  chain {c}:", {k: round(float(np.median(np.asarray(G[k][c]))), 3) for k in ["F_L", "F_C", "phi0", "sigma_L", "sigma_C", "sigma_G", "alpha_G", "h_G", "mu_de", "m_a", "m_ls"]})
+END_KEYS = ["m_lo", "s_lo", "m_hi", "s_hi", "rho_L", "rho_C", "rho_G", "k_lo_de", "k_hi_de", "k_lo_nb", "k_hi_nb"] if ENDS else []
+for c in range(NC): print(f"  chain {c}:", {k: round(float(np.median(np.asarray(G[k][c]))), 3) for k in ["F_L", "F_C", "phi0", "sigma_L", "sigma_C", "sigma_G", "alpha_G", "h_G", "mu_de", "m_a", "m_ls"] + END_KEYS})
 Sm = mc.get_samples()
 print("neighbours (median): al", np.round(np.median(np.asarray(Sm["al"]), 0), 2).tolist(), "\n  be", np.round(np.median(np.asarray(Sm["be"]), 0), 2).tolist(),
       "\n  aa", np.round(np.median(np.asarray(Sm["aa"]), 0), 1).tolist(), "\n  bb", np.round(np.median(np.asarray(Sm["bb"]), 0), 2).tolist(), "\n  sg", np.round(np.median(np.asarray(Sm["sg"]), 0), 2).tolist())
-np.savez(OUT, **{k: np.asarray(v) for k, v in Sm.items()}, sbar=np.asarray(sbar), de_keys=np.array(DE_KEYS))
+np.savez(OUT, **{k: np.asarray(v) for k, v in Sm.items()}, sbar=np.asarray(sbar), de_keys=np.array(DE_KEYS + END_KEYS))

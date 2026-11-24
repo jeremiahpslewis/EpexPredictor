@@ -28,6 +28,14 @@ def curves_logistic(th, nb, r, de_key="de"):
     for i in range(N.NZ - 1):
         sb = nb["sbar"][i]; const[i + 1] += sb * nb["al"][i]
         terms.append((i + 1, sb * nb["be"][i], nb["aa"][i] + nb["bb"][i] * Lc, nb["sg"][i] * Lc))
+    if "m_lo" in th:                                                          # curve ends (fit11 ENDS=1)
+        lo_, hi_ = (th["m_lo"], th["s_lo"]), (th["m_hi"], th["s_hi"])
+        for f in ("L", "C", "G"):
+            K = th[f"alpha_{f}"] * x[f"K_{f}"]; Ff = -SMOOTH * np.logaddexp(-F[f] / SMOOTH, -K / SMOOTH); B = (1 - th[f"rho_{f}"]) * Ff
+            const[0] -= B; terms.append((0, B, *lo_))
+        const[0] -= th["k_lo_de"]; terms += [(0, th["k_lo_de"], *lo_), (0, th["k_hi_de"], *hi_)]
+        for i in range(N.NZ - 1):
+            sb = nb["sbar"][i]; const[i + 1] -= sb * th["k_lo_nb"]; terms += [(i + 1, sb * th["k_lo_nb"], *lo_), (i + 1, sb * th["k_hi_nb"], *hi_)]
     return const, terms
 
 def supply_fn(const, terms):
@@ -76,7 +84,7 @@ def solve_ip(const, terms, load_mw, H, A, b, e, e0, lo, hi, tol_mw=5.0):
     if c is None: return None, None, False, dict(stage="conic failed")
     p, y, mu, nhv, nlv, status = c
     bal, feas = kkt_check(const, terms, load_mw, H, A, b, e, e0, lo, hi, p, y)
-    return p, y, bool(bal < tol_mw and feas < tol_mw), dict(stage="ip", status=status, bal=bal, feas=feas)
+    return p, y, bool(bal < tol_mw and feas < tol_mw), dict(stage="ip", status=status, bal=bal, feas=feas, mu=mu, nh=nhv, nl=nlv)
 
 def solve(const, terms, load_mw, H, A, b, e, e0, lo, hi, deadline=None, tol_act=1e-4):
     """Cold start: conic solve, active set from its multipliers and slacks, exact polish. Returns p, y, ok, info."""

@@ -34,7 +34,11 @@ def nb(z, s):
 # ---- MTU samples
 grid = pd.date_range("2025-10-01 00:00", "2026-11-08 23:45", freq="15min", tz="UTC")
 OUTAGE = [pd.Timestamp(t.strip().replace("Z", ""), tz="UTC") for t in open(HERE / "prereg/outage_mtus.txt") if t.strip()]
-rest = sorted(set(grid) - set(OUTAGE)); rng = random.Random(7); FIT = sorted(rng.sample(rest, NFIT))
+import os
+if os.environ.get("NO_OUTAGE") == "1": OUTAGE = []
+rest = sorted(set(grid) - set(OUTAGE))
+if os.environ.get("TRAIN_END"): rest = [t for t in rest if t < pd.Timestamp(os.environ["TRAIN_END"], tz="UTC")]   # prereg/HOLDOUT.md
+rng = random.Random(7); FIT = sorted(rng.sample(rest, NFIT))
 MTUS = [(t, "fit") for t in FIT] + [(t, "outage") for t in OUTAGE]
 
 # ---- series
