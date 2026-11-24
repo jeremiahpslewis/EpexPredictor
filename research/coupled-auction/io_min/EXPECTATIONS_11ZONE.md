@@ -64,3 +64,8 @@ the interior-point solver on a 458-MTU test.
 - S4: baseline replay error in DE below 0.1 EUR/MWh in 99% of MTUs.
 
 This is the reference against which the curve-end change is judged; the curve change is not tuned to it.
+
+Result (2026-11-24): S1 met (98.3%); S2 met (99th percentile difference 0.016, 0.45% of MTUs above 0.05); S3 met (the
+weighted ratio falls from 0.68 to 0.59, and the 1,035 newly converged draw-MTUs have a mean slope of 12.3 and a median
+of 3.3); S4 met (99th-percentile replay error 0.027). By band: low 0.61, middle 0.69, high 0.48; generic MTUs 0.42.
+The reference for the curve-end change is therefore 0.59, not 0.68.
