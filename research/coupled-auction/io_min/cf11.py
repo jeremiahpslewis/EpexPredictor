@@ -149,12 +149,17 @@ if __name__ == "__main__":
             if os.path.exists(ck): print("skip", ck, flush=True); continue
             th = {kk: float(P[kk][i]) for kk in [str(x) for x in P["de_keys"]]}
             nb = dict(sbar=P["sbar"][1:], al=P["al"][i], be=P["be"][i], aa=P["aa"][i], bb=P["bb"][i], sg=P["sg"][i])
-            res = []
-            for j, o in enumerate(pool.imap(work, [(th, nb, r) for r in d], chunksize=4)):
+            # partial checkpoint every 52 MTUs, so a stopped run resumes mid-draw
+            part = ck + ".part"; res = pickle.load(open(part, "rb")) if os.path.exists(part) else []
+            if res: print(f"  resume {tag} draw {i} at {len(res)}/{len(d)} MTUs", flush=True)
+            for j, o in enumerate(pool.imap(work, [(th, nb, r) for r in d[len(res):]], chunksize=4), start=len(res)):
                 res.append(o)
-                if (j + 1) % 52 == 0: print(f"  {tag} draw {i}: {j + 1}/{len(d)} MTUs, {time.time() - t0:.0f}s", flush=True)
+                if (j + 1) % 52 == 0:
+                    pickle.dump(res, open(part + ".tmp", "wb")); os.replace(part + ".tmp", part)
+                    print(f"  {tag} draw {i}: {j + 1}/{len(d)} MTUs, {time.time() - t0:.0f}s", flush=True)
             rows = [dict(post=post, draw=i, t=str(r["t"]), flags=flags(r), res=o) for r, o in zip(d, res)]
             pickle.dump(rows, open(ck + ".tmp", "wb")); os.replace(ck + ".tmp", ck)
+            if os.path.exists(part): os.remove(part)
             print(f"done {tag} draw {i} at {time.time() - t0:.0f}s", flush=True)
     rows = [x for f in sorted(glob.glob(f"{OUTP}_*_d*.pkl")) for x in pickle.load(open(f, "rb"))]
     pickle.dump(rows, open(OUTP + ".pkl", "wb")); print(f"{len(rows)} draw-MTU results combined")
