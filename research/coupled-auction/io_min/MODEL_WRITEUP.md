@@ -115,8 +115,9 @@ Observed per MTU:
 
     u_z = S_z(p_z; θ) − D_z − X_z − n_z
 
-The regime (which rows bind) comes from published data only. Constraints that bind but are unpublished are inferred
-by a targeted search (link capacities, ALEGrO, the PL and BE allocation constraints, a generic residual direction as a
+The regime (which rows bind) is fixed by the data and does not depend on θ. It comes from the published shadow
+prices, plus constraints that bind but are unpublished. Those are inferred from observed prices and flows by a
+targeted search (link capacities, ALEGrO, the PL and BE allocation constraints, a generic residual direction as a
 last resort). The outcome lies on an 11-dimensional piece made of dim V price coordinates, where
 V = {p : H'p ∈ span(A_B', e)} with orthonormal basis Q, and 11 − dim V free net-position directions. The density of
 the observed outcome on that piece is the joint change of variables, with no regime-conditioning term:
@@ -170,7 +171,7 @@ Fuel measurement (3 + 3 + 1):
 - **β_q,f.** Identified by co-movement of fuel output with the after-auction residual-load surprise.
 - **ν_q.** Identified by the tails of those residuals.
 
-## 6. The two most confounded parameters: σ_L and σ_C
+## 6. The most confounded parameters: one lignite/coal ridge
 
 Correlations in the pooled posterior draws (four chains, two seeded in each two-zone basin) pick them out:
 
@@ -180,7 +181,10 @@ Correlations in the pooled posterior draws (four chains, two seeded in each two-
 | σ_L – F_L | −0.92 | −0.80 |
 | σ_L – σ_C | −0.92 | −0.70 |
 
-The two dispersions sit on one ridge that also moves the floors. Along it, the model reassigns the flexible thermal
+Pooled correlations mix in the seeding of chains in different basins. The within-chain correlations are the cleaner
+guide, and they lead with σ_L–F_L (−0.80) and σ_C–α_C (+0.79). The two pairs belong to one ridge over (σ_L, F_L, σ_C,
+α_C). The two most confounded parameters are the lignite dispersion and floor (σ_L, F_L), and their coal counterparts
+move with them. Along it, the model reassigns the flexible thermal
 response between lignite and coal:
 - "flexible lignite, rigid coal": σ_L ≈ 0.55–0.6, σ_C ≈ 0.1, F_L ≈ 0.9;
 - "rigid lignite, flexible coal": σ_L ≈ 0.1–0.2, σ_C ≈ 0.5, F_L ≈ 2.0–2.3.
@@ -201,34 +205,37 @@ The relative weight of the two ends is not estimated, and results are reported c
 
 **Counterfactual along the ridge** (each of the 12 outage-study draws, balanced panel, replay; means over MTUs):
 
-| Draw | σ_L | σ_C | ΔpDE | imports | Δlignite | Δcoal | Δgas (other units) |
-|---|---|---|---|---|---|---|---|
-| mode0 d0 | 0.58 | 0.12 | 2.94 | 0.54 | 0.10 | 0.07 | 0.29 |
-| mode0 d159 | 0.51 | 0.08 | 3.00 | 0.55 | 0.12 | 0.06 | 0.27 |
-| mode0 d319 | 0.58 | 0.12 | 2.67 | 0.53 | 0.10 | 0.07 | 0.30 |
-| mode0 d479 | 0.55 | 0.10 | 2.86 | 0.54 | 0.12 | 0.07 | 0.27 |
-| mode0 d639 | 0.59 | 0.07 | 2.73 | 0.54 | 0.10 | 0.07 | 0.30 |
-| mode0 d799 | 0.61 | 0.08 | 2.71 | 0.54 | 0.10 | 0.06 | 0.31 |
-| mode1 d0 | 0.17 | 0.48 | 3.08 | 0.54 | 0.10 | 0.07 | 0.29 |
-| mode1 d159 | 0.11 | 0.48 | 3.20 | 0.56 | 0.11 | 0.07 | 0.27 |
-| mode1 d319 | 0.59 | 0.17 | 2.78 | 0.53 | 0.11 | 0.06 | 0.30 |
-| mode1 d479 | 0.13 | 0.57 | 2.97 | 0.56 | 0.11 | 0.06 | 0.27 |
-| mode1 d639 | 0.16 | 0.51 | 2.86 | 0.54 | 0.11 | 0.06 | 0.29 |
-| mode1 d799 | 0.15 | 0.49 | 2.74 | 0.54 | 0.10 | 0.06 | 0.29 |
+| Draw | σ_L | F_L | σ_C | α_C | ΔpDE | imports | Δlignite | Δcoal | Δgas (other units) |
+|---|---|---|---|---|---|---|---|---|---|
+| mode0 d0 | 0.58 | 0.76 | 0.12 | 0.45 | 2.94 | 0.54 | 0.10 | 0.07 | 0.29 |
+| mode0 d159 | 0.51 | 0.97 | 0.08 | 0.44 | 3.00 | 0.55 | 0.12 | 0.06 | 0.27 |
+| mode0 d319 | 0.58 | 0.85 | 0.12 | 0.46 | 2.67 | 0.53 | 0.10 | 0.07 | 0.30 |
+| mode0 d479 | 0.55 | 0.54 | 0.10 | 0.45 | 2.86 | 0.54 | 0.12 | 0.07 | 0.27 |
+| mode0 d639 | 0.59 | 0.77 | 0.07 | 0.45 | 2.73 | 0.54 | 0.10 | 0.07 | 0.30 |
+| mode0 d799 | 0.61 | 0.92 | 0.08 | 0.41 | 2.71 | 0.54 | 0.10 | 0.06 | 0.31 |
+| mode1 d0 | 0.17 | 2.16 | 0.48 | 0.54 | 3.08 | 0.54 | 0.10 | 0.07 | 0.29 |
+| mode1 d159 | 0.11 | 2.27 | 0.48 | 0.56 | 3.20 | 0.56 | 0.11 | 0.07 | 0.27 |
+| mode1 d319 | 0.59 | 1.14 | 0.17 | 0.45 | 2.78 | 0.53 | 0.11 | 0.06 | 0.30 |
+| mode1 d479 | 0.13 | 1.92 | 0.57 | 0.55 | 2.97 | 0.56 | 0.11 | 0.06 | 0.27 |
+| mode1 d639 | 0.16 | 2.07 | 0.51 | 0.56 | 2.86 | 0.54 | 0.11 | 0.06 | 0.29 |
+| mode1 d799 | 0.15 | 2.06 | 0.49 | 0.55 | 2.74 | 0.54 | 0.10 | 0.06 | 0.29 |
+
+The shares in this table use the pre-registered booking (1 GW removed). Section 7 gives them per GW actually
+removed.
 
 Reading the table:
 - **Draw placement.** Mode 1 chain 0 visited the "flexible lignite" end at draw 319, so the 12 draws cover both
   ends.
-- **Price and imports.** At the "rigid lignite" end, the price rise is about 0.15 EUR/MWh higher (correlation of
-  ΔpDE with σ_L across draws −0.56), and imports hardly differ.
+- **Price and imports.** The mean ΔpDE is 2.97 at the "rigid lignite" end and 2.81 at the other. That difference
+  is smaller than the spread within each end (0.3–0.5), so the two ends cannot be distinguished on price. Imports
+  hardly differ either.
 - **Fuel split.** The mean fuel split of the German response hardly moves (lignite 0.10–0.12, coal 0.06–0.07).
   What moves is the distribution across MTUs: at the median, the "flexible lignite" end has lignite 0.09 and coal
   0.01, the "rigid lignite" end 0.05 and 0.05. The ridge matters for the fuel split hour by hour, and little for the
   price or imports.
 
 **Alternative priors.** No eleven-zone refit under alternative priors has been run. In the two-zone benchmark, the
-two ends (basins) give an outage ΔpDE of +2.77 and +3.45. In the eleven-zone model the ends differ by about 0.15,
-because ten neighbour curves and the network absorb half the shock whichever fuel is flexible. A prior-sensitivity
+two ends (basins) give an outage ΔpDE of +2.77 and +3.45. In the eleven-zone model the two ends cannot be distinguished on price. A prior-sensitivity
 refit (a tight prior on σ_L at each end) is about 25 minutes per fit and needs its own approval. It remains open.
 
 ## 7. The counterfactual: 1 GW of German gas, announced before the auction
@@ -241,15 +248,31 @@ refit (a tight prior on σ_L at each end) is about 25 minutes per fit and needs 
 - Network headroom on non-binding rows: replay of the published (calibrated) domain, and η ∈ {0.10, 0.25, 0.50, 1.00}
   of the published headroom. The same domain is used in baseline and outage.
 
-**Result** (balanced panel, 79% of draw-MTUs, mean over MTUs, range across draws):
+**Gas actually removed.** The outage removes at most the flexible gas running above its floor. In 17.8% of balanced
+draw-MTUs that is less than 1 GW, and the mean removed at replay is 0.89 GW. The pre-registered table books other gas
+as ΔG + 1, so it counts the gas not removed as German replacement. It therefore overstates Germany's own share and
+understates imports. ΔpDE is unaffected as a number, but it is a response to less than 1 GW in those MTUs.
+`fullcut11.py` recomputes everything on the MTUs where the full 1 GW is removed in every scenario.
+
+**Result per GW actually removed** (full-cut panel, 2,428 draw-MTUs, mean over MTUs):
+
+| Headroom | ΔpDE mean (median) | German net imports | DE own (lignite / coal / other gas) |
+|---|---|---|---|
+| replay = η 1.00 | +3.04 / +3.10 (+2.24 / +2.25) | 0.61 | 0.39 (0.11 / 0.07 / 0.21) |
+| η = 0.10 | +3.73 / +3.83 (+2.81 / +2.85) | 0.53 | 0.47 (0.13 / 0.08–0.09 / 0.25) |
+
+Each pair is mode 0 / mode 1. Replacement by zone at replay, per GW removed: NL 0.14, BE 0.09, DK1 0.08, PL 0.07,
+CZ 0.06, AT 0.05, NO2 0.05, FR 0.04, DK2 0.02, SE4 0.004. The reading rule on this panel: median +26% in both basins,
+own share +0.08. Not material.
+
+**Pre-registered table** (balanced panel, 79% of draw-MTUs, 1 GW booked as removed; range across draws):
 
 | Headroom | ΔpDE (EUR/MWh) | German net imports (GW per GW) | DE own (lignite / coal / other gas) |
 |---|---|---|---|
 | replay = η 1.00 | +2.82 to +2.94 [2.68, 3.17] (median +2.13 to +2.16) | 0.54–0.55 | 0.46 (0.11 / 0.06–0.07 / 0.29) |
 | η = 0.10 | +3.42 to +3.58 [3.24, 3.83] (median +2.63 to +2.71) | 0.47–0.48 | 0.52–0.53 |
 
-The ranges span both basins and their draws. Replacement by zone at replay: NL 0.12, BE 0.08, DK1 0.07, PL 0.06,
-CZ 0.05, NO2 0.05, AT 0.05, FR 0.04, DK2 0.02, SE4 0.004.
+The ranges span both basins and their draws.
 
 **Pre-registered reading rule** (material if the median ΔpDE changes by more than 30% or the German own share by more
 than 0.15 between η = 0.10 and 1.00): not met in either basin.
@@ -264,7 +287,7 @@ Network headroom therefore does not change the answer materially. Larger effects
 
 **Against the two-zone benchmark:** +2.77 and +3.45 by basin. In the eleven-zone model:
 - the basins nearly agree;
-- imports replace 0.54 GW per GW removed, against 0.58 and 0.74 in the two-zone basins;
+- imports replace 0.61 GW per GW actually removed, against 0.58 and 0.74 in the two-zone basins;
 - the price effect sits at the lower two-zone value.
 
 ## 8. What the results are conditional on
@@ -304,14 +327,32 @@ Verdicts:
 - **E4 (sanity): met.** On the outage MTUs, the median demand-shock ΔpDE is within 16% of the outage ΔpDE, and
   identical in most MTUs, as it should be when the gas cut does not hit the floor.
 
-**Reading.** The model's typical slope matches the data: the median MTU slope is 2.33 against an empirical 2.38. The
-weighted mean is pulled up by a heavy tail:
+**Reading.** The pre-specified comparison is the weighted mean against the regression coefficient: 3.50 against
+2.38. On that comparison the model is too steep by about a half, as the two-zone benchmark was. The median MTU slope,
+2.33, is descriptive only, since the regression coefficient is itself a weighted mean. The weighted mean is pulled up
+by a heavy tail:
 - the 90th percentile is 5.7 and the 99th 18;
 - the top 5% of MTUs carry a quarter of the mean.
 
-That tail is concentrated where the model holds most fixed: inferred constraints and held exchanges. So the mean
-outage effects (+2.8 to +2.9 EUR/MWh) are probably overstated by up to a third through the tail. The medians
-(+2.1 to +2.2) are consistent with the empirical slope. The check did not feed back into the model.
+Where the steepest 5% (slope above 7.9) sit:
+
+| | Share of MTUs | Share of the steepest 5% |
+|---|---|---|
+| Price ≤ 0 | 7% | 25% |
+| Price 0–40 | 6% | 22% |
+| Price > 200 | 7% | 34% |
+| Generic inferred constraint | 9% | 34% |
+| Hybrid coupling | 32% | 57% |
+
+The tail sits at the two ends of the supply curves: near the floors at low and negative prices, where the logistic
+curves are flat, and near scarcity. It is also over-represented in MTUs with a generic inferred constraint, where
+imports are held. Held rest-of-Europe exchanges are therefore not the main suspect; the curve ends are.
+
+Solves failed in 7% of MTUs (26% of generic MTUs, 21–22% at prices ≤ 0 or > 200). In the outage study failures were
+the steep cases, so 3.50 is probably a lower bound on the model's weighted slope.
+
+The outage means (+3.0 to +3.1 EUR/MWh per GW removed) are therefore probably overstated through the same tail. The
+check did not feed back into the model.
 
 ## 10. Strategic bidding (analytic extension; not estimated)
 
@@ -358,7 +399,10 @@ third of the German flexible thermal slope therefore has κ_j ≈ 0.15.
   Δq_k · (dp/dD) / (1 − κ_k). That is about +0.4 EUR/MWh on its offer curve for a firm with κ = 0.15 that picks up
   0.15 GW.
 
-Strategic rivals amplify the price-taking ΔpDE. Hedged rivals (q = f) do not.
+The markup formula above is for one strategic firm facing a price-taking fringe. With several strategic firms, each
+faces rivals' offer slopes rather than their cost slopes. The residual demand is then steeper and markups larger (a
+supply-function equilibrium), so the rival-markup figure is indicative only. Strategic rivals amplify the
+price-taking ΔpDE. Hedged rivals (q = f) do not.
 
 **Why it is not estimated here.** The cost parameters were fitted under price-taking. Any average markup is already
 absorbed in a_f, h_f and α_f, so adding the markup on top of the fitted curve would double-count it. Estimating
@@ -368,12 +412,14 @@ outages of rivals' units.
 
 ## 11. Open
 
-- **Alternative priors on the ridge.** An eleven-zone refit with a tight prior at each end of the σ_L–σ_C ridge,
-  about 25 minutes per fit, needs approval.
 - **Tight-headroom solves.** Hybrid-coupling MTUs at η = 0.10 still fail to converge 48% of the time. A solver that
   handles very tight domains (an interior-point method on the KKT system) would close this.
-- **The steep tail** found by the external check. Freeing the held rest-of-Europe exchanges, i.e. endogenous
-  curves for CH, GB, IT-North and the Baltics, would test whether the tail comes from held flows.
+- **The steep tail** found by the external check sits at the ends of the supply curves (floors and scarcity) and
+  in MTUs with generic inferred constraints. A richer curve shape at the ends, such as a mixture or a separate
+  scarcity segment, is the first thing to try.
+- **The outage counterfactual under alternative priors.** It needs two eleven-zone refits (a tight prior at each end
+  of the ridge, about 25 minutes each) plus outage re-runs on the v2 records (about 70 minutes each). Each needs
+  approval.
 - **Strategic conduct.** It needs unit ownership and forward-cover data (section 10).
 - **Spec update.** `ELEVEN_ZONE_SPEC.md` still describes the link legs under hybrid coupling as schedules, and its
   section 6 is the pre-fit plan. This write-up supersedes both.

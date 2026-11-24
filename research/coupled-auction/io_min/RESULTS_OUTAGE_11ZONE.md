@@ -202,3 +202,46 @@ Baseline replay max price error among converged: 0.172 EUR/MWh; median held wron
   link losses).
 - **Replay vs η = 1.00.** The two scenarios differ only in the third decimal in a few rows. The solve limit is
   wall-clock time, so a few MTUs converge in one and not the other.
+
+## Supplement (added after the table): gas actually removed
+
+The outage removes at most the flexible gas running above its floor. The table above books other gas as dG + 1, so in
+MTUs with less than 1 GW of flexible gas it counts the gas not removed as German replacement. It overstates the DE own
+share and understates imports; the price changes are as computed. Recomputed with `fullcut11.py`:
+
+Balanced draw-MTUs with a partial cut (< 0.99 GW removed in some scenario): 17.8%. Mean GW removed on the balanced panel at replay: 0.887.
+
+### Full-cut panel (2428 draw-MTUs): mean over MTUs, GW per GW removed
+
+|                      |   dpDE |   imports |   lignite |   coal |   other_gas |    FR |    NL |    BE |    AT |    CZ |    PL |   DK_1 |   DK_2 |   SE_4 |   NO_2 |
+|:---------------------|-------:|----------:|----------:|-------:|------------:|------:|------:|------:|------:|------:|------:|-------:|-------:|-------:|-------:|
+| ('mode0', 'eta0.10') |  3.733 |     0.53  |     0.129 |  0.086 |       0.255 | 0.016 | 0.119 | 0.077 | 0.06  | 0.062 | 0.073 |  0.066 |  0.022 |  0.004 |  0.03  |
+| ('mode0', 'eta0.25') |  3.321 |     0.579 |     0.116 |  0.078 |       0.227 | 0.023 | 0.135 | 0.086 | 0.058 | 0.061 | 0.073 |  0.072 |  0.022 |  0.004 |  0.045 |
+| ('mode0', 'eta0.50') |  3.139 |     0.597 |     0.112 |  0.075 |       0.216 | 0.031 | 0.137 | 0.09  | 0.056 | 0.059 | 0.073 |  0.074 |  0.021 |  0.004 |  0.052 |
+| ('mode0', 'eta1.00') |  3.039 |     0.607 |     0.11  |  0.074 |       0.21  | 0.038 | 0.138 | 0.092 | 0.054 | 0.058 | 0.073 |  0.075 |  0.021 |  0.004 |  0.054 |
+| ('mode0', 'replay')  |  3.039 |     0.607 |     0.11  |  0.074 |       0.21  | 0.038 | 0.138 | 0.092 | 0.054 | 0.058 | 0.073 |  0.075 |  0.021 |  0.004 |  0.054 |
+| ('mode1', 'eta0.10') |  3.827 |     0.534 |     0.132 |  0.08  |       0.253 | 0.015 | 0.12  | 0.077 | 0.061 | 0.063 | 0.074 |  0.068 |  0.022 |  0.004 |  0.03  |
+| ('mode1', 'eta0.25') |  3.402 |     0.584 |     0.12  |  0.072 |       0.225 | 0.021 | 0.136 | 0.086 | 0.059 | 0.061 | 0.074 |  0.075 |  0.022 |  0.004 |  0.046 |
+| ('mode1', 'eta0.50') |  3.196 |     0.601 |     0.115 |  0.069 |       0.214 | 0.029 | 0.138 | 0.089 | 0.057 | 0.059 | 0.073 |  0.077 |  0.021 |  0.004 |  0.053 |
+| ('mode1', 'eta1.00') |  3.1   |     0.612 |     0.113 |  0.067 |       0.208 | 0.037 | 0.139 | 0.091 | 0.055 | 0.058 | 0.073 |  0.079 |  0.021 |  0.004 |  0.055 |
+| ('mode1', 'replay')  |  3.1   |     0.612 |     0.113 |  0.067 |       0.208 | 0.037 | 0.139 | 0.091 | 0.055 | 0.058 | 0.073 |  0.079 |  0.021 |  0.004 |  0.055 |
+
+Median ΔpDE on the full-cut panel:
+
+|                      |   dpDE |
+|:---------------------|-------:|
+| ('mode0', 'eta0.10') |  2.808 |
+| ('mode0', 'eta0.25') |  2.463 |
+| ('mode0', 'eta0.50') |  2.289 |
+| ('mode0', 'eta1.00') |  2.235 |
+| ('mode0', 'replay')  |  2.235 |
+| ('mode1', 'eta0.10') |  2.846 |
+| ('mode1', 'eta0.25') |  2.493 |
+| ('mode1', 'eta0.50') |  2.318 |
+| ('mode1', 'eta1.00') |  2.254 |
+| ('mode1', 'replay')  |  2.254 |
+
+### Reading rule on the full-cut panel
+
+- mode0: median ΔpDE +2.81 vs +2.23 (+26%); DE own 0.47 vs 0.39 (Δ +0.08); material: False
+- mode1: median ΔpDE +2.85 vs +2.25 (+26%); DE own 0.47 vs 0.39 (Δ +0.08); material: False
