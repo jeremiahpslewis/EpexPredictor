@@ -220,3 +220,24 @@ valid. Same MAP screen and starts.
 
 If D1 is met, the R2′ failure was a power problem, and option A goes to a training fit (with approval). If D1 fails,
 option A is dropped and the curve ends stay as they are.
+
+Result (follow-up diagnostic):
+
+| Case, start | shed L | shed C | shed G | m_lo |
+|---|---|---|---|---|
+| D1 null, centre / far | 0.65 / 0.62 | 0.00 / 0.01 | 0.05 / 0.08 | +8.9 / +4.5 |
+| D2 truth | 0.85 | 0.20 | 0.80 | −35 |
+| D2, centre / far | 0.59 / 0.59 | 0.00 / 0.01 | 0.75 / 0.75 | −36.8 / −36.8 |
+
+Verdicts:
+- **D1 not met for lignite**; gas and coal stay near zero.
+- **D2 not met for lignite** (0.59 vs 0.85); gas and coal within tolerance.
+
+Implied supply: on null data, the MAP moves along the lignite ridge (F_L 1.2 → 2.8–3.0 GW, σ_L 0.44 → 0.30) and sheds
+62–65% of the larger floor. Most of this cancels, but German supply ends up 0.5–0.8 GW below truth at p ≤ 0 and up to
+0.2 GW above it at 20–40 EUR/MWh. Between −20 and +20 EUR/MWh it rises about 1 GW more than the truth, roughly 70%
+more slope where there is none. That would lower dp/dD exactly where the slope check is weakest, a bias that would
+pass for an improvement.
+
+**Decision (by the rule above): option A is dropped. The curve ends stay as they are.** The lignite floor/dispersion
+ridge is the underlying problem: any low-price flexibility added to German supply is absorbed into it.
