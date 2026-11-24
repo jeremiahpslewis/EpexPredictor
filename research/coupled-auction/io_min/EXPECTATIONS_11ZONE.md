@@ -151,3 +151,12 @@ Model: the training-window refit of the current curves (`post_train_old.npz`), 8
 training fit-sample records. Empirical slope: the cf.py recipe on training hours only. Solver: interior point.
 This is the reference for the curve-end specification, so no threshold applies. Expected: a weighted ratio near the
 full-period 0.59 (0.5–0.7), with the high-price band lowest.
+
+Result (2026-11-24). Training refit `post_train_old.npz`: 800 MTUs, 2 chains, 400+400, 41 minutes, no divergences.
+The German block agrees across chains. Neighbour curves reach r-hat ≤ 1.18 with close chain medians (FR, SE4, NO2
+slowest); the raw offsets reach 1.92, but those are not separately identified.
+
+Slope check on the training window: empirical 2.15 [1.90, 2.39]; model weighted 3.15 (draws 2.99–3.33); ratio
+**0.69**. By band: low 0.75, middle 0.70, high 0.60. Hybrid coupling 0.77; generic 0.33. Converged 97.2%. Met the
+expectation (0.5–0.7, high band lowest). This is the reference the curve-end specification must move into
+[0.8, 1.25].
