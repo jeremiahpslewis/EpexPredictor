@@ -107,8 +107,13 @@ Verdicts:
 - **R1: partly met.** The low end is recovered (k_lo,DE, m_lo, k_lo,nb). The scarcity segment is not (m_hi off by
   84–163, k_hi,nb off by a factor of 3–6). The floor-shedding shares ρ are not recovered (not in R1, reported).
 - **R2: not met.** On null data the fit invents about 4 GW of German curtailment and about 2 GW of scarcity supply,
-  from both starts. With all other parameters held at the simulation values, the price-system likelihood term is about
-  10 nats higher at the invented ends than at the null, far more than three extra parameters gain by chance.
+  from both starts. The cause is open. Candidates:
+  - the simulator drops MTUs whose solve fails or whose price leaves [−500, 3000] (24 in the null case), which
+    removes extreme prices the fit may then explain with end slope;
+  - the Beta(2, 2) prior on ρ excludes "no shedding";
+  - the truth used in the comparison is not an exact parameter vector, and that comparison returned −inf at both
+    points.
+  These are to be checked before any conclusion about the likelihood.
 - **R3: not met for scarcity** (k_hi,DE 3.44 vs 0.72 across starts). Met for the low end.
 
 Caveats: the MAP losses were still falling by about 2 per 500 steps, and the neighbour truth in the fit
