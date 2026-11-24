@@ -51,3 +51,16 @@ Expectations and thresholds:
 - E4, sanity: on the outage MTUs, the demand-shock ΔpDE is within 25% of the outage ΔpDE at the median (a 1 GW
   outage and 1 GW of extra demand differ only through the gas floor cut and the fuel split). A larger gap points to a
   bug.
+
+## Slope check with the cold-start interior-point solver, current curves (written 2026-11-24, before the run)
+
+Same estimand, MTUs and draws as the first slope check. The only change is the solver: `solve11.solve_ip` with a 5 MW
+balance tolerance, in place of the warm-start active set. That solver converged in 92.6% of MTUs, against 99.8% for
+the interior-point solver on a 458-MTU test.
+- S1: convergence of at least 98% of MTUs.
+- S2: on MTUs where both solvers converged, the slopes agree within 0.05 EUR/MWh per GW at the 99th percentile.
+- S3, direction: the solves that newly converge are mostly steep cases (curve ends, generic constraints). The
+  weighted ratio therefore falls below 0.68. The size is not predicted.
+- S4: baseline replay error in DE below 0.1 EUR/MWh in 99% of MTUs.
+
+This is the reference against which the curve-end change is judged; the curve change is not tuned to it.

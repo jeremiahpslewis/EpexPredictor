@@ -9,12 +9,29 @@ for KIND = fit, OUT_PREFIX.json with the weighted slopes against the empirical n
 import sys, time, pickle, json
 import numpy as np, pandas as pd
 from multiprocessing import Pool
-RECS, PANEL, OUTP, KIND, NMAX = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]); SPEC = sys.argv[6:]
+RECS, PANEL, OUTP, KIND, NMAX = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]); SPEC = [a for a in sys.argv[6:] if a != "--polish"]
+POLISH = "--polish" in sys.argv
 sys.argv = ["cf11.py", RECS, "/dev/null", "1"] + [s.split(":")[0] for s in SPEC]   # cf11 reads its argv at import
 sys.path.insert(0, __file__.rsplit("/", 1)[0]); import cf11 as C, net11 as N
 
+SOLVER = "ip"   # "ip": cold-start interior point (solve11.solve_ip); "polish": warm-start active set from the observed point
+
+def run_ip(th, nb, r):
+    import solve11 as V
+    const, terms = V.curves_logistic(th, nb, r); S0, _ = V.supply_fn(const, terms)(r["p"]); load = S0 - r["n"]
+    A, b, lo, hi, _ = C.domain(r, None)
+    pb, yb, okb, ib = V.solve_ip(const, terms, load, r["H"], A, b, r["e"], r["e0"], lo, hi)
+    l1 = load.copy(); l1[0] += 1000.0
+    pd_, yd, okd, _ = V.solve_ip(const, terms, l1, r["H"], A, b, r["e"], r["e0"], lo, hi)
+    if not (okb and okd): return dict(ok=False, cap=False, dp=float("nan"), dimp=float("nan"), rep_err=float("nan"))
+    return dict(ok=bool(pd_.max() < 4000), cap=bool(pd_.max() >= 4000), dp=float(pd_[0] - pb[0]),
+                dimp=float(-((r["H"] @ yd)[0] - (r["H"] @ yb)[0]) / 1000), rep_err=float(abs(pb[0] - r["p"][0])))
+
 def run(args):
     th, nb, r = args
+    if SOLVER == "ip":
+        try: return run_ip(th, nb, r)
+        except Exception as ex: return dict(ok=False, cap=False, dp=float("nan"), dimp=float("nan"), error=repr(ex)[:120])
     try:
         S0, _ = C.make_supply(th, nb, r)(r["p"]); load = S0 - r["n"]
         A, b, lo, hi, dflag = C.domain(r, None)
@@ -29,6 +46,8 @@ def run(args):
                     dimp=float(-((r["H"] @ yd)[0] - (r["H"] @ yb)[0]) / 1000))
     except Exception as ex:
         return dict(ok=False, cap=False, dp=float("nan"), dimp=float("nan"), error=repr(ex)[:120])
+
+if POLISH: SOLVER = "polish"
 
 if __name__ == "__main__":
     d = [r for r in pickle.load(open(RECS, "rb"))["recs"] if r["kind"] == KIND]
