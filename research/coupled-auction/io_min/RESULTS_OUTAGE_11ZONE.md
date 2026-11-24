@@ -186,3 +186,19 @@ Median across MTUs (unbalanced (each scenario's converged MTUs)):
 - replay ΔpDE by flag `miss`: False: +2.871 (n=2757), True: +2.967 (n=195)
 
 Baseline replay max price error among converged: 0.172 EUR/MWh; median held wrong-sign bounds per MTU: 2.
+## Robustness checks on these checkpoints (no new run)
+
+- **Reading rule per draw.** The η = 0.10 vs 1.00 median ΔpDE ratio is +21% to +26% across mode 0 draws and +23% to
+  +29% across mode 1 draws. No single draw crosses the 30% threshold.
+- **Selection bound at η = 0.10.** On the balanced panel, ΔpDE at η = 0.10 is at least ΔpDE at η = 0.25 in 99.6% of
+  draw-MTUs. Filling the η = 0.10 failures with their η = 0.25 value (a lower bound) widens the panel to about 1,710
+  draw-MTUs per basin. The ratio is then +22.1% (mode 0) and +22.3% (mode 1), so the pre-registered verdict does not
+  depend on which MTUs fail. This uses the η = 0.25 value, so it does not bound MTUs that fail at both η = 0.10 and
+  0.25.
+- **Outlier.** One MTU, 2026-06-30 17:00, converges with ΔpDE of 130–494 EUR/MWh, a near-scarcity hour. It alone
+  drives the wide range in the unbalanced mode 1 η = 0.25 row (draw 0 mean 4.95, the others 3.0–3.4). Medians are
+  unaffected.
+- **Accounting.** German net imports equal the sum of the neighbour responses to within 0.02 GW (the difference is
+  link losses).
+- **Replay vs η = 1.00.** The two scenarios differ only in the third decimal in a few rows. The solve limit is
+  wall-clock time, so a few MTUs converge in one and not the other.
