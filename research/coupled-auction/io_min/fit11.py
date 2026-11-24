@@ -20,7 +20,7 @@ RECS, BASIN, OUT = sys.argv[1:4]; WARM, NS, NC = map(int, sys.argv[4:7]); numpyr
 KQ = 4.0
 import os; ENDS = os.environ.get("ENDS", "0") == "1"                     # curve ends: floor shedding, curtailment, scarcity
 _pk = pickle.load(open(RECS, "rb")); d = _pk["recs"]; SBAR_FIXED = _pk.get("sbar")      # simulated data carry the true scale
-d = [r for r in d if r["kind"] == "fit" and not any(v["missing"] for v in r["links"].values())]
+d = [r for r in d if r["kind"] == "fit" and not any(v["missing"] for v in r["links"].values()) and r.get("resid_pV", 0.0) <= 0.05]   # prices must lie in V (as build11 ensures)
 NMAX = int(sys.argv[7]) if len(sys.argv) > 7 else len(d); d = d[::max(1, len(d) // NMAX)][:NMAX]
 T = len(d); print("fit MTUs:", T, " augmented:", sum(r["aug"] is not None for r in d), " generic:", sum("generic" in (r["aug"] or {}).get("added", []) for r in d))
 arr = lambda k: jnp.asarray(np.array([r[k] for r in d], dtype=float))

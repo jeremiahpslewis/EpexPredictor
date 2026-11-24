@@ -120,3 +120,19 @@ Caveats: the MAP losses were still falling by about 2 per 500 steps, and the nei
 parameterisation is approximate (medians of hyperparameters and offsets, not of the curves).
 
 By the rule written above, this specification is not used as is.
+
+Diagnostics on the R2 failure (2026-11-24):
+- **Dropped MTUs.** 23 of the 24 dropped in the null are failed solves, not prices out of range. With bounded supply,
+  some heavy-tailed shocks have no equilibrium; a real market would clear at the price cap. The simulation therefore
+  truncates the extreme shocks the t-distribution generates.
+- **Regime reading.** In 0.5–1% of simulated MTUs the prices are not in the V read from the solver's multipliers
+  (residual up to 590). The fit now excludes MTUs with a residual above 0.05, as build11 does for real data.
+  Excluding them did not remove the invented ends: null MAP from an exact posterior draw gave k_lo,DE 3.0 and
+  k_hi,DE 1.7, with the loss converged.
+- **Likelihood profile at the exact truth** (draw 100, all other parameters held). Adding German curtailment raises
+  the price-system likelihood by at most +4.0 nats (k_lo,DE 3, m_lo 3.5, s_lo 7.6). That is at the edge of chance
+  for three free parameters, and it comes from 10 simulated MTUs at p ≤ 0. Scarcity gains nothing (+0.02). The null
+  screen therefore had little power; it does not show a biased likelihood.
+- **Predictive misfit of the old curves.** Simulated from the old-curve posterior with its own shocks, the share of
+  MTUs at p ≤ 0 is 1.7–2.9% and above €200 1.5–1.9%. The real training sample has 6.2% and 3.0%. The old curves
+  under-produce negative and scarcity prices: a posterior-predictive failure where the curve-end change is aimed.

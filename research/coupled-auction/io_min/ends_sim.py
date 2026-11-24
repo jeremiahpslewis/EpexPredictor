@@ -16,12 +16,15 @@ sys.path.insert(0, __file__.rsplit("/", 1)[0]); import cf11 as C, net11 as N, so
 import os
 TRUE_ENDS = json.loads(os.environ["ENDS_TRUTH"]) if os.environ.get("ENDS_TRUTH") else \
     dict(m_lo=-15.0, s_lo=8.0, m_hi=220.0, s_hi=40.0, rho_L=0.4, rho_C=0.5, rho_G=0.3, k_lo_de=3.0, k_hi_de=1.5, k_lo_nb=0.10, k_hi_nb=0.08)
-P = dict(np.load(POST, allow_pickle=True)); med = lambda k: np.median(P[k], axis=0)
+P = dict(np.load(POST, allow_pickle=True))
+DRAW = os.environ.get("DRAW")                       # simulate from one exact posterior draw (a reachable parameter vector)
+med = (lambda k: np.asarray(P[k])[int(DRAW)]) if DRAW is not None else (lambda k: np.median(P[k], axis=0))
+KEEP_EXTREME = os.environ.get("KEEP_EXTREME") == "1"
 DE_KEYS = [str(x) for x in P["de_keys"]][:15]
 TH = {k: float(med(k)) for k in DE_KEYS} | TRUE_ENDS
 NB = dict(sbar=P["sbar"][1:], al=med("al"), be=med("be"), aa=med("aa"), bb=med("bb"), sg=med("sg"))
 SD, NU, MU_DE = med("sd_u"), float(med("nu")), float(med("mu_de"))
-Lc = np.median(P["Lcorr"], axis=0); Lc = np.linalg.cholesky(Lc @ Lc.T)        # median of Cholesky factors, re-orthonormalised
+Lc = med("Lcorr"); Lc = np.linalg.cholesky(Lc @ Lc.T)        # (median of) Cholesky factor(s), re-orthonormalised
 SDQ, BQ, NUQ = med("sd_q"), med("beta_q"), float(med("nu_q"))
 E_L, E_C, E_G, V_G, SM = 0.364, 0.341, 0.202, 3.0, 0.05
 
@@ -41,7 +44,8 @@ def one(args):
     load = np.asarray(r["D"]) + np.asarray(r["X"]) + 1000 * u
     A, b, lo, hi, _ = C.domain(r, None)
     p, y, ok, info = V.solve_ip(const, terms, load, r["H"], A, b, r["e"], r["e0"], lo, hi)
-    if not ok or p.max() > 3000 or p.min() < -500: return None
+    if not ok: return dict(drop="solve failed", p=np.nan if p is None else float(p[0]))
+    if (p.max() > 3000 or p.min() < -500) and not KEEP_EXTREME: return dict(drop="price range", p=float(p[0]))
     slack = b - A @ y
     rows = [A[j] for j in range(len(b)) if info["mu"][j] > 1e-6 and slack[j] < 1.0]
     bnds = [np.eye(N.NY)[j] for j in range(N.NY) if (info["nh"][j] > 1e-6 and hi[j] - y[j] < 1.0) or (info["nl"][j] > 1e-6 and y[j] - lo[j] < 1.0)]
@@ -50,14 +54,21 @@ def one(args):
     q = fuels(p[0], r["de"]); de = dict(r["de"])
     for i, (f, col) in enumerate((("L", "lig"), ("C", "coal"), ("G", "gasg"))):
         de[col] = float(q[f] + BQ[i] * de["gap"] + SDQ[i] * rng.standard_t(NUQ))
-    rr = dict(r); rr.update(p=p, y=y, n=r["H"] @ y, Q=Q, k=Q.shape[1], de=de, sim_u=u)
+    rows4 = [A[j] for j in range(len(b)) if info["mu"][j] > 1e-4 and slack[j] < 1.0]
+    k4 = N.price_subspace(r["H"], np.vstack(rows4 + bnds) if (rows4 or bnds) else np.zeros((0, N.NY)), r["e"])[0].shape[1]
+    rr = dict(r); rr.update(p=p, y=y, n=r["H"] @ y, Q=Q, k=Q.shape[1], de=de, sim_u=u, resid_pV=float(np.linalg.norm(p - Q @ (Q.T @ p))), k_alt=k4,
+                            extreme=bool(p.max() > 3000 or p.min() < -500))
     return rr
 
 if __name__ == "__main__":
     d = [r for r in pickle.load(open(RECS, "rb"))["recs"] if r["kind"] == "fit" and not any(v["missing"] for v in r["links"].values())]
     d = d[:: max(1, len(d) // NMTU)][:NMTU]
     with Pool(4) as pool: out = pool.map(one, list(enumerate(d)))
-    recs = [r for r in out if r is not None]
+    drops = [r for r in out if "drop" in r]; recs = [r for r in out if "drop" not in r]
+    print("dropped:", len(drops), {k: sum(d["drop"] == k for d in drops) for k in ("solve failed", "price range")},
+          "dropped DE prices:", sorted(round(d["p"], 0) for d in drops if np.isfinite(d["p"]))[:30])
+    rp = np.array([r["resid_pV"] for r in recs]); print(f"price-in-V residual: max {rp.max():.4f}, share > 0.05 {np.mean(rp > 0.05):.3f};",
+          f"dim V changes with multiplier threshold 1e-6 -> 1e-4 in {np.mean([r['k'] != r['k_alt'] for r in recs]):.3f} of MTUs; extreme kept {sum(r['extreme'] for r in recs)}")
     p = np.array([r["p"][0] for r in recs])
     print(f"simulated {len(recs)} of {len(d)}; DE price quantiles", np.round(np.quantile(p, [0, .05, .5, .95, 1]), 1).tolist(),
           f"share p<=0 {np.mean(p <= 0):.3f}, p>200 {np.mean(p > 200):.3f}; dim V", np.bincount([r["k"] for r in recs]).tolist())
