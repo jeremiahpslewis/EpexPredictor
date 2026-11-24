@@ -136,3 +136,11 @@ Diagnostics on the R2 failure (2026-11-24):
 - **Predictive misfit of the old curves.** Simulated from the old-curve posterior with its own shocks, the share of
   MTUs at p ≤ 0 is 1.7–2.9% and above €200 1.5–1.9%. The real training sample has 6.2% and 3.0%. The old curves
   under-produce negative and scarcity prices: a posterior-predictive failure where the curve-end change is aimed.
+- **Gain grows with the data, so it is systematic.** On 1,780 null MTUs (52 at p ≤ 0) the MAP again invents
+  k_lo,DE 3.2 and k_hi,DE 2.9. At the truth, the likelihood gain is +10.5 nats for the low end (+4.0 on 578 MTUs) and
+  +2.8 for scarcity (+0.02).
+- **Truncation explains part of it.** With shocks scaled to 0.6, fewer solves fail. At 3 GW the low-end gain then
+  turns strongly negative (−11.6), but a gain of +4.8 remains at 1 GW, and scarcity gains +1.2. The remaining failed
+  solves (25 of 1,839) sit at ordinary prices (€74–91), so they are solver failures, not missing equilibria.
+- **Status.** The cause is partly the simulation's dropped draws and partly unexplained. The specification is still
+  not used.

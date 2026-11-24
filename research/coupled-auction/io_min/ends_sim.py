@@ -23,7 +23,7 @@ KEEP_EXTREME = os.environ.get("KEEP_EXTREME") == "1"
 DE_KEYS = [str(x) for x in P["de_keys"]][:15]
 TH = {k: float(med(k)) for k in DE_KEYS} | TRUE_ENDS
 NB = dict(sbar=P["sbar"][1:], al=med("al"), be=med("be"), aa=med("aa"), bb=med("bb"), sg=med("sg"))
-SD, NU, MU_DE = med("sd_u"), float(med("nu")), float(med("mu_de"))
+SD, NU, MU_DE = med("sd_u") * float(os.environ.get("SHOCK_SCALE", "1")), float(med("nu")), float(med("mu_de"))   # SHOCK_SCALE: diagnostic only
 Lc = med("Lcorr"); Lc = np.linalg.cholesky(Lc @ Lc.T)        # (median of) Cholesky factor(s), re-orthonormalised
 SDQ, BQ, NUQ = med("sd_q"), med("beta_q"), float(med("nu_q"))
 E_L, E_C, E_G, V_G, SM = 0.364, 0.341, 0.202, 3.0, 0.05
