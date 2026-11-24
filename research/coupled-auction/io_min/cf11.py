@@ -108,11 +108,22 @@ def domain(r, eta):
     return A, b, lo, hi, dict(eq_rows=len(eq_rows), held_bounds=len(held))
 
 def work(args):
+    """One MTU, all scenarios. A numerical exception fails that scenario (recorded as not converged), never the draw."""
     th, nb, r = args; out = {}
-    S0, _ = make_supply(th, nb, r)(r["p"]); load = S0 - r["n"]                   # = D + X + 1000 u: shocks recovered at this draw
     for name, eta in SCEN:
+        try: out[name] = work_one(th, nb, r, name, eta)
+        except Exception as ex:
+            nan = float("nan")
+            out[name] = dict(ok=False, base_err_p=nan, base_err_n=nan, dp=[nan] * N.NZ, dS=[nan] * N.NZ, dL=nan, dC=nan, dG=nan,
+                             dimport=nan, cap=False, start="error", error=repr(ex)[:200], eq_rows=0, held_bounds=0)
+    return out
+
+def work_one(th, nb, r, name, eta):
+    S0, _ = make_supply(th, nb, r)(r["p"]); load = S0 - r["n"]                   # = D + X + 1000 u: shocks recovered at this draw
+    if True:
         dl = time.time() + 10.0                                            # time budget per scenario (s)
         A, b, lo, hi, dflag = domain(r, eta)
+        dflag["obs_viol"] = float(max((A @ r["y"] - b).max(initial=0.0), (r["y"] - hi).max(), (lo - r["y"]).max(), 0.0))   # MW
         act0 = list(range(len(b) - len(r["A_sp"]) - len(r["A_inf"]) - dflag["eq_rows"], len(b)))          # binding rows: shadow, inferred, equality copies
         bnd0 = [(j, s) for j, s in r["bnd"]] + [(j, "lo") for j in range(N.IA + 1, N.NY) if r["y"][j] < 0.5 and (j, "lo") not in r["bnd"]]
         if abs(r["y"][N.IA]) >= 999.5: bnd0.append((N.IA, "hi" if r["y"][N.IA] > 0 else "lo"))
@@ -125,10 +136,9 @@ def work(args):
                 po, yo, ao, bo, oko = N.polish(make_supply(th, nb, r, 1.0), load, r["H"], A, b, r["e"], r["e0"], lo, hi, cs[0], cs[1], outer=60, deadline=dl + 5.0); start = "conic"
         Sb, _ = de_supply(th, r["de"], pb[0]); So, _ = de_supply(th, r["de"], po[0], 1.0)
         nbs, nos = r["H"] @ yb, r["H"] @ yo
-        out[name] = dict(ok=bool(okb and oko), base_err_p=float(np.abs(pb - r["p"]).max()), base_err_n=float(np.abs(nbs - r["n"]).max()),
+        return dict(ok=bool(okb and oko), base_err_p=float(np.abs(pb - r["p"]).max()), base_err_n=float(np.abs(nbs - r["n"]).max()),
                          dp=(po - pb).tolist(), dS=((nos - nbs) / 1000).tolist(), dL=So["L"] - Sb["L"], dC=So["C"] - Sb["C"], dG=So["G"] - Sb["G"],
                          dimport=float(-(nos[0] - nbs[0]) / 1000), cap=bool(po.max() > 4000), start=start, **dflag)
-    return out
 
 if __name__ == "__main__":
     # one checkpoint file per (posterior, draw); draws interleaved across posteriors so partial results cover both;

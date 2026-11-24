@@ -1,5 +1,7 @@
 # Eleven-zone outage study: interim table from 4 of 12 posterior draws
 
+> **Superseded** (2026-11-24): computed on code that failed under hybrid coupling; see prereg/PREREG_OUTAGE.md addendum 3.
+
 Two draws from each German fuel-split basin (mode 0: chains started in the flexible-lignite basin; mode 1: the other basin),
 312 pre-registered outage MTUs, five headroom scenarios. The remaining eight draws are still running; this file will be
 replaced by the full table. Notes for reading it:

@@ -1,5 +1,7 @@
 # Eleven-zone outage study: first table
 
+> **Superseded** (2026-11-24): computed on code that failed under hybrid coupling; see prereg/PREREG_OUTAGE.md addendum 3.
+
 Source: `cf11_main_post_mode0_d0.pkl`. 312 outage MTUs, {'mode0': 1} posterior draws per basin.
 
 ## Share of draw-MTUs not converged (or at the price cap), by scenario

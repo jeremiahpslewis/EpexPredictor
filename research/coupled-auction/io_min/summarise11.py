@@ -48,6 +48,24 @@ for name, sub in (("balanced panel", D[D.bal]), ("unbalanced (each scenario's co
                         f"DE own share {s10:.2f} vs {s100:.2f} (Δ {s10 - s100:+.2f}). Material by the pre-registered rule: "
                         f"{abs(p10 - p100) > 0.30 * abs(p100) or abs(s10 - s100) > 0.15}")
         out += ["## Reading rule (pre-registered: >30% change in median ΔpDE or >0.15 in DE own share between η=0.10 and 1.00)", ""] + rule + [""]
+# split by hybrid coupling (AHC MTUs need inferred constraints far more often, so pooled numbers move by composition)
+B = D[D.bal].copy(); B["own"] = B.dL + B.dC + B.dGother
+for flag in ("ahc", "generic"):
+    g = B.groupby(["basin", "scen", flag])
+    T = pd.concat([g.dpDE.mean().rename("mean dpDE"), g.dpDE.median().rename("median dpDE"), g.dimp.mean().rename("imports"),
+                   g.own.mean().rename("DE own"), g.size().rename("n draw-MTUs")], axis=1).round(3)
+    out += [f"## Balanced panel split by `{flag}`", "", T.to_markdown(), ""]
+    for b in B.basin.unique():
+        for v in sorted(B[flag].unique()):
+            sb = B[(B.basin == b) & (B[flag] == v)]
+            if sb.empty or not {"eta0.10", "eta1.00"} <= set(sb.scen): continue
+            p10, p100 = sb[sb.scen == "eta0.10"].dpDE.median(), sb[sb.scen == "eta1.00"].dpDE.median()
+            s10, s100 = sb[sb.scen == "eta0.10"].own.mean(), sb[sb.scen == "eta1.00"].own.mean()
+            out += [f"- reading rule, {b}, {flag}={v}: median ΔpDE {p10:+.2f} vs {p100:+.2f} ({(p10 - p100) / abs(p100):+.0%}); DE own {s10:.2f} vs {s100:.2f}; "
+                    f"material: {abs(p10 - p100) > 0.30 * abs(p100) or abs(s10 - s100) > 0.15}"]
+    out += [""]
+fail_ahc = D.groupby(["basin", "scen", "ahc"]).ok.apply(lambda x: 1 - x.mean()).unstack("scen").round(3)
+out += ["## Failure share by hybrid coupling", "", fail_ahc.to_markdown(), ""]
 for flag in ("generic", "pub_excl", "ahc", "miss"):
     sub = D[D.bal & (D.scen == "replay")]; g = sub.groupby(flag).dpDE.mean()
     out += [f"- replay ΔpDE by flag `{flag}`: " + ", ".join(f"{k}: {v:+.3f} (n={int((sub[flag] == k).sum())})" for k, v in g.items())]

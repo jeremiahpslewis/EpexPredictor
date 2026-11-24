@@ -126,3 +126,30 @@ flagged MTUs are in `prereg/link_audit.missing.csv`.
 - **Missing schedules by the rule:** DE–NO2 (NordLink) 3.5% of MTUs, NL–DK1 (COBRA) 4.3%, DE–DK1 0.45%, others
   ≤ 0.2%. These MTUs are excluded from the likelihood, and flagged in the outage sample as stated in the first
   addendum.
+
+## Addendum 3 (2026-11-24, after interim results from the old code): hybrid-coupling repairs
+
+This addendum is written **after** two interim tables (4 and 8 posterior draws) were seen. Those tables were on code
+that failed in every MTU under advanced hybrid coupling (AHC) and are superseded. The sample, the scenarios, the
+reading rule and the posterior are unchanged. Two code faults were fixed, and one reporting requirement was added:
+
+- **Held link variables are equalities (`net11.polish`).** A wrong-sign bound held at its observed value (lo = hi)
+  was treated as two one-sided bounds, and the active-set search alternated between them until the time limit. It is
+  now always active, and its multiplier is free in sign.
+- **AHC link legs come from JAO (`build11.py`).** Under AHC, the link legs in `y` now come from the JAO virtual-hub
+  net positions, NP_VH = −f⁺/(1 − ℓ_ab) + f⁻, instead of the ENTSO-E schedules. The schedules differ from NP_VH by up
+  to about 30 MW, which left the observed point off the Core balance row. The posterior was fit on the old records.
+  On the 728 AHC fit MTUs the change moves zonal net positions by at most 21 MW (median 0.4 MW) and changes no
+  regime (dim V), so the posterior is kept.
+- **Per-MTU guard.** A numerical exception now fails that scenario (counted as not converged) instead of stopping the
+  run.
+- **Reporting.** AHC MTUs need inferred constraints in 97% of cases and the generic direction in 23–26%, against 23%
+  and 2% elsewhere. Inferred rows hold the corresponding flow at its observed value in both the baseline and the
+  outage, which mechanically limits import replacement. Every table is therefore reported pooled **and** split by
+  `ahc` and by `generic`, and the reading rule is applied within each split as well as pooled. The pooled verdict
+  remains the pre-registered one.
+
+Pilot (one draw, mode 0, all 312 MTUs): no exceptions. The observed point lies inside every scenario domain (worst
+violation 0.1 MW). AHC failure share is 9% under replay and 43% at η = 0.10 (75–100% before); non-AHC is 0.5% and 3%
+(2.6% and 12% before). The balanced panel covers 80% of MTUs (54% before). On non-AHC MTUs that converged under both
+versions, ΔpDE agrees to 0.02 EUR/MWh.
