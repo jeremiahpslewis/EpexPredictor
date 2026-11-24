@@ -160,3 +160,15 @@ Slope check on the training window: empirical 2.15 [1.90, 2.39]; model weighted 
 **0.69**. By band: low 0.75, middle 0.70, high 0.60. Hybrid coupling 0.77; generic 0.33. Converged 97.2%. Met the
 expectation (0.5–0.7, high band lowest). This is the reference the curve-end specification must move into
 [0.8, 1.25].
+- **Dropped draws are structural.** 22 of the 25 failed solves at shock scale 0.6 have no conic solution at all. The
+  same 25 MTUs fail at scale 0.4, so their domains cannot be met for any shock. This is selection on MTUs, not on
+  shocks.
+- **The invented slope depends on shock size.** Likelihood gain at the truth, by shock scale:
+
+  | Shock scale | k_lo,DE = 3 GW | k_lo,DE = 1 GW | k_hi,DE = 1 GW |
+  |---|---|---|---|
+  | 1.0 | +10.5 | +6.9 | +1.8 |
+  | 0.6 | −5.0 to −11.6 | +4.8 | +1.2 |
+  | 0.4 | −29 to −42 | −0.8 to +2.0 | +1.1 |
+
+  The bias appears with realistic heavy-tailed shocks. Its cause is not found.
