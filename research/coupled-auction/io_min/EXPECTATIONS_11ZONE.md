@@ -294,5 +294,29 @@ Against France's recovered shock on 905 training MTUs (October 2025 to February 
 - correlation with French residual load: −0.03;
 - FR shock ≈ −36.6 + 1.77 × unavailable GW + 0.33 × residual load GW, R² 0.35.
 
-French availability is a strong candidate input for the French curve. It needs the remaining notices
-(March–November 2026) before it can be used in a fit.
+Follow-up checks (same data):
+- Within month, the correlation is −0.14 to +0.44 by month. After removing monthly means, the pooled correlation is
+  0.17 and the slope 0.66 GW per GW (physically plausible). Most of the 0.49 is between months, so season may
+  confound it.
+- Day-over-day changes in unavailability do not predict changes in France's shock: correlation −0.03 over 700
+  training MTUs, and −0.03 on days where unavailability moved by more than 0.5 GW.
+- Repeated rows (175 notices) never differ in start time, so the per-notice dedup is sound.
+
+Status: a candidate for the French level, with seasonal confounding not ruled out. It cannot improve the day-ahead
+forecast beyond carrying yesterday's shock, which already contains yesterday's outages. It could help the model's own
+level and the counterfactuals.
+
+### Pre-registered test on months not yet fetched (written before the fetch)
+
+The October–February regression is frozen:
+
+    FR shock = −36.6 + 1.77 × unavailable GW + 0.33 × FR residual load GW
+
+It is applied unchanged to 2026-03-01 to 2026-09-07 with the newly fetched notices.
+- A1: the monthly mean of predicted minus recovered French shock is within ±5 GW in every month from June to
+  August, the months where the recovered shock is +6.6 to +18.4.
+- A2: mean gate-known unavailability over June–August exceeds the December–February mean (about 9.8 GW) by at least
+  5 GW.
+
+If A2 fails, the availability explanation of the summer shift is dropped. If A1 fails, the frozen regression does not
+transfer, and no availability input is added to the fit.
