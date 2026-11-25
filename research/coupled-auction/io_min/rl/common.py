@@ -19,7 +19,7 @@ HZ = 153
 GATE_D1 = 32                      # quarter hours of D covered by the 1-day-old run at the gate
 PTS = json.load(open(f"{SP}/dense/points.json")); NON = PTS["onshore"]; LAT = np.array(PTS["points"])[:, 0]; LON = np.array(PTS["points"])[:, 1]
 NPT = len(LAT)
-LGB = {"force_col_wise": True, "verbosity": -1, "learning_rate": 0.05, "num_leaves": 31, "num_threads": 4}
+LGB = {"force_col_wise": True, "verbosity": -1, "learning_rate": 0.05, "num_leaves": 31, "num_threads": 1}
 ROUNDS = 400
 SEG = {"night": slice(0, 24), "day1": slice(0, 96), "h24_38": slice(96, 153)}
 
@@ -34,12 +34,17 @@ def load_all():
     aux = D[["ts", "slot", "weekday", "holiday", "sunelevation", "azimuth"]].astype(float)
     fc = pd.concat([pd.read_parquet(f"{SP}/ecfc/{p}.parquet") for p in ("wind_onshore", "wind_offshore", "solar", "load")], axis=1).reindex(idx) / 1000
     fc["wind"] = fc["wind_onshore"] + fc["wind_offshore"]; fc["rl"] = fc["load"] - fc["wind"] - fc["solar"]
-    H = pd.read_parquet(f"{SP}/dense/hist.parquet"); P = pd.read_parquet(f"{SP}/dense/prev.parquet")
-    H15 = to15(H, idx); P15 = to15(P, idx)
-    W = {"d0": H15[[c for c in H15.columns if not c.endswith("_d2")]],
-         "d2h": H15[[c for c in H15.columns if c.endswith("_d2")]].rename(columns=lambda c: c[:-3])}
-    for k in (1, 2, 3):
-        W[f"d{k}"] = P15[[c for c in P15.columns if c.endswith(f"_d{k}")]].rename(columns=lambda c: c[:-3])
+    import os
+    if not os.path.exists(f"{OUT}/W_d0.parquet"):
+        os.makedirs(OUT, exist_ok=True)
+        H = pd.read_parquet(f"{SP}/dense/hist.parquet"); P = pd.read_parquet(f"{SP}/dense/prev.parquet")
+        H15 = to15(H, idx); P15 = to15(P, idx)
+        W = {"d0": H15[[c for c in H15.columns if not c.endswith("_d2")]],
+             "d2h": H15[[c for c in H15.columns if c.endswith("_d2")]].rename(columns=lambda c: c[:-3])}
+        for k in (1, 2, 3):
+            W[f"d{k}"] = P15[[c for c in P15.columns if c.endswith(f"_d{k}")]].rename(columns=lambda c: c[:-3])
+        for k, v in W.items(): v.astype("float32").to_parquet(f"{OUT}/W_{k}.parquet")
+    W = {k: pd.read_parquet(f"{OUT}/W_{k}.parquet").astype(float) for k in ("d0", "d2h", "d1", "d2", "d3")}
     I = np.load(f"{SP}/out/inputs_autumn.npz", allow_pickle=True)
     return dict(idx=idx, aux=aux, fc=fc, W=W, cuts=I["cuts"].astype(int), cutoffs=I["cutoffs"], I=I)
 
