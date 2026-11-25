@@ -241,3 +241,27 @@ pass for an improvement.
 
 **Decision (by the rule above): option A is dropped. The curve ends stay as they are.** The lignite floor/dispersion
 ridge is the underlying problem: any low-price flexibility added to German supply is absorbed into it.
+
+## Fuel-cost loading fix (written 2026-11-25, before any fit)
+
+Specification (fit11 BPOS=1): each neighbour's fuel-cost loading b_z = exp(m_lbb + t_lbb z_z), positive by
+construction and centred at 1 (full pass-through). Everything else as in the current curves. Chains start with every
+b_z = 1 and each zone's threshold a + b·mean(L) unchanged.
+
+Inputs-only diagnostic on the current training fit (`extrap11.py`): between the training-median (108) and the
+holdout-median (182) fuel-cost index, every neighbour's supply at 150 EUR/MWh already falls, by 74 GW in total
+(France −16, NO2 −25), because the curves' spread scales with the index. The holdout misfit (France's recovered shock
++15.5 GW against +2.8 in training) is therefore one of degree, not direction. France's negative loading (−0.37) makes
+its threshold fall as costs rise, whereas a positive loading makes it rise.
+
+Expectations:
+- F1 (inputs only): France's loading is positive, and its supply change at 150 EUR/MWh between the two index medians
+  is more negative than −16 GW.
+- F2 (training slope check): the weighted ratio stays within 0.6–0.8. The fix is not aimed at the slope.
+- F3 (second holdout scoring, labelled as such; the first score stays the reference): the unconditional eleven-zone
+  forecast's evening-peak bias shrinks in magnitude from −43. The previous-day-shock forecast's price MAE is no
+  worse than 20.5 by more than its bootstrap interval.
+- F4: the holdout's lagged recovered French shock moves towards its training mean (+15.5 → closer to +2.8).
+
+F3 and F4 read holdout outcomes and cannot be clean tests: the specification was chosen after seeing the first
+holdout score. F1 and F2 can be.

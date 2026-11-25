@@ -18,7 +18,7 @@ sys.path.insert(0, __file__.rsplit("/", 1)[0]); import model as Mo, net11 as N
 jax.config.update("jax_enable_x64", True)
 RECS, BASIN, OUT = sys.argv[1:4]; WARM, NS, NC = map(int, sys.argv[4:7]); numpyro.set_host_device_count(NC)
 KQ = 4.0
-import os; ENDS_MODE = os.environ.get("ENDS", "0"); ENDS = ENDS_MODE == "1"; SHED = ENDS_MODE == "2"   # 2: floor shedding only                     # curve ends: floor shedding, curtailment, scarcity
+import os; BPOS = os.environ.get("BPOS", "0") == "1"; ENDS_MODE = os.environ.get("ENDS", "0"); ENDS = ENDS_MODE == "1"; SHED = ENDS_MODE == "2"   # 2: floor shedding only                     # curve ends: floor shedding, curtailment, scarcity
 _pk = pickle.load(open(RECS, "rb")); d = _pk["recs"]; SBAR_FIXED = _pk.get("sbar")      # simulated data carry the true scale
 d = [r for r in d if r["kind"] == "fit" and not any(v["missing"] for v in r["links"].values()) and r.get("resid_pV", 0.0) <= 0.05]   # prices must lie in V (as build11 ensures)
 NMAX = int(sys.argv[7]) if len(sys.argv) > 7 else len(d); d = d[::max(1, len(d) // NMAX)][:NMAX]
@@ -70,11 +70,14 @@ def model():
     m_al = numpyro.sample("m_al", dist.Normal(0.4, 0.3)); t_al = numpyro.sample("t_al", dist.HalfNormal(0.3))
     m_lb = numpyro.sample("m_lb", dist.Normal(0.0, 0.5)); t_lb = numpyro.sample("t_lb", dist.HalfNormal(0.3))
     m_a = numpyro.sample("m_a", dist.Normal(0.0, 40.0)); t_a = numpyro.sample("t_a", dist.HalfNormal(20.0))
-    m_b = numpyro.sample("m_b", dist.Normal(1.0, 0.4)); t_b = numpyro.sample("t_b", dist.HalfNormal(0.3))
+    if BPOS:   # fuel-cost loading positive by construction: b_z = exp(m_lbb + t_lbb z), median 1 (full pass-through)
+        m_lbb = numpyro.sample("m_lbb", dist.Normal(0.0, 0.3)); t_lbb = numpyro.sample("t_lbb", dist.HalfNormal(0.3))
+    else:
+        m_b = numpyro.sample("m_b", dist.Normal(1.0, 0.4)); t_b = numpyro.sample("t_b", dist.HalfNormal(0.3))
     m_ls = numpyro.sample("m_ls", dist.Normal(np.log(0.4), 0.5)); t_ls = numpyro.sample("t_ls", dist.HalfNormal(0.5))
     zz = numpyro.sample("zz", dist.Normal(0, 1).expand([5, NBz]))
     al = numpyro.deterministic("al", m_al + t_al * zz[0]); be = numpyro.deterministic("be", jnp.exp(m_lb + t_lb * zz[1]))
-    aa = numpyro.deterministic("aa", m_a + t_a * zz[2]); bb = numpyro.deterministic("bb", m_b + t_b * zz[3])
+    aa = numpyro.deterministic("aa", m_a + t_a * zz[2]); bb = numpyro.deterministic("bb", jnp.exp(m_lbb + t_lbb * zz[3]) if BPOS else m_b + t_b * zz[3])
     sg = numpyro.deterministic("sg", jnp.exp(m_ls + t_ls * zz[4]))
     sc = sg[None, :] * Lc[:, None]; zarg = (p[:, 1:] - aa[None, :] - bb[None, :] * Lc[:, None]) / sc
     g = jax.nn.sigmoid(zarg); S_nb = sbar[1:] * (al + be * g); dS_nb = sbar[1:] * be * g * (1 - g) / sc
@@ -102,6 +105,13 @@ init.update(m_al=0.4, t_al=0.1, m_lb=0.0, t_lb=0.1, m_a=0.0, t_a=10.0, m_b=1.0, 
 if "zz" in B:
     for k in ["m_al", "t_al", "m_lb", "t_lb", "m_a", "t_a", "m_b", "t_b", "m_ls", "t_ls", "zz", "sd_u", "nu", "sd_q", "beta_q", "nu_q", "mu_de"]:
         if k in B: init[k] = np.median(B[k], axis=0)
+if BPOS:
+    init.pop("m_b", None); init.pop("t_b", None); init.update(m_lbb=0.0, t_lbb=0.1)
+    zz0 = np.array(init["zz"], dtype=float); zz0[3] = 0.0                              # loadings start at 1 for every zone
+    if "bb" in B and "aa" in B:   # keep each zone's threshold a + b * mean(Lc) where the previous fit had it
+        Lm = float(np.mean(np.asarray(Lc))); a_new = np.median(B["aa"], 0) + (np.median(B["bb"], 0) - 1.0) * Lm
+        zz0[2] = (a_new - float(init["m_a"])) / float(init["t_a"])
+    init["zz"] = zz0
 if SHED: init.update(m_lo=-10.0, s_lo=10.0, shed_L=0.2, shed_C=0.2, shed_G=0.2)
 if ENDS: init.update(m_lo=-10.0, s_lo=10.0, m_hi=250.0, s_hi=50.0, rho_L=0.5, rho_C=0.5, rho_G=0.5, k_lo_de=1.0, k_hi_de=0.5, k_lo_nb=0.05, k_hi_nb=0.05)
 END_KEYS = ["m_lo", "s_lo", "m_hi", "s_hi", "rho_L", "rho_C", "rho_G", "k_lo_de", "k_hi_de", "k_lo_nb", "k_hi_nb"] if ENDS else (["m_lo", "s_lo", "rho_L", "rho_C", "rho_G"] if SHED else [])
