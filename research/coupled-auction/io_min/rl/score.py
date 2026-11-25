@@ -12,7 +12,7 @@ def load(n):
 def rl_of(R, corr=None):
     F = {}
     for t in comps:
-        f = R[f"{t}_{test}"].astype(float)
+        f = c.gate_mix(R[f"{t}_d1"], R[f"{t}_d2"], test) if test in ("gate8", "gate12", "interp") else R[f"{t}_{test}"].astype(float)
         if corr:
             r = R[f"{t}_prevtrue"] - R[f"{t}_prev_{RES}"]
             if corr == "mean": f = f + r.mean(1, keepdims=True)

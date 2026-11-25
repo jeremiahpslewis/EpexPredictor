@@ -4,16 +4,20 @@ import common as c
 proto = sys.argv[1]; test = sys.argv[2] if len(sys.argv) > 2 else "gate"; comps = ("wind", "solar", "load")
 def L(n): f = f"{c.OUT}/{n}_{proto}_autumn.npz"; return np.load(f) if os.path.exists(f) else None
 B = L("base"); T = B["load_true"] - B["wind_true"] - B["solar_true"]
-near = (np.arange(c.HZ) < c.GATE_D1)[None]
+lead = np.arange(c.HZ) / 4.0
+near = {"gate8": lead < 8, "gate12": lead < 12, "gate": lead < 8}.get(test, None)
 def get(R, t, corr=None, k=test):
-    f = R[f"{t}_{k}"].astype(float)
+    f = c.gate_mix(R[f"{t}_d1"], R[f"{t}_d2"], k) if k in ("gate8", "gate12", "interp") else R[f"{t}_{k}"].astype(float)
     if corr == "decay": f = f + (R[f"{t}_prevtrue"] - R[f"{t}_prev_d1"])[:, -24:].mean(1, keepdims=True) * np.exp(-(np.arange(c.HZ) + 1) / 96.0)[None]
     return f
 def combo(spec, corr_comps=()):
     F = {}
     for t in comps:
         src = spec[t]; corr = "decay" if t in corr_comps else None
-        if isinstance(src, tuple): F[t] = np.where(near, get(L(src[0]), t, corr), get(L(src[1]), t, corr))
+        if isinstance(src, tuple):
+            if test == "interp":   # d1-weather prediction of the first model, d2-weather prediction of the second, mixed by age
+                F[t] = c.gate_mix(get(L(src[0]), t, corr, "d1"), get(L(src[1]), t, corr, "d2"), "interp")
+            else: F[t] = np.where(near[None], get(L(src[0]), t, corr), get(L(src[1]), t, corr))
         else: F[t] = get(L(src), t, corr)
     return F["load"] - F["wind"] - F["solar"], F
 base, _ = combo({t: "base" for t in comps})
@@ -25,6 +29,7 @@ specs = {
     "COMP": ({"load": "base", "wind": "nots", "solar": "nots"}, ()),
     "COMP+decay(load)": ({"load": "base", "wind": "nots", "solar": "nots"}, ("load",)),
     "VM1": ({t: ("base", "trd1") for t in comps}, ()),
+    "VM1+decay(load)": ({t: ("base", "trd1") for t in comps}, ("load",)),
     "VM1+decay(all)": ({t: ("base", "trd1") for t in comps}, comps),
     "VMstack+decay(load)": ({t: ("base", "stack") for t in comps}, ("load",)),
 }

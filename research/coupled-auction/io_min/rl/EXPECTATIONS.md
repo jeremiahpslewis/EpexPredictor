@@ -60,3 +60,18 @@ Combinations from stored outputs (no new fits), labelled POST-HOC:
   Expect the best of these: day 1 -6 to -12 % vs base, night -3 to -8 %.
 - (added after trd1 single: gate 1.87 / 2.56 / 2.93) VM1 = base for d1 leads, trd1 for d2 leads, +decay(all): expect day 1
   about 2.40-2.50 (-13 to -17 %), h24-38 ~2.8; not clearly better than VM+decay(all) (difference within 0.1 GW).
+
+## E3 daily refit of the load model (reviewer check: is the load bias / D-1 correction gain an artefact of the weekly refit?)
+Written before running daily_load.py (base load model, refit every day on data up to noon D-2, gate weather):
+- load bias day 1 shrinks from -0.51 to about -0.3 GW (the `ts` lag remains, only the extra up-to-6-day staleness goes);
+  load MAE day 1 1.05 -> 0.97-1.02.
+- the load-only D-1 decay correction on top still helps: load MAE day 1 -5 to -10 % (vs weekly: 1.05 -> 0.93, -11 %), clear.
+
+## E4 corrected gate map (written before rescoring)
+Open-Meteo docs (previous-runs page): "_previous_day1 returns the value predicted 24 hours before valid time; _previous_day2
+48 hours before". So at the 12:00 D-1 gate, d1 exists for the first 12 h of D (48 qh, not 32), and the hours 12-24 of D
+have a forecast 24-36 h old (between d1 and d2); h24-38 have 36-50 h (about d2). Rescore with:
+ gate12 = d1 for 48 qh, d2 after (pessimistic for hours 12-24), and interp = per-lead mix of the d1- and d2-weather
+ predictions with weight on d2 = clip((age-24)/24, 0, 1), age = 24 h + max(0, lead-12 h) (approximation in prediction space).
+Expected: base day 1 gate12 about 2.6 (between 2.16 and 2.88); VM + load decay day 1 -6 to -10 % vs base (smaller than the
+-13 % on the 8-h map), clear; interp: -3 to -7 %, maybe not clear; h24-38 as before.

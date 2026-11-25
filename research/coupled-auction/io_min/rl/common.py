@@ -16,7 +16,7 @@ import numpy as np, pandas as pd, lightgbm as lgb
 SP = "/tmp/claude-0/-home-user-EpexPredictor/d6125cc0-c431-5b93-a06f-0110cd871ab6/scratchpad"
 OUT = f"{SP}/out/rl"
 HZ = 153
-GATE_D1 = 32                      # quarter hours of D covered by the 1-day-old run at the gate
+GATE_D1 = 32                      # first map (8 h); corrected map from the Open-Meteo docs: 48 (see gate_mix)
 PTS = json.load(open(f"{SP}/dense/points.json")); NON = PTS["onshore"]; LAT = np.array(PTS["points"])[:, 0]; LON = np.array(PTS["points"])[:, 1]
 NPT = len(LAT)
 LGB = {"force_col_wise": True, "verbosity": -1, "learning_rate": 0.05, "num_leaves": 31, "num_threads": 1}
@@ -102,3 +102,12 @@ def boot(cand, base, true, seg, reps=2000, block=7, seed=0):
 
 def local_hour(idx, d0):
     return idx[d0:d0 + HZ].tz_convert("Europe/Berlin").hour.to_numpy()
+
+
+def gate_mix(p1, p2, kind):
+    """rebuild gate predictions from predictions on all-d1 (p1) and all-d2 (p2) weather. kind: gate8 | gate12 | interp"""
+    lead = np.arange(p1.shape[-1]) / 4.0
+    if kind == "gate8": w = (lead >= 8).astype(float)
+    elif kind == "gate12": w = (lead >= 12).astype(float)
+    elif kind == "interp": w = np.clip((24 + np.maximum(0, lead - 12) - 24) / 24, 0, 1)
+    return (1 - w)[None] * p1 + w[None] * p2
