@@ -320,3 +320,21 @@ It is applied unchanged to 2026-03-01 to 2026-09-07 with the newly fetched notic
 
 If A2 fails, the availability explanation of the summer shift is dropped. If A1 fails, the frozen regression does not
 transfer, and no availability input is added to the fit.
+
+Result (2026-11-25). All 49 weekly files from 2025-09-01 to 2026-08-09 arrived with no failures. The earlier
+August–November 2026 fetch was reused for the rest, with its source tagged.
+
+Gate-known French nuclear unavailability by month (GW): Oct 17.4, Nov 12.2, Dec 8.1, Jan 10.3, Feb 10.8, Mar 14.9,
+Apr 17.0, May 19.4, Jun 18.5, Jul 17.9, Aug 22.7, Sep 22.6, Oct 23.1, Nov 18.9.
+
+Frozen regression applied to months not used to fit it, monthly predicted minus recovered French shock (GW): Mar +9.3,
+Apr +8.0, May +5.4, Jun +1.6, Jul −3.1, Aug −4.4, Sep −1.6.
+- **A1 met:** within ±5 GW in June, July and August.
+- **A2 met:** summer unavailability 19.9 GW against 9.8 GW in winter (+10.1).
+- **Spring misfit:** March to May are overpredicted by 5–9 GW. Those months were outside A1's window, so this is
+  reported, not used to judge.
+
+Reading: French nuclear availability explains most of the seasonal shift in France's shock, including the summer
+level that the holdout continued (gate-known unavailability about 23 GW in September and October). It is the
+candidate input for the French curve, for the model's own level and the counterfactuals. It does not add to the
+day-ahead forecast beyond carrying yesterday's shock (changes do not predict changes).
