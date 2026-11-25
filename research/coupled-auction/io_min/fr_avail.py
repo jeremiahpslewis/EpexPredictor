@@ -5,7 +5,10 @@ noon UTC: 'all' (every notice, whenever published) and 'pregate' (outages alread
 import sys, glob
 import numpy as np, pandas as pd
 SP, OUT = sys.argv[1], sys.argv[2]
-d = pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(f"{SP}/entsoe/fr_unavail_gen/*.parquet")) if pd.read_parquet(f).shape[0]])
+parts = [pd.read_parquet(f).assign(source="weekly") for f in sorted(glob.glob(f"{SP}/entsoe/fr_unavail_gen/*.parquet")) if pd.read_parquet(f).shape[0]]
+old = f"{SP}/entsoe/bt_unavail_gen_FR.parquet"          # earlier fetch (query windows 2026-08-01 to 2026-11-14), reused
+if __import__("os").path.exists(old): parts.append(pd.read_parquet(old).reset_index().assign(source="bt_2026-08..11"))
+d = pd.concat(parts, ignore_index=True)
 d = d[d.plant_type.astype(str) == "Nuclear"]; d = d[d.docstatus.astype(str) != "Cancelled"]
 d["created"] = pd.to_datetime(d["created_doc_time"], utc=True); d["start"] = pd.to_datetime(d["start"], utc=True); d["end"] = pd.to_datetime(d["end"], utc=True)
 d["rev"] = pd.to_numeric(d["revision"], errors="coerce").fillna(0)
