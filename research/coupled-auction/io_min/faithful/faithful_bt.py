@@ -342,8 +342,15 @@ async def main():
     t = time.time()
     await h.setup()
     log.info(f"setup {time.time() - t:.0f}s; {len(days)} days -> {a.out}")
+    failed = []
     for d in days:
-        await h.run_day(d)
+        try:
+            await h.run_day(d)
+        except Exception as e:  # a failed day (including a failed leak check) is logged and skipped, not fatal
+            log.exception(f"{d}: FAILED ({type(e).__name__}: {e})")
+            failed.append(str(d))
+    if failed:
+        log.warning(f"failed days ({len(failed)}): {', '.join(failed)}")
 
 
 if __name__ == "__main__":
