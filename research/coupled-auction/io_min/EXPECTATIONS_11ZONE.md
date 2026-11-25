@@ -274,3 +274,25 @@ Pre-run check (2026-11-25, training data only): the refit was not run.
   holdout error for the wrong reason.
 - The ENTSO-E French unavailability notices (bt_unavail_gen_FR) cannot be used as is: summed overlapping notices
   exceed the fleet (up to 238 GW), and none are counted before 2026.
+
+## French nuclear availability (2026-11-25, training data only)
+
+ENTSO-E generation-unit notices for France, fetched for 2025-09-01 to 2026-03-08 so far (`fetch_fr_unavail.py`,
+weekly chunks), cleaned by `fr_avail.py`:
+- cancelled documents dropped;
+- the latest revision per notice kept;
+- per unit, the largest unavailable MW among overlapping notices.
+
+The unit fleet sums to 63 GW. Unavailable capacity runs 9–19 GW from September 2025 to February 2026.
+
+The API returns only each notice's latest revision, most of which are created after the outage starts (median
++5 hours). The gate view is therefore approximated by outages already started by D−1 noon; their end dates come
+from the latest revision, which is disclosed.
+
+Against France's recovered shock on 905 training MTUs (October 2025 to February 2026):
+- correlation with gate-known unavailability: 0.49;
+- correlation with French residual load: −0.03;
+- FR shock ≈ −36.6 + 1.77 × unavailable GW + 0.33 × residual load GW, R² 0.35.
+
+French availability is a strong candidate input for the French curve. It needs the remaining notices
+(March–November 2026) before it can be used in a fit.
