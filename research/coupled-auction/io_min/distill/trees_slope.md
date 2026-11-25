@@ -34,15 +34,15 @@ Tree finite difference by the tree's own fitted-price band:
 variants: full = all frame features + rl; no_ts = without the time index; rlcalgas = calendar + gas + rl + ts; merit = calendar + gas + rl;
 |raw = price target only, |ratio = price/gas target only, default = mean of both (as deployed); |frozen = trained once to 2026-09-01.
 
-|                                |     MAE |    bias | vs full                 |
-|:-------------------------------|--------:|--------:|:------------------------|
-| full                           |   1.965 |  -0.011 | +0.000 [+0.000, +0.000] |
-| full|raw                       |   2.136 |  -0.258 | +0.171 [+0.073, +0.323] |
-| full|ratio                     |   2.017 |   0.235 | +0.052 [-0.050, +0.071] |
-| no_ts                          |   1.972 |  -0.136 | +0.008 [-0.042, +0.036] |
-| no_ts|raw                      |   2.174 |  -0.443 | +0.210 [+0.031, +0.420] |
-| rlcalgas                       |   2.260 |  -0.012 | +0.295 [+0.137, +0.541] |
-| merit|raw                      |   2.488 |  -0.337 | +0.523 [+0.270, +0.784] |
-| merit                          |   2.368 |  -0.215 | +0.404 [+0.190, +0.578] |
-| full|frozen                    | nan     | nan     | +nan [+nan, +nan]       |
-| T (deployed two-stage, stored) |   1.818 |  -0.282 | -0.146 [-0.306, +0.042] |
+|                                |   MAE |   bias | vs full                 |
+|:-------------------------------|------:|-------:|:------------------------|
+| full                           | 1.965 | -0.011 | +0.000 [+0.000, +0.000] |
+| full|raw                       | 2.136 | -0.258 | +0.171 [+0.062, +0.294] |
+| full|ratio                     | 2.017 |  0.235 | +0.052 [-0.047, +0.155] |
+| no_ts                          | 1.972 | -0.136 | +0.008 [-0.040, +0.056] |
+| no_ts|raw                      | 2.174 | -0.443 | +0.210 [+0.052, +0.378] |
+| rlcalgas                       | 2.260 | -0.012 | +0.295 [+0.094, +0.520] |
+| merit|raw                      | 2.488 | -0.337 | +0.523 [+0.291, +0.781] |
+| merit                          | 2.368 | -0.215 | +0.404 [+0.217, +0.591] |
+| full|frozen                    | 2.474 | -0.363 | +0.509 [+0.210, +0.829] |
+| T (deployed two-stage, stored) | 1.818 | -0.282 | -0.146 [-0.262, -0.027] |
