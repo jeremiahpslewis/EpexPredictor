@@ -454,10 +454,12 @@ The test was fixed in advance and run once; models were refitted on training dat
 - **The outage counterfactual under alternative priors.** It needs two eleven-zone refits (a tight prior at each end
   of the ridge, about 25 minutes each) plus outage re-runs on the v2 records (about 70 minutes each). Each needs
   approval.
-- **French availability.** France's recovered shock is seasonal (−9 to +18 GW by month), and the neighbour curves
-  have no availability input. A cleaned French nuclear availability series is the candidate input: the ENTSO-E
-  notices need deduplication by revision and have a coverage gap before 2026. The fuel-cost loading fix (fit11
-  BPOS=1) is coded but not run, because the evidence does not support fuel costs as the cause.
+- **French availability (tested; not added).** Gate-known French nuclear unavailability explains France's seasonal
+  shock: the frozen October–February relationship tracks June–August within ±5 GW, and summer unavailability exceeds
+  winter's by 10 GW (EXPECTATIONS_11ZONE.md). Day-to-day changes in availability do not predict changes in the shock,
+  so it cannot improve the day-ahead forecast beyond carrying yesterday's shock. It was not added to the model
+  (decision 2026-11-25). It would matter for the model's own level and for counterfactuals. The fuel-cost loading
+  fix (BPOS=1) stays unused.
 - **Outage counterfactual rerun** with the interior-point solver. It needs an exact convex form of the
   cheapest-unit cut.
 - **Deployed-predictor comparison.** It needs its past forecasts for the holdout, or a sealed backtest.
