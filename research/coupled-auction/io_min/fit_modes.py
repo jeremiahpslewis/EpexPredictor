@@ -23,7 +23,7 @@ BLOCK = int(os.environ.get("BLOCK", str(NS)))
 save = lambda G: np.savez(OUT, **{k: np.asarray(a).reshape((-1,) + np.asarray(a).shape[2:]) for k, a in G.items()}, init=INIT)
 mc = MCMC(NUTS(Mo.model, init_strategy=init_to_value(values=v), target_accept_prob=0.85, max_tree_depth=8),
           num_warmup=WARM, num_samples=min(BLOCK, NS), num_chains=NC, chain_method="parallel", progress_bar=False)
-mc.run(jax.random.PRNGKey(hash(INIT) % 2**31), x, obs, brk); blocks = [mc.get_samples(group_by_chain=True)]
+mc.run(jax.random.PRNGKey({"mode0": 10, "mode1": 11}.get(INIT, 12)), x, obs, brk); blocks = [mc.get_samples(group_by_chain=True)]
 print(f"warmup + block 1 at {time.time() - t0:.0f}s", flush=True)
 while sum(np.asarray(b["h_G"]).shape[1] for b in blocks) < NS:
     save({k: np.concatenate([np.asarray(b[k]) for b in blocks], 1) for k in blocks[0]})

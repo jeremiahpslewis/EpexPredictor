@@ -427,8 +427,11 @@ outages of rivals' units.
 - **Tight-headroom solves.** Hybrid-coupling MTUs at η = 0.10 still fail to converge 48% of the time. A solver that
   handles very tight domains (an interior-point method on the KKT system) would close this.
 - **The steep tail** found by the external check sits at the ends of the supply curves (floors and scarcity) and
-  in MTUs with generic inferred constraints. A richer curve shape at the ends, such as a mixture or a separate
-  scarcity segment, is the first thing to try.
+  in MTUs with generic inferred constraints. Two curve-end specifications were tried and both failed their null
+  recovery screens (EXPECTATIONS_11ZONE.md): free curtailment and scarcity segments, and German floor shedding alone.
+  Each invented flexibility on null data, the second by moving along the lignite floor/dispersion ridge. Pinning that
+  ridge with outside information (observed minimum lignite output, must-run data) comes before any further
+  curve-end change. Against the 0.8 target, the slope ratio stays at 0.69 on the training window.
 - **The outage counterfactual under alternative priors.** It needs two eleven-zone refits (a tight prior at each end
   of the ridge, about 25 minutes each) plus outage re-runs on the v2 records (about 70 minutes each). Each needs
   approval.

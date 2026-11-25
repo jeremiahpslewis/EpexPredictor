@@ -14,6 +14,7 @@ import numpy as np, pandas as pd
 PANEL, TG, OUT = sys.argv[1], sys.argv[2], sys.argv[3]; SPECS = sys.argv[4:]
 TRAIN_END = pd.Timestamp("2026-09-08", tz="UTC")
 Pn = pd.read_parquet(f"{PANEL}/panel.parquet"); T = pd.read_pickle(TG)
+N_DROP = int(T[["p", "m"]].isna().any(axis=1).sum()); T = T.dropna(subset=["p", "m"])      # hours without an observed target are dropped and reported
 FB_P, FB_M = float(Pn.p[Pn.index < TRAIN_END].mean()), float(Pn.m[Pn.index < TRAIN_END].mean())
 fc, miss = {}, {}
 for spec in SPECS:
@@ -34,7 +35,7 @@ err = {k: pd.DataFrame({"ep": v.p - T.p, "em": v.m - T.m}) for k, v in fc.items(
 band = pd.cut(T.p, [-1e9, 0, 40, 120, 200, 1e9], labels=["<=0", "0-40", "40-120", "120-200", ">200"])
 rows = [dict(forecast=k, price_MAE=e.ep.abs().mean(), price_RMSE=np.sqrt((e.ep ** 2).mean()), import_MAE=e.em.abs().mean(), missed_solves=miss[k]) for k, e in err.items()]
 out = [f"# Out-of-sample scores ({len(T)} hours, {T.index.min():%Y-%m-%d} to {T.index.max():%Y-%m-%d})", "",
-       f"Fallback for misses: training-window means, price {FB_P:.1f} EUR/MWh, net import {FB_M:.2f} GW.", "",
+       f"Fallback for misses: training-window means, price {FB_P:.1f} EUR/MWh, net import {FB_M:.2f} GW. Hours dropped for a missing target: {N_DROP}.", "",
        pd.DataFrame(rows).set_index("forecast").round(3).to_markdown(), "", "## Price MAE by observed price band", "",
        pd.DataFrame({k: e.ep.abs().groupby(band, observed=False).mean() for k, e in err.items()}).round(2).assign(hours=band.value_counts().reindex(band.cat.categories)).to_markdown(), ""]
 day = T.index.floor("D"); days = day.unique(); rng = np.random.default_rng(0)

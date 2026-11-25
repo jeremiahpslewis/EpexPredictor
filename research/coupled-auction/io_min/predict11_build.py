@@ -81,6 +81,7 @@ def outcome_record(t):
                 de=dict(Pg=float(row.Pg), tau=float(row.tau), hdd=float(row.hdd), K_L=float(row.K_lignite), K_C=float(row.K_coal), K_G=float(row.K_gas)),
                 Lc=1.85 * float(row.Pg) + 0.37 * float(row.tau), omit=(npr, fc.columns))
 
+FULL_OUTAGE_LINKS = {"DE_SE4_Baltic", "NL_NO2_NorNed", "PL_SE4_SwePol"}
 recs, skipped = [], {}
 ts = [t for t in grid if START <= t < END][::STRIDE]
 for t in ts:
@@ -102,13 +103,19 @@ for t in ts:
         lo = np.full(N.NY, -np.inf); hi = np.full(N.NY, np.inf); lo[N.IA], hi[N.IA] = -1000.0, 1000.0
         d0 = t.normalize()
         for l in N.LINKS:
-            f = LINKF[l].reindex(grid).fillna(0); f = f[(f.index >= d0 - 7 * DAY) & (f.index < d0)]
+            fa = LINKF[l].reindex(grid).fillna(0); f = fa[(fa.index >= d0 - 7 * DAY) & (fa.index < d0)]
+            # link limits: trailing 7-day maximum per direction. A notice means a full outage only on the three links
+            # with genuine full outages (prereg addendum 2), and only together with a zero schedule on D-1: on training
+            # data that rule is right ~85% of the time there, while notices on the other links mostly coincide with flow.
+            out0 = l[2] in FULL_OUTAGE_LINKS and bool(COV[l].asof(t)) and abs(float(fa.asof(tl))) < 0.5
             for jj, w in ((N.IF[l], f.clip(lower=0).max()), (N.IF[l] + 1, (-f).clip(lower=0).max())):
-                lo[jj] = 0.0; hi[jj] = 0.0 if bool(COV[l].asof(t)) else float(w)
-        row = prow(t); rowl = prow(tl)
-        D = np.array([float(load[z].asof(t)) - float(ws[z].asof(t)) for z in N.Z]); D[0] -= 1000 * float(rowl.other + rowl.psgen + rowl.pump)
+                lo[jj] = 0.0; hi[jj] = 0.0 if out0 else float(w)
+        row = prow(t); rowl = prow(tl); rowl2 = prow(t - 2 * DAY)
+        D = np.array([float(load[z].asof(t)) - float(ws[z].asof(t)) for z in N.Z]); D_a = D.copy()
+        D[0] -= 1000 * float(rowl.other + rowl.psgen + rowl.pump)          # variant b: cancels against the lag record's D
+        D_a[0] -= 1000 * float(rowl2.other + rowl2.psgen + rowl2.pump)     # variant a: realised output of D-2, known at the gate
         X = lag["X"].copy()
-        rec = dict(t=t, H=H, e=e, e0=e0, A=A, b=b, lo=lo, hi=hi, active_vh=active_vh, D=D, X=X,
+        rec = dict(t=t, H=H, e=e, e0=e0, A=A, b=b, lo=lo, hi=hi, active_vh=active_vh, D=D, D_a=D_a, X=X,
                    de=dict(Pg=float(row.Pg), tau=float(row.tau), hdd=float(row.hdd), K_L=float(row.K_lignite), K_C=float(row.K_coal), K_G=float(row.K_gas)),
                    Lc=1.85 * float(row.Pg) + 0.37 * float(row.tau), lag={k: v for k, v in lag.items() if k != "omit"})
         if not np.all(np.isfinite(np.r_[D, X, b])): skipped[str(t)] = "non-finite inputs"; continue

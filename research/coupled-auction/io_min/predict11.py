@@ -43,7 +43,8 @@ def one(args):
                 lg = r["lag"]; cl, tl = V.curves_logistic(th, nb, lg); S_l, _ = V.supply_fn(cl, tl)(lg["p"])
                 us = [(S_l - lg["D"] - lg["X"] - lg["n"]) / 1000.0]
             for u in us:
-                p, y, fl = clear(const, terms, r["D"] + r["X"] + 1000 * u, r)
+                try: p, y, fl = clear(const, terms, (r.get("D_a", r["D"]) if variant == "a" else r["D"]) + r["X"] + 1000 * u, r)
+                except Exception: p, y, fl = None, None, "miss"
                 flags.append(fl)
                 pd_draws.append(p[0] if p is not None else np.nan); md_draws.append(-(r["H"] @ y)[0] / 1000.0 if p is not None else np.nan)
         out.append(dict(t=r["t"], variant=variant, p_draws=pd_draws, m_draws=md_draws,
@@ -51,7 +52,16 @@ def one(args):
     return out
 
 if __name__ == "__main__":
-    recs = pickle.load(open(RECS, "rb"))["recs"]
-    with Pool(4) as pool: rows = [x for o in pool.map(one, list(enumerate(recs)), chunksize=4) for x in o]
-    R = pd.DataFrame(rows); R.to_pickle(OUT)
+    # saved by day (OUT.d/YYYYMMDD.pkl); a rerun skips finished days, so a stopped run loses at most one day
+    import os
+    recs = pickle.load(open(RECS, "rb"))["recs"]; os.makedirs(OUT + ".d", exist_ok=True); NW = int(os.environ.get("NWORKERS", "4"))
+    days = sorted({r["t"].normalize() for r in recs})
+    with Pool(NW) as pool:
+        for dday in days:
+            f = f"{OUT}.d/{dday:%Y%m%d}.pkl"
+            if os.path.exists(f): continue
+            idx = [(k, r) for k, r in enumerate(recs) if r["t"].normalize() == dday]
+            rows = [x for o in pool.map(one, idx, chunksize=4) for x in o]
+            pd.DataFrame(rows).to_pickle(f + ".tmp"); os.replace(f + ".tmp", f); print(f"{dday:%Y-%m-%d} done", flush=True)
+    R = pd.concat([pd.read_pickle(f"{OUT}.d/{dday:%Y%m%d}.pkl") for dday in days]); R.to_pickle(OUT)
     print(R.groupby("variant")[["conv", "relaxed"]].mean().round(3).to_string())

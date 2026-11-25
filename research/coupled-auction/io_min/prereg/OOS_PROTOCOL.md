@@ -93,3 +93,27 @@ Holdout prediction records are built by a separate script that does not open tho
   - with lagged shocks too: 15.3 and 1.73.
 - **Resolution.** The quarter-hour −n_DE differs from the hourly `m` by up to 3 GW; at hourly means the two agree
   within 0.05 GW. Scoring is hourly.
+
+## Addendum 2 (2026-11-25, before any holdout forecast): frozen specification and run settings
+
+- **Eleven-zone model.** Current curves. Both curve-end variants failed their null screens and are dropped
+  (EXPECTATIONS_11ZONE.md). Posterior: the training-window refit `post_train_old.npz` (sha256 prefix 6e18322b59ed56d5), 800 draws.
+  The forecast uses 2 posterior draws (indices 0 and 799, one per chain), 5 shock draws per draw in variant (a), and
+  seed 1.
+- **Two-zone benchmark.** Basin mode 0, which led by about 167 nats on the full sample (BENCHMARK_RESULTS.md). Fitted
+  on training hours only: 2 chains started at the mode-0 medians, 300 warmup and 300 draws, fixed seed 10, saved every
+  100 draws. Convergence rule: max r-hat ≤ 1.05 over the German fuel block and the shock parameters. If it is not
+  met, the fit is reported as not converged and still used, with the r-hat stated beside every two-zone score. The
+  forecast uses 2 draws (first and last) and 5 shock draws in variant (a).
+- **Link limits** (changed from the dry-run builder). Training data show that outage notices mostly coincide with
+  flow. On DE–DK1 and DE–DK2, 99% of covered MTUs have flow; on NordLink, 91%. A limit is therefore zero only on the
+  three links with genuine full outages (Baltic Cable, NorNed, SwePol), and only when a notice covers the MTU and the
+  D−1 schedule was zero. There the rule is right about 85% of the time. Otherwise the limit is the trailing 7-day
+  maximum. Notices are not filtered by publication time; that is a disclosed deviation.
+- **Realised generation timing.**
+  - Variant (b): realised German other / storage output enters through t − 24 h on both sides and cancels. The load
+    reduces to yesterday's supply minus net position plus the change in published forecasts.
+  - Variant (a): uses the realised output of t − 48 h, which is known at the gate, in both models.
+- **Targets.** 1,488 holdout hours. One hour (2026-11-08 23:00 UTC) has no observed target and is dropped and
+  reported.
+- **Holdout prediction records:** `pred_holdout.pkl` (sha256 prefix a30ebc4650ffcd2d), 5,952 MTUs, none skipped.

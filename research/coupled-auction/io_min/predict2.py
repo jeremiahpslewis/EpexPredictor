@@ -19,8 +19,11 @@ Pn = pd.read_parquet(f"{PANEL}/panel.parquet"); S = dict(np.load(POST)); nS = le
 hrs = Pn.index[(Pn.index >= START) & (Pn.index < END)]; lag = hrs - pd.Timedelta(hours=24)
 ok = lag.isin(Pn.index); hrs, lag = hrs[ok], lag[ok]
 Xh = Pn.loc[hrs].copy(); Xl = Pn.loc[lag]
-Xh["DDE"] = Xh.rl.to_numpy() - (Xl.other + Xl.psgen + Xl.pump - Xl.ch).to_numpy()       # pre-gate German residual demand
-xh, _, _ = Mo.to_inputs(Xh); xl, obs_l, _ = Mo.to_inputs(Xl)
+Xh["DDE"] = Xh.rl.to_numpy() - (Xl.other + Xl.psgen + Xl.pump - Xl.ch).to_numpy()       # variant b: cancels against the lag's DDE
+lag2 = hrs - pd.Timedelta(hours=48); Xl2 = Pn.reindex(lag2)
+Xa = Xh.copy(); Xa["DDE"] = Xh.rl.to_numpy() - (Xl2.other + Xl2.psgen + Xl2.pump - Xl2.ch).to_numpy()   # variant a: D-2 realised output
+Xa["DDE"] = Xa.DDE.fillna(Xh.DDE)
+xh, _, _ = Mo.to_inputs(Xh); xa, _, _ = Mo.to_inputs(Xa); xl, obs_l, _ = Mo.to_inputs(Xl)
 rng = np.random.default_rng(SEED); rows = []
 for i in DR:
     th = Mo.theta_from(S, i); mu, rho, sd, nu = S["mu"][i], S["rho"][i], S["sd_u"][i], float(S["nu"][i]); L = S["Lcorr"][i]
@@ -32,7 +35,7 @@ for i in DR:
         us["a"].append(mu + (z @ (sd[:, None] * L).T) / np.sqrt(w) / np.sqrt(1 - rho ** 2))
     for v, ul in us.items():
         for u in ul:
-            c = Mo.clear(th, xh, jnp.asarray(u)); p, m = np.asarray(c["pDE"]), np.asarray(c["m"])
+            c = Mo.clear(th, xa if v == "a" else xh, jnp.asarray(u)); p, m = np.asarray(c["pDE"]), np.asarray(c["m"])
             bad = (p <= Mo.PMIN + 1) | (p >= Mo.PMAX - 1) | ~np.isfinite(p)
             rows.append(pd.DataFrame({"h": hrs, "variant": v, "draw": int(i), "p": np.where(bad, np.nan, p), "m": np.where(bad, np.nan, m)}))
 R = pd.concat(rows); R.to_pickle(OUT); print("two-zone forecasts", len(R), "rows; miss share", R.p.isna().groupby(R.variant).mean().round(3).to_dict())
