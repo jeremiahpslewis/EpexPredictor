@@ -1,5 +1,22 @@
 # Why are the flexible forecasters more accurate than the eleven-zone model, and can we distill them into it?
 
+> **Correction (2026-11-25, after review; post hoc, `ablate_noE.md`).** The fuel-scaled "correction" does not need
+> the structural model. The same learner, rows, split and features with E_s removed (`ablate_noE.py`) scores 2.29
+> trained once and 2.07 refit daily, at least as good as R1s/R2s (2.39 / 2.29). The gain attributed below to correcting
+> E_s comes from the learner itself, so the recommendation to keep the eleven-zone model "with a grey-box correction"
+> for forecasting is withdrawn: as a forecast it adds nothing even as an input. For reference, plain persistence
+> (yesterday's price) scores 4.55, so E_s does beat naive persistence.
+>
+> Further caveats from review, not yet re-run:
+> - the training-period structural errors the correction learns from are in-sample for the posterior and use
+>   published inputs, while it is applied to strict out-of-sample errors;
+> - the merit-order-only trees use archive weather, so "beats E_s at equal information" is not established;
+> - the statement that the structural model "did not move" at the hybrid coupling go-live compares in-sample
+>   structural errors with walk-forward trees, from one event; treat it as a hypothesis;
+> - tree finite-difference slopes flatten mechanically in the tails (trees cannot extrapolate; weather features share
+>   the effect; bands condition on the observed price), so the band comparison is qualitative;
+> - the 0.51 / 0.17 / 0.30 figures are ablations of the trees in this window, not a decomposition of the gap.
+
 **Short answer.**
 - **The trees do learn market structure, but only in reduced form.** Their implied price response to residual load
   matches the eleven-zone curves in the mid band (40–200 EUR/MWh). At the curve ends it is much flatter: 2.5× at
