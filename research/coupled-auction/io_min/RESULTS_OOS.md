@@ -49,11 +49,17 @@ forecasts as a stand-in for participants' own, and outage notices not filtered b
   NO2 +0.6 → −4.9, AT +0.3 → +2.8, PL +0.6 → +2.1, SE4 +0.2 → +2.1; Germany −2.1 → −1.7. Summed over zones, the
   evening shock rises from +15 to +29 GW. A positive shock means the model's supply exceeds what is needed at the
   observed price, so it predicts too low.
-- **Why only the eleven-zone unconditional forecast underestimates.** It underestimates at every time of day,
-  most at the evening peak (−43) and morning ramp (−31). The unconditional two-zone forecast does not (+0.1 to
-  +18), so the cause is specific to the eleven-zone neighbour curves at fuel costs they were not fitted on; the
-  French curve's fuel-cost loading was already negative in the training fit. The carried shock (variant b)
-  absorbs the error.
+- **Why only the eleven-zone unconditional forecast underestimates: cause not established.** It underestimates at
+  every time of day, most at the evening peak (−43) and morning ramp (−31). The unconditional two-zone forecast does
+  not (+0.1 to +18), so the cause is specific to the eleven-zone model. The carried shock (variant b) absorbs the
+  error. Fuel-cost extrapolation was the first candidate, but a training-only check (2026-11-25) points elsewhere:
+  - France's modelled supply at the holdout's typical price and cost index (174, 182) is 62.7 GW, against 63.0 at
+    training's (100, 108). The curve itself barely moves between the windows.
+  - France's recovered shock is strongly seasonal within training: +8.2 GW in October 2025 at a low cost index
+    (90), −3.6 to −9.1 in winter, then rising through 2026 to +18 in August and +16 in September. The holdout's
+    +15.5 continues that late-summer level.
+  - The likely cause is French need or availability (nuclear output, heating load), which the neighbour curves do
+    not include. The cost index rose over 2026 alongside the season, so the two are confounded.
 - **Deployed predictor (hypothesis only).** The deployed predictor's reported pattern (peaks underestimated, nights
   fine) resembles the unconditional variant's. That rests on one day of retail prices and is not tested here.
 - **Price bands.** These condition on the observed price, so every smooth forecast looks worst at the extremes. At

@@ -437,8 +437,8 @@ The test was fixed in advance and run once; models were refitted on training dat
   by 6.9 EUR/MWh [4.9, 9.2] and on net imports by 0.45 GW [0.26, 0.66] (90% block bootstrap).
 - **Low prices.** It is weakest at prices at or below zero (35 hours), consistent with the curve-end misfit.
 - **Time of day.** The carried shock gives it small biases by time of day (−5 at the evening peak). The model's own
-  level (unconditional variant) is off by 8–43 EUR/MWh, because the holdout's fuel costs lie entirely outside the
-  training range and the neighbour curves extrapolate badly (France's recovered shock moves from +2.8 to +15.5 GW).
+  level (unconditional variant) is off by 8–43 EUR/MWh. France's recovered shock moves from +2.8 to +15.5 GW; a
+  training-only check points to seasonal French need or availability rather than fuel costs (`RESULTS_OOS.md`).
 - **Scope.** The deployed predictor was not scored, and the naive baseline is weak in this window.
 
 ## 11. Open
@@ -454,9 +454,10 @@ The test was fixed in advance and run once; models were refitted on training dat
 - **The outage counterfactual under alternative priors.** It needs two eleven-zone refits (a tight prior at each end
   of the ridge, about 25 minutes each) plus outage re-runs on the v2 records (about 70 minutes each). Each needs
   approval.
-- **Fuel-cost extrapolation.** The neighbour curves load on the fuel-cost index, and the holdout lies outside the
-  training range. A loading that is monotone by construction, or a fuel-cost index per zone, is the next model
-  change.
+- **French availability.** France's recovered shock is seasonal (−9 to +18 GW by month), and the neighbour curves
+  have no availability input. A cleaned French nuclear availability series is the candidate input: the ENTSO-E
+  notices need deduplication by revision and have a coverage gap before 2026. The fuel-cost loading fix (fit11
+  BPOS=1) is coded but not run, because the evidence does not support fuel costs as the cause.
 - **Outage counterfactual rerun** with the interior-point solver. It needs an exact convex form of the
   cheapest-unit cut.
 - **Deployed-predictor comparison.** It needs its past forecasts for the holdout, or a sealed backtest.

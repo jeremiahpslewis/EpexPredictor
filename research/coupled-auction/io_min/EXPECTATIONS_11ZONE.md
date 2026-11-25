@@ -265,3 +265,12 @@ Expectations:
 
 F3 and F4 read holdout outcomes and cannot be clean tests: the specification was chosen after seeing the first
 holdout score. F1 and F2 can be.
+
+Pre-run check (2026-11-25, training data only): the refit was not run.
+- France's modelled supply is the same at the holdout's typical (price, index) as at training's (62.7 vs 63.0 GW).
+- France's recovered shock is seasonal within training: +8.2 GW in October 2025 at a low index, −9.1 in February,
+  +18.4 in August.
+- The evidence points to French need or availability, not fuel costs. Forcing the loading positive could cut the
+  holdout error for the wrong reason.
+- The ENTSO-E French unavailability notices (bt_unavail_gen_FR) cannot be used as is: summed overlapping notices
+  exceed the fleet (up to 238 GW), and none are counted before 2026.
