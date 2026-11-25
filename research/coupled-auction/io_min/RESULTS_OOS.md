@@ -129,3 +129,22 @@ re-scored with that draw.
   shocks drift seasonally (France −9 to +18 GW by month), so it pulls forecasts back towards training-era levels.
 - A local-level state model (random walk plus noise per zone, filtered) would follow a drifting level without that
   pull. It is the suggested next form.
+
+## Variant (d): local-level shock forecaster (protocol addendum 5); not taken to the holdout
+
+The forecast is an exponentially weighted average of the same MTU's recovered shocks over the past 7 days, with
+weights summing to 1. Validation inside training (956 MTUs to fit, 244 to validate):
+- The training-chosen λ = 0.7 gives weights 0.33, 0.23, 0.16, 0.11, 0.08, 0.06, 0.04 from yesterday back.
+- **V1d met:** summed shock RMSE 20.5 GW against 21.2 for carrying yesterday's shock. DE 3.42 against 3.62; FR worse,
+  8.07 against 7.76.
+- **V2d not met:** German price MAE 17.18 against 16.61 (bias +0.6 against −0.1).
+
+By the pre-registered rule, (d) is not scored on the holdout.
+
+**What the persistence work shows.** Two persistence models predict the shocks better than carrying yesterday's
+shock, but neither improves the German price forecast reliably:
+- (c) was marginal in training and not established on the holdout;
+- (d) was worse in training.
+
+Yesterday's shock is a strong predictor for price. The price errors that remain are not mainly about shock
+persistence.

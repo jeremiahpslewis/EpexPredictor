@@ -148,3 +148,20 @@ evaluated on 2026-07-01 to 2026-09-07, both on shock prediction and on cleared G
 
 **Holdout.** If it is scored there, that is a post-hoc addition: the holdout has already been scored once, and the
 first scores remain the reference.
+
+## Addendum 5 (2026-11-25): local-level shock forecaster, variant (d), validated inside training first
+
+Variant (c) reverted shocks towards their training mean and doubled the evening-peak bias on the holdout. Variant (d)
+uses the steady state of a random-walk-plus-noise model instead:
+
+    u_z,t = Σ_{k=1..7} w_k u_z,t−kd,      w_k ∝ λ^(k−1),  Σ w_k = 1
+
+There is one λ shared by all zones, chosen on a grid of 0.0–0.9 by shock RMSE (summed over zones) on training MTUs up
+to 2026-06-30. λ = 0 reproduces variant (b).
+
+Validation on 2026-07-01 to 2026-09-07:
+- V1d: shock RMSE summed over zones below (b)'s.
+- V2d: German price MAE below (b)'s on the same validation records, with a mean bias no further from zero than (b)'s
+  plus 2 EUR/MWh.
+
+If either fails, (d) is not taken to the holdout. If both pass, it is scored there post hoc, labelled as such.
