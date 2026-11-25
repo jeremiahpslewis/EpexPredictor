@@ -117,3 +117,12 @@ Holdout prediction records are built by a separate script that does not open tho
 - **Targets.** 1,488 holdout hours. One hour (2026-11-08 23:00 UTC) has no observed target and is dropped and
   reported.
 - **Holdout prediction records:** `pred_holdout.pkl` (sha256 prefix a30ebc4650ffcd2d), 5,952 MTUs, none skipped.
+
+## Addendum 3 (2026-11-25, runs started, before any holdout score)
+
+- **Time-of-day split.** Price errors are also reported by local time-of-day window (night 0–6, ramp 6–10,
+  midday 10–16, evening peak 16–21, late 21–24) as signed bias and MAE. The user reported that the deployed
+  predictor tracks nights well but underestimates daytime and evening peaks; this split tests whether the structural
+  forecasts share that pattern.
+- **Deployed predictor.** It is not a comparator here: its past day-ahead forecasts are not archived in the
+  repository. Reconstructing them for the holdout is a separate task.

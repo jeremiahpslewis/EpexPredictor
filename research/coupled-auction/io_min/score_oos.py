@@ -38,6 +38,12 @@ out = [f"# Out-of-sample scores ({len(T)} hours, {T.index.min():%Y-%m-%d} to {T.
        f"Fallback for misses: training-window means, price {FB_P:.1f} EUR/MWh, net import {FB_M:.2f} GW. Hours dropped for a missing target: {N_DROP}.", "",
        pd.DataFrame(rows).set_index("forecast").round(3).to_markdown(), "", "## Price MAE by observed price band", "",
        pd.DataFrame({k: e.ep.abs().groupby(band, observed=False).mean() for k, e in err.items()}).round(2).assign(hours=band.value_counts().reindex(band.cat.categories)).to_markdown(), ""]
+# time-of-day split (protocol addendum 3): local time, signed bias (forecast minus observed) and MAE per window
+loc = T.index.tz_convert("Europe/Berlin").hour
+win = pd.cut(loc, [-1, 5, 9, 15, 20, 23], labels=["night 0-6", "ramp 6-10", "midday 10-16", "evening peak 16-21", "late 21-24"])
+out += ["## Price by time of day (local): bias (forecast − observed) / MAE, EUR/MWh", "",
+        pd.DataFrame({k: [f"{e.ep[win == w].mean():+.1f} / {e.ep[win == w].abs().mean():.1f}" for w in win.categories] for k, e in err.items()},
+                     index=win.categories).assign(hours=[int((win == w).sum()) for w in win.categories]).to_markdown(), ""]
 day = T.index.floor("D"); days = day.unique(); rng = np.random.default_rng(0)
 idx = {d: np.flatnonzero(day == d) for d in days}; B = [np.concatenate([idx[d] for d in rng.choice(days, len(days))]) for _ in range(1000)]
 def paired(a, b, col):
