@@ -31,7 +31,7 @@ def clear(const, terms, load, r):
 
 def one(args):
     k, r = args; rng = np.random.default_rng(SEED * 1000003 + k); out = []
-    for variant in ("a", "b"):
+    for variant in tuple(__import__("os").environ.get("VARIANTS", "ab")):
         pd_draws, md_draws, flags = [], [], []      # one entry per solve; NaN = miss (the scorer substitutes the fallback)
         for th, nb, sh in THETAS:
             const, terms = V.curves_logistic(th, nb, r)
