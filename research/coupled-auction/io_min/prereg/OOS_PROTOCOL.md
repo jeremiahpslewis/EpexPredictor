@@ -126,3 +126,25 @@ Holdout prediction records are built by a separate script that does not open tho
   forecasts share that pattern.
 - **Deployed predictor.** It is not a comparator here: its past day-ahead forecasts are not archived in the
   repository. Reconstructing them for the holdout is a separate task.
+
+## Addendum 4 (2026-11-25): shock persistence forecaster, variant (c); validated inside training first
+
+Motivation: the user's suggestion to forecast short-run availability through persistence rather than model it. Variant
+(b), yesterday's shock carried forward unchanged, was the best holdout forecast.
+
+**Variant (c).** For each zone z, a shrinkage autoregression on the recovered shocks at lags of 1, 2 and 7 days:
+
+    u_z,t = c_z + φ1_z u_z,t−1d + φ2_z u_z,t−2d + φ7_z u_z,t−7d + e
+
+- Estimated by Bayesian linear regression with prior φ ~ N(0, 0.5²), c ~ N(0, 5²), using the posterior mean.
+- Fitted on recovered shocks of training MTUs, with the current-curve training posterior (draw 0).
+- All three lags are outcomes known before the D−1 gate.
+
+**Validation inside training, before any holdout use.** Coefficients are estimated on MTUs up to 2026-06-30 and
+evaluated on 2026-07-01 to 2026-09-07, both on shock prediction and on cleared German price.
+- V1: (c) has lower shock RMSE than (b) for the sum over zones and for DE and FR individually.
+- V2: on cleared German price over 400 validation MTUs, (c) has a lower MAE than (b).
+- If V1 or V2 fails, variant (c) is not taken to the holdout.
+
+**Holdout.** If it is scored there, that is a post-hoc addition: the holdout has already been scored once, and the
+first scores remain the reference.

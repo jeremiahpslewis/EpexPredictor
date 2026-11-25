@@ -81,53 +81,54 @@ def outcome_record(t):
                 de=dict(Pg=float(row.Pg), tau=float(row.tau), hdd=float(row.hdd), K_L=float(row.K_lignite), K_C=float(row.K_coal), K_G=float(row.K_gas)),
                 Lc=1.85 * float(row.Pg) + 0.37 * float(row.tau), omit=(npr, fc.columns))
 
-FULL_OUTAGE_LINKS = {"DE_SE4_Baltic", "NL_NO2_NorNed", "PL_SE4_SwePol"}
-recs, skipped = [], {}
-ts = [t for t in grid if START <= t < END][::STRIDE]
-for t in ts:
-    try:
-        tl = t - DAY; lag = outcome_record(tl)
-        if lag is None: skipped[str(t)] = "no lag outcome"; continue
-        fc = jao("finalComputation", t); fc = fc[fc.dateTimeUtc == f"{t.floor('h'):%Y-%m-%dT%H:%M}:00Z"]
-        if len(fc) == 0: skipped[str(t)] = "no domain"; continue
-        hubs = [c[5:] for c in fc.columns if c.startswith("ptdf_")]
-        active_vh = [h for _, _, h in N.LINKS if f"ptdf_{h}" in fc and fc[f"ptdf_{h}"].notna().any()]
-        H = N.build_H(active_vh); e = N.core_balance(active_vh)
-        npl = lag["omit"][0]; gl = lambda h: float(npl.get(f"hub_{h}")) if pd.notna(npl.get(f"hub_{h}")) else 0.0
-        omit_np = np.array([gl(o) for o in N.OMIT])
-        extra = [h for h in hubs if h not in N.CORE + N.OMIT + ["ALBE", "ALDE"] + [l[2] for l in N.LINKS] and pd.notna(npl.get(f"hub_{h}"))]
-        e0 = -omit_np.sum() - sum(gl(h) for h in extra)
-        Pm = fc[[f"ptdf_{h}" for h in hubs]].astype(float).fillna(0.0).to_numpy(); hc = {h: i for i, h in enumerate(hubs)}
-        A = np.array([N.ptdf_to_y(lambda h: Pm[k, hc[h]] if h in hc else 0.0, active_vh) for k in range(len(fc))])
-        b = fc.ram.astype(float).to_numpy() - Pm[:, [hc[o] for o in N.OMIT + extra]] @ np.r_[omit_np, [gl(h) for h in extra]]
-        lo = np.full(N.NY, -np.inf); hi = np.full(N.NY, np.inf); lo[N.IA], hi[N.IA] = -1000.0, 1000.0
-        d0 = t.normalize()
-        for l in N.LINKS:
-            fa = LINKF[l].reindex(grid).fillna(0); f = fa[(fa.index >= d0 - 7 * DAY) & (fa.index < d0)]
-            # link limits: trailing 7-day maximum per direction. A notice means a full outage only on the three links
-            # with genuine full outages (prereg addendum 2), and only together with a zero schedule on D-1: on training
-            # data that rule is right ~85% of the time there, while notices on the other links mostly coincide with flow.
-            out0 = l[2] in FULL_OUTAGE_LINKS and bool(COV[l].asof(t)) and abs(float(fa.asof(tl))) < 0.5
-            for jj, w in ((N.IF[l], f.clip(lower=0).max()), (N.IF[l] + 1, (-f).clip(lower=0).max())):
-                lo[jj] = 0.0; hi[jj] = 0.0 if out0 else float(w)
-        row = prow(t); rowl = prow(tl); rowl2 = prow(t - 2 * DAY)
-        D = np.array([float(load[z].asof(t)) - float(ws[z].asof(t)) for z in N.Z]); D_a = D.copy()
-        D[0] -= 1000 * float(rowl.other + rowl.psgen + rowl.pump)          # variant b: cancels against the lag record's D
-        D_a[0] -= 1000 * float(rowl2.other + rowl2.psgen + rowl2.pump)     # variant a: realised output of D-2, known at the gate
-        X = lag["X"].copy()
-        rec = dict(t=t, H=H, e=e, e0=e0, A=A, b=b, lo=lo, hi=hi, active_vh=active_vh, D=D, D_a=D_a, X=X,
-                   de=dict(Pg=float(row.Pg), tau=float(row.tau), hdd=float(row.hdd), K_L=float(row.K_lignite), K_C=float(row.K_coal), K_G=float(row.K_gas)),
-                   Lc=1.85 * float(row.Pg) + 0.37 * float(row.tau), lag={k: v for k, v in lag.items() if k != "omit"})
-        if not np.all(np.isfinite(np.r_[D, X, b])): skipped[str(t)] = "non-finite inputs"; continue
-        recs.append(rec)
-    except Exception as ex:
-        skipped[str(t)] = f"{type(ex).__name__}: {ex}"[:200]
-pickle.dump(dict(recs=recs, skipped=skipped), open(OUT, "wb"))
-print("prediction records", len(recs), "skipped", len(skipped), list(skipped.items())[:3])
+if __name__ == "__main__":
+    FULL_OUTAGE_LINKS = {"DE_SE4_Baltic", "NL_NO2_NorNed", "PL_SE4_SwePol"}
+    recs, skipped = [], {}
+    ts = [t for t in grid if START <= t < END][::STRIDE]
+    for t in ts:
+        try:
+            tl = t - DAY; lag = outcome_record(tl)
+            if lag is None: skipped[str(t)] = "no lag outcome"; continue
+            fc = jao("finalComputation", t); fc = fc[fc.dateTimeUtc == f"{t.floor('h'):%Y-%m-%dT%H:%M}:00Z"]
+            if len(fc) == 0: skipped[str(t)] = "no domain"; continue
+            hubs = [c[5:] for c in fc.columns if c.startswith("ptdf_")]
+            active_vh = [h for _, _, h in N.LINKS if f"ptdf_{h}" in fc and fc[f"ptdf_{h}"].notna().any()]
+            H = N.build_H(active_vh); e = N.core_balance(active_vh)
+            npl = lag["omit"][0]; gl = lambda h: float(npl.get(f"hub_{h}")) if pd.notna(npl.get(f"hub_{h}")) else 0.0
+            omit_np = np.array([gl(o) for o in N.OMIT])
+            extra = [h for h in hubs if h not in N.CORE + N.OMIT + ["ALBE", "ALDE"] + [l[2] for l in N.LINKS] and pd.notna(npl.get(f"hub_{h}"))]
+            e0 = -omit_np.sum() - sum(gl(h) for h in extra)
+            Pm = fc[[f"ptdf_{h}" for h in hubs]].astype(float).fillna(0.0).to_numpy(); hc = {h: i for i, h in enumerate(hubs)}
+            A = np.array([N.ptdf_to_y(lambda h: Pm[k, hc[h]] if h in hc else 0.0, active_vh) for k in range(len(fc))])
+            b = fc.ram.astype(float).to_numpy() - Pm[:, [hc[o] for o in N.OMIT + extra]] @ np.r_[omit_np, [gl(h) for h in extra]]
+            lo = np.full(N.NY, -np.inf); hi = np.full(N.NY, np.inf); lo[N.IA], hi[N.IA] = -1000.0, 1000.0
+            d0 = t.normalize()
+            for l in N.LINKS:
+                fa = LINKF[l].reindex(grid).fillna(0); f = fa[(fa.index >= d0 - 7 * DAY) & (fa.index < d0)]
+                # link limits: trailing 7-day maximum per direction. A notice means a full outage only on the three links
+                # with genuine full outages (prereg addendum 2), and only together with a zero schedule on D-1: on training
+                # data that rule is right ~85% of the time there, while notices on the other links mostly coincide with flow.
+                out0 = l[2] in FULL_OUTAGE_LINKS and bool(COV[l].asof(t)) and abs(float(fa.asof(tl))) < 0.5
+                for jj, w in ((N.IF[l], f.clip(lower=0).max()), (N.IF[l] + 1, (-f).clip(lower=0).max())):
+                    lo[jj] = 0.0; hi[jj] = 0.0 if out0 else float(w)
+            row = prow(t); rowl = prow(tl); rowl2 = prow(t - 2 * DAY)
+            D = np.array([float(load[z].asof(t)) - float(ws[z].asof(t)) for z in N.Z]); D_a = D.copy()
+            D[0] -= 1000 * float(rowl.other + rowl.psgen + rowl.pump)          # variant b: cancels against the lag record's D
+            D_a[0] -= 1000 * float(rowl2.other + rowl2.psgen + rowl2.pump)     # variant a: realised output of D-2, known at the gate
+            X = lag["X"].copy()
+            rec = dict(t=t, H=H, e=e, e0=e0, A=A, b=b, lo=lo, hi=hi, active_vh=active_vh, D=D, D_a=D_a, X=X,
+                       de=dict(Pg=float(row.Pg), tau=float(row.tau), hdd=float(row.hdd), K_L=float(row.K_lignite), K_C=float(row.K_coal), K_G=float(row.K_gas)),
+                       Lc=1.85 * float(row.Pg) + 0.37 * float(row.tau), lag={k: v for k, v in lag.items() if k != "omit"})
+            if not np.all(np.isfinite(np.r_[D, X, b])): skipped[str(t)] = "non-finite inputs"; continue
+            recs.append(rec)
+        except Exception as ex:
+            skipped[str(t)] = f"{type(ex).__name__}: {ex}"[:200]
+    pickle.dump(dict(recs=recs, skipped=skipped), open(OUT, "wb"))
+    print("prediction records", len(recs), "skipped", len(skipped), list(skipped.items())[:3])
 
-def write_targets():
-    """Scoring targets, hourly: German price and SDAC10 net import (panel m, GW). Read only by the scorer."""
-    hrs = sorted({r["t"].floor("h") for r in recs})
-    tg = pd.DataFrame({"p": P.p.reindex(hrs), "m": P.m.reindex(hrs)}); tg.to_pickle(OUT + ".targets.pkl")
-    print("targets", len(tg), "hours")
-write_targets()
+    def write_targets():
+        """Scoring targets, hourly: German price and SDAC10 net import (panel m, GW). Read only by the scorer."""
+        hrs = sorted({r["t"].floor("h") for r in recs})
+        tg = pd.DataFrame({"p": P.p.reindex(hrs), "m": P.m.reindex(hrs)}); tg.to_pickle(OUT + ".targets.pkl")
+        print("targets", len(tg), "hours")
+    write_targets()
