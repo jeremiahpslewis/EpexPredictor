@@ -105,3 +105,27 @@ forecasts as a stand-in for participants' own, and outage notices not filtered b
 | E11b − Z2a   | -12.373 [-16.402, -8.533]  | -1.161 [-1.580, -0.739] |
 | E11b − Z2b   | -6.908 [-9.154, -4.902]    | -0.451 [-0.655, -0.259] |
 | Z2a − Z2b    | +5.465 [+0.779, +9.846]    | +0.711 [+0.216, +1.197] |
+
+## Post-hoc addition: shock persistence forecaster, variant (c) (protocol addendum 4)
+
+A per-zone shrinkage AR on the recovered shocks at 1-, 2- and 7-day lags. The coefficients sum to 0.75–0.85: weight
+0.40–0.55 on yesterday, 0.04–0.22 on two days ago, 0.08–0.25 on a week ago.
+
+**In-training validation**, July to early September 2026, coefficients fitted to the end of June:
+- V1 met: shock RMSE summed over zones 19.1 GW against 21.9 for carrying yesterday's shock; DE 3.23 against 3.71;
+  FR 7.76 against 7.81.
+- V2 met narrowly: German price MAE 16.34 against 16.60 EUR/MWh on 369 MTUs.
+
+**Holdout (post hoc).** This is a second use of the holdout. Both forecasts use posterior draw 0; Pb0 is variant (b)
+re-scored with that draw.
+
+| Forecast | Price MAE | Price RMSE | Net-import MAE (GW) | Evening-peak bias / MAE |
+|---|---|---|---|---|
+| Pb0 (carry yesterday) | 20.66 | 31.5 | 2.94 | −6.0 / 26.6 |
+| Pc (persistence AR) | 19.62 | 33.7 | 2.84 | −11.8 / 23.4 |
+
+- Paired difference in price MAE, Pb0 − Pc: +1.05 [−0.81, +2.67], so not established.
+- RMSE is worse, and the evening-peak bias doubles. The AR shrinks shocks towards their training mean, while the
+  shocks drift seasonally (France −9 to +18 GW by month), so it pulls forecasts back towards training-era levels.
+- A local-level state model (random walk plus noise per zone, filtered) would follow a drifting level without that
+  pull. It is the suggested next form.
