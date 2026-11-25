@@ -38,3 +38,19 @@ scored.
   (the "autumn" set).
 - Results are therefore descriptive. A clean comparison needs days after 2026-11-08, which is the frozen forward test
   of `research/market-model`, plus E.
+
+## Addendum 1 (2026-11-25, before the strict run): strictly pre-gate eleven-zone member E_s
+
+Variant (b) with inputs known at the gate:
+- **Germany.** Yesterday's published residual load at the same MTU, plus the change in the deployed lead-weighted
+  residual-load forecast (`gen_lwA_autumn.npz`, `rl_pes`) between its forecast for D (cutoff of D) and its forecast
+  for D−1 (cutoff of D−1), at the same slot. Both come from the same series, because the two sources differ in level
+  and scope.
+- **Neighbours.** Today's ENTSO-E load forecast (published before the gate), minus yesterday's published wind and
+  solar forecast for the same hour.
+- **Heating degree days** from D−1.
+
+Everything else is as for E: the same posterior, draws, domain and fallback. E_s is scored in the same table. Two
+further joins are post hoc and labelled as such:
+- a renormalised mix that drops a member's missed quarter-hours, as the deployed blend does;
+- time-of-day weights fitted leaving out weekly blocks.

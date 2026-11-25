@@ -1,9 +1,14 @@
 # Ensemble backtest: results (protocol `prereg/ENSEMBLE_PROTOCOL.md`)
 
 The window had already been used, so these results are descriptive. The deployed techs are research implementations
-of the app's methods, from `research/market-model`, on the best stored data:
-- trees on the freshest stored weather vintage (`opt`);
-- Timestral and the market route in the deployed lead-weighted form.
+of the app's methods, from `research/market-model`. These are the best stored arrays, not the best possible data:
+- **Trees.** Zone weather is the 2–3-day-old previous-runs vintage in every stored run. `opt` and `pes` only choose
+  the residual-load input, built from 1-day-old or 2–3-day-old weather respectively.
+- **Timestral and market route.** Deployed lead-weighted form. Their inputs include a component on 2-day-old weather,
+  and the D−1 context uses archive weather.
+
+A faithful version on the freshest data needs 1-day-old previous runs for all zones (not stored; Open-Meteo rate
+limits were hit before) and the app code driven per day. That is a separate request.
 
 **Expectations:**
 - **X1 met.** Rebuilt as research note 21.121 did (trees `pes`, all 66 autumn days), the deployed mix scores
@@ -19,8 +24,9 @@ of the app's methods, from `research/market-model`, on the best stored data:
   pre-gate eleven-zone run is needed to settle it.
 - **Missed solves.** 53 eleven-zone quarter-hours had no solution and score the training-mean fallback. A first
   scoring that dropped those days (51 days) overstated the gain (whole day −0.077), so it is not the result.
-- **Fresher weather helps the trees.** Trees on the fresher weather (`opt`) beat the 2–3-day-old vintage by
-  0.25 ct/kWh, so the vintage matters more than the model.
+- **Residual-load input.** Trees with the residual-load input built from 1-day-old weather (`opt`) beat those built
+  from 2–3-day-old weather (`pes`) by 0.25 ct/kWh over the whole day.
+- **Alignment.** Stored actual prices equal ENTSO-E prices at slot offset 0 on every checked day.
 
 Local delivery days 2026-09-08 to 2026-11-07; 61 days scored, 96 quarter-hours each; MAE in ct/kWh. Eleven-zone quarter-hours with a missed solve (53) score the training-mean fallback.
 
