@@ -30,30 +30,40 @@ forecasts as a stand-in for participants' own, and outage notices not filtered b
 - **O5 (caution).** Net-import errors are large in absolute terms for every forecast: 3.0–4.1 GW MAE, against
   4.9 for naive. The window is entirely under hybrid coupling, and the forecasts cannot use inferred constraints.
 
+## Headline
+
+- **Best forecast.** The best forecast is yesterday's recovered shock plus the structural model's response to
+  today's inputs. Its small bias comes from the carried shock.
+- **The model's own level** (the unconditional variant) is off by 8–43 EUR/MWh depending on time of day.
+- **Comparisons.** The naive baseline is weak in this window, and the deployed predictor was not scored, so nothing
+  here shows an improvement on the deployed model. The earlier sealed backtest (`research/market-model/exp/sealed_score.py`)
+  scores pre-registered winter and summer days, not this window, so it cannot stand in for that comparison.
+- **Targets and curve ends.** The slope target (ratio 0.8–1.25) was not met (0.69 on training), and both curve-end
+  variants were dropped.
+
 ## Where the errors sit
 
-The holdout's price level was much higher than training: mean 174 EUR/MWh (sd 85), against 101 in training.
-
-
-- **Prices at or below zero** (35 hours). Naive is best (MAE 23.6). The eleven-zone forecast misses by 37–50 and the
-  two-zone (b) by 91. This is the low-end curve misfit found by the slope check and the curve-end work.
-- **Prices above €200** (582 hours). The eleven-zone (b) forecast is best (MAE 21.2), against 29.3 for the two-zone
-  (b) and 41.7 for naive.
-- **Time of day** (bias / MAE, EUR/MWh):
-  - The eleven-zone (b) forecast has small biases in every window: −5.0 at the evening peak, −1.0 at night.
-  - The unconditional eleven-zone forecast (a) underestimates strongly at the evening peak (−43) and morning ramp
-    (−31), much less at night (−8). Its shock distribution is centred on the training period, and the holdout's
-    price level is higher. This is the pattern reported for the deployed predictor: peaks underestimated, nights
-    fine.
-  - Carrying over yesterday's shock removes that level error.
-
-| forecast   |   price_MAE |   price_RMSE |   import_MAE |   missed_solves |
-|:-----------|------------:|-------------:|-------------:|----------------:|
-| E11a       |      30.373 |       40.716 |        3.107 |           0.023 |
-| E11b       |      20.46  |       31.035 |        2.963 |           0.009 |
-| Z2a        |      32.833 |       46.218 |        4.124 |           0.06  |
-| Z2b        |      27.368 |       40.168 |        3.414 |           0.004 |
-| naive      |      44.579 |       63.801 |        4.945 |           0     |
+- **Fuel costs outside the training range.** The fuel-cost index L_t = 1.85 P_g + 0.37 τ ran 166–221 in the holdout
+  (5–95%), entirely above the training range of 86–152. The neighbour curves are extrapolated.
+- **Recovered shocks shift.** Mean shocks (GW) at draw 0, training against holdout (lagged): France +2.8 → +15.5,
+  NO2 +0.6 → −4.9, AT +0.3 → +2.8, PL +0.6 → +2.1, SE4 +0.2 → +2.1; Germany −2.1 → −1.7. Summed over zones, the
+  evening shock rises from +15 to +29 GW. A positive shock means the model's supply exceeds what is needed at the
+  observed price, so it predicts too low.
+- **Why only the eleven-zone unconditional forecast underestimates.** It underestimates at every time of day,
+  most at the evening peak (−43) and morning ramp (−31). The unconditional two-zone forecast does not (+0.1 to
+  +18), so the cause is specific to the eleven-zone neighbour curves at fuel costs they were not fitted on; the
+  French curve's fuel-cost loading was already negative in the training fit. The carried shock (variant b)
+  absorbs the error.
+- **Deployed predictor (hypothesis only).** The deployed predictor's reported pattern (peaks underestimated, nights
+  fine) resembles the unconditional variant's. That rests on one day of retail prices and is not tested here.
+- **Price bands.** These condition on the observed price, so every smooth forecast looks worst at the extremes. At
+  prices ≤ 0 (35 hours) naive has the lowest error (23.6); above €200 (582 hours) the eleven-zone (b) forecast does
+  (21.2). No cause is attributed.
+- **Post hoc, not pre-registered.** Regressing the realised day-over-day price change on the eleven-zone (b)
+  predicted change gives a slope of 0.91 (intercept +2.5, 1,480 hours). The predicted changes are close to the right
+  scale on average. This does not echo the failed slope check (0.69 on training), which weights large demand
+  surprises.
+- **Additional deviation.** Heating degree days come from the realised daily temperature, not a forecast.
 
 ## Full table: Price MAE by observed price band
 

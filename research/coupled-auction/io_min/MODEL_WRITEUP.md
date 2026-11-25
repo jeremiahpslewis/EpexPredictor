@@ -436,8 +436,10 @@ The test was fixed in advance and run once; models were refitted on training dat
 - **Against the benchmark.** With previous-day shocks, the eleven-zone model beats the two-zone benchmark on price
   by 6.9 EUR/MWh [4.9, 9.2] and on net imports by 0.45 GW [0.26, 0.66] (90% block bootstrap).
 - **Low prices.** It is weakest at prices at or below zero (35 hours), consistent with the curve-end misfit.
-- **Time of day.** Its biases by time of day are small (−5 at the evening peak). The unconditional variant
-  underestimates peaks by 30–43 EUR/MWh, because the holdout's price level (mean 174) was far above training (101).
+- **Time of day.** The carried shock gives it small biases by time of day (−5 at the evening peak). The model's own
+  level (unconditional variant) is off by 8–43 EUR/MWh, because the holdout's fuel costs lie entirely outside the
+  training range and the neighbour curves extrapolate badly (France's recovered shock moves from +2.8 to +15.5 GW).
+- **Scope.** The deployed predictor was not scored, and the naive baseline is weak in this window.
 
 ## 11. Open
 
@@ -452,6 +454,12 @@ The test was fixed in advance and run once; models were refitted on training dat
 - **The outage counterfactual under alternative priors.** It needs two eleven-zone refits (a tight prior at each end
   of the ridge, about 25 minutes each) plus outage re-runs on the v2 records (about 70 minutes each). Each needs
   approval.
+- **Fuel-cost extrapolation.** The neighbour curves load on the fuel-cost index, and the holdout lies outside the
+  training range. A loading that is monotone by construction, or a fuel-cost index per zone, is the next model
+  change.
+- **Outage counterfactual rerun** with the interior-point solver. It needs an exact convex form of the
+  cheapest-unit cut.
+- **Deployed-predictor comparison.** It needs its past forecasts for the holdout, or a sealed backtest.
 - **Strategic conduct.** It needs unit ownership and forward-cover data (section 10).
 - **Spec update.** `ELEVEN_ZONE_SPEC.md` still describes the link legs under hybrid coupling as schedules, and its
   section 6 is the pre-fit plan. This write-up supersedes both.
