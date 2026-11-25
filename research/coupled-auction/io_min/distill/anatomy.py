@@ -52,6 +52,16 @@ for k in ("T", "P", "A", "E", "E_s", "M3"):
         "share of error variance explained": np.corrcoef(v, c_)[0, 1] ** 2, "corr(error, yesterday's same-QH error)": np.nan}
     E_ = e[k]; tab[k]["corr(error, yesterday's same-QH error)"] = np.corrcoef(E_[1:].ravel(), E_[:-1].ravel())[0, 1]
 out += ["## Anchoring: errors against the realised change from yesterday's same quarter-hour", "", pd.DataFrame(tab).T.round(2).to_markdown(), ""]
+# missed solves (scored with the 10.07 fallback): where they sit and the key numbers without them
+miss = ~np.isfinite(M["Esraw"]); tab = {}
+for lo, hi in bands:
+    mb = (a > lo) & (a <= hi); ok_ = mb & ~miss
+    tab[f"{lo}..{hi}"] = {"missed QH": int((mb & miss).sum()), "QH": int(mb.sum()), "E_s MAE all": np.abs(e["E_s"][mb]).mean(),
+                          "E_s MAE solved only": np.abs(e["E_s"][ok_]).mean(), "T MAE same slots": np.abs(e["T"][ok_]).mean()}
+out += [f"## Missed E_s solves ({int(miss.sum())} QH) by observed price band", "", pd.DataFrame(tab).T.round(2).to_markdown(), "",
+        "by local window (missed QH): " + ", ".join(f"{lo:02d}-{hi:02d} {int((miss & (loc_h >= lo) & (loc_h < hi)).sum())}" for lo, hi in win),
+        f"E_s MAE on solved slots only {np.abs(e['E_s'][~miss]).mean():.3f} vs T on the same slots {np.abs(e['T'][~miss]).mean():.3f}; shape MSE solved only "
+        f"{np.mean([((e['E_s'][d][~miss[d]] - e['E_s'][d][~miss[d]].mean()) ** 2).mean() for d in range(len(a))]):.2f}", ""]
 out += ["## Paired differences (first minus second, 90% block bootstrap)", ""]
 for x, y in [("E_s", "T"), ("E_s", "plag+2.15dRL"), ("E_s", "plag+3.15dRL"), ("plag+2.15dRL", "plag+3.15dRL"), ("plag+2.15dRL", "T")]:
     out.append(f"- {x} - {y}: {paired(F[x], F[y], a)}")

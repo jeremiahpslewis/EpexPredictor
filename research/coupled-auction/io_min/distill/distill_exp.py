@@ -65,6 +65,25 @@ if __name__ == "__main__":
         m2 = fit(X2, y2); today = hs[hs_day == dloc]
         if len(today): R2[j] = series_to_grid(pd.Series(m2.predict(design(today)), index=today.index), [c])[0]
     F["R2 E_s + expanding correction"] = fill(Es + R2, Es)
+    # Addendum 1: fuel-scaled residual learners (price-level features and target divided by the fuel index Lc)
+    def design_s(df):
+        X = design(df)
+        for c in ("pE", "plag", "dpE"): X[c] = X[c] / df.Lc * 100
+        return X
+    ys = lambda df: ((df.y - df.pE) / df.Lc * 100).to_numpy()
+    m1s = fit(design_s(tr), ys(tr)); F["R1s E_s + fuel-scaled correction (add. 1)"] = fill(Es + grid(pd.Series(m1s.predict(design_s(hs)) * hs.Lc.to_numpy() / 100, index=hs.index)), Es)
+    R2s = np.full_like(Es, np.nan)
+    for j, c in enumerate(cut):
+        dloc = c.tz_convert("Europe/Berlin").normalize(); prev = hs[hs_day < dloc]; today = hs[hs_day == dloc]
+        X2 = pd.concat([design_s(tr), design_s(prev)]) if len(prev) else design_s(tr); y2 = np.r_[ys(tr), ys(prev)] if len(prev) else ys(tr)
+        m2 = fit(X2, y2)
+        if len(today): R2s[j] = series_to_grid(pd.Series(m2.predict(design_s(today)) * today.Lc.to_numpy() / 100, index=today.index), [c])[0]
+    F["R2s E_s + fuel-scaled expanding correction (add. 1)"] = fill(Es + R2s, Es)
+    # Addendum 1: band-dependent slope distillation, band on the pre-gate E_s forecast (EUR/MWh)
+    KB = [(-1e9, 0, 0.40), (0, 40, 0.69), (40, 120, 1.06), (120, 200, 1.14), (200, 1e9, 0.41)]
+    kap = np.ones_like(Es)
+    for lo, hi, kk in KB: kap[(Es * 10 > lo) & (Es * 10 <= hi)] = kk
+    F["K3 band kappa (add. 1)"] = fill(plag + kap * (Es - plag), Es)
     if len(sys.argv) > 1:
         K2 = struct_member(sys.argv[1], cut); F[f"K2 re-clear, German dRL x kappa ({os.environ.get('KAPPA_K2', '?')})"] = np.where(np.isfinite(K2), K2, FALLBACK)
     base = ["T", "P", "A", "E", "E_s", "M3"]
@@ -77,7 +96,7 @@ if __name__ == "__main__":
     out += ["", pd.DataFrame(rows).T.fillna("").to_markdown(), "", "R1 feature importance (gain share): " + ", ".join(f"{k} {v}" for k, v in imp.items()), ""]
     # where the R1 correction acts: by window
     loc_h = M["loc_h"]; tab = {}
-    for k_ in ("E_s", "R1 E_s + learned correction", "R2 E_s + expanding correction", "T"):
+    for k_ in ("E_s", "R1 E_s + learned correction", "R2 E_s + expanding correction", "R1s E_s + fuel-scaled correction (add. 1)", "R2s E_s + fuel-scaled expanding correction (add. 1)", "K3 band kappa (add. 1)", "T"):
         for lo, hi in [(0, 6), (6, 10), (10, 16), (16, 21), (21, 24)]:
             mm = (loc_h >= lo) & (loc_h < hi); tab.setdefault(k_, {})[f"{lo:02d}-{hi:02d}"] = round(float(np.abs(F[k_] - a)[mm].mean()), 2)
         tab[k_]["price<=0"] = round(float(np.abs(F[k_] - a)[a <= 0].mean()), 2)

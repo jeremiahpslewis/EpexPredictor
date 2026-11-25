@@ -44,3 +44,17 @@ structural (b) forecasts (training-period run + holdout E).
   than the gas-ratio tree's.
 - B3: tree error is not more sensitive to French availability (pregate GW, low vs high tercile) than the structural
   (b) forecast's error; both rise when French availability is low.
+
+## Addendum 1 (2026-11-25, after a first scoring of R1/K1/K2 and the stability run; written before the runs below)
+Post hoc by construction (designed after seeing the first results); reported as such.
+- R1s/R2s: residual learners with price-scale features and target divided by the fuel index Lc (pE/Lc, plag/Lc,
+  dpE/Lc, target err/Lc). Expect R1s |bias| < 0.7 and MAE <= E_s (removes the level-extrapolation confound);
+  R2s within 0.1 of R2.
+- K3: band-dependent slope distillation p_lag + kappa(band)(E_s - p_lag), band on the pre-gate E_s forecast,
+  kappa = tree fitted-band slope / structural band slope from trees_slope.md (<=0: 0.40, 0-40: 0.69, 40-120: 1.06,
+  120-200: 1.14, >200: 0.41). Expect an improvement on E_s of 0.0-0.2, concentrated in the <=0 / 0-40 forecast bands.
+- Anatomy: missed-solve fallback slots explain < 30% of E_s's excess MAE at observed prices <= 0.
+- Stability: fuel break re-dated to the first day with daily L above the training range top (152). Expect the
+  raw-target tree's relative error to rise more than the blend's after it (B2'). Null for B1: the hybrid-coupling
+  +37% ratio is below the 90th percentile of the same ratio at all dates (not exceptional). A tree frozen at
+  2026-06-10 falls behind the daily-retrained tree over days 15-42 after go-live by > 0.1 ct/kWh.

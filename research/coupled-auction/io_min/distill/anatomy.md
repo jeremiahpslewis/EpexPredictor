@@ -97,6 +97,20 @@ within-day (demeaned) errors:
 | E_s |                                     -0.43 |                                0.18 |                                    -0.11 |
 | M3  |                                     -0.41 |                                0.17 |                                     0.1  |
 
+## Missed E_s solves (85 QH) by observed price band
+
+|         |   missed QH |   QH |   E_s MAE all |   E_s MAE solved only |   T MAE same slots |
+|:--------|------------:|-----:|--------------:|----------------------:|-------------------:|
+| -99..0  |          40 |  177 |          7.41 |                  6.62 |               0.64 |
+| 0..5    |          18 |  495 |          4.26 |                  4.05 |               2.14 |
+| 5..10   |           0 |  409 |          2.55 |                  2.55 |               2.18 |
+| 10..15  |           0 |  825 |          2.55 |                  2.55 |               1.87 |
+| 15..20  |          12 | 1669 |          2.13 |                  2.09 |               1.21 |
+| 20..999 |          15 | 2281 |          2.92 |                  2.86 |               2.22 |
+
+by local window (missed QH): 00-06 8, 06-10 2, 10-16 65, 16-21 10, 21-24 0
+E_s MAE on solved slots only 2.762 vs T on the same slots 1.832; shape MSE solved only 14.00
+
 ## Paired differences (first minus second, 90% block bootstrap)
 
 - E_s - T: +1.049 [+0.769, +1.316]

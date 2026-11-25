@@ -54,3 +54,35 @@ French nuclear unavailability (pregate GW), monthly: 2026-01 10.3, 2026-02 10.8,
 | P Timestral (stored)               | -0.06 | 0.1  |
 | full                               |  0.08 | 0.07 |
 | full|raw                           |  0.13 | 0.11 |
+
+## Addendum 1 (post hoc; EXPECTATIONS.md addendum 1)
+
+(a) First day after June with daily fuel index above 152 (the training-range top in RESULTS_OOS.md): 2026-08-23.
+
+MAE / relative MAE / bias / days:
+
+|                                    | 28d before               | 14d after                | days 15-42 after         | rel. change 14d   |
+|:-----------------------------------|:-------------------------|:-------------------------|:-------------------------|:------------------|
+| full                               | 1.50 / 0.12 / -0.52 / 28 | 1.36 / 0.12 / -0.10 / 14 | 1.77 / 0.11 / +0.12 / 28 | -2%               |
+| full|raw                           | 1.55 / 0.12 / -0.69 / 28 | 1.51 / 0.13 / -0.26 / 14 | 1.94 / 0.13 / -0.20 / 28 | +5%               |
+| A market route (stored)            | 1.23 / 0.10 / +0.25 / 9  | 1.89 / 0.19 / +0.75 / 5  | 1.89 / 0.12 / +0.36 / 28 | +83%              |
+| P Timestral (stored)               | 1.28 / 0.11 / +0.63 / 9  | 1.64 / 0.16 / +0.83 / 5  | 1.67 / 0.11 / +0.10 / 28 | +52%              |
+| E structural (b), published inputs | 1.86 / 0.14 / -0.33 / 28 | 2.13 / 0.17 / -0.56 / 10 | 2.34 / 0.15 / -0.21 / 26 | +19%              |
+
+(b) Null for the hybrid-coupling jump: the same ratio (14 days after vs 28 before, relative MAE) at every date:
+
+|                                    | ratio at 2026-06-11   | percentile among all dates   | 90th pct of null   |   dates |
+|:-----------------------------------|:----------------------|:-----------------------------|:-------------------|--------:|
+| full                               | +37%                  | 99%                          | +15%               |     179 |
+| full|raw                           | +38%                  | 99%                          | +17%               |     179 |
+| A market route (stored)            | +30%                  | 82%                          | +44%               |     179 |
+| P Timestral (stored)               | +61%                  | 93%                          | +53%               |     179 |
+| E structural (b), published inputs | -0%                   | 51%                          | +55%               |     269 |
+
+(c) Tree frozen at 2026-06-10 against the daily-retrained tree after hybrid-coupling go-live (ct/kWh):
+
+|            | frozen at 06-10 MAE (bias)   | daily retrained MAE (bias)   |   frozen - daily |
+|:-----------|:-----------------------------|:-----------------------------|-----------------:|
+| days 1-14  | 2.25 (-0.89)                 | 1.97 (-0.87)                 |             0.28 |
+| days 15-28 | 2.14 (-1.66)                 | 1.81 (-0.46)                 |             0.33 |
+| days 29-42 | 1.65 (-1.09)                 | 1.25 (+0.27)                 |             0.4  |
