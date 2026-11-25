@@ -422,6 +422,23 @@ conduct needs ownership shares by unit and some measure of forward positions. Wi
 offer curve, and the cost parameters are re-identified from variation in forward cover and in κ_j, e.g. across
 outages of rivals' units.
 
+## 10b. Out-of-sample accuracy (holdout 2026-09-08 to 2026-11-08; `RESULTS_OOS.md`)
+
+The test was fixed in advance and run once; models were refitted on training data only.
+
+| Forecast | Price MAE | Net-import MAE (GW) |
+|---|---|---|
+| Eleven-zone, previous-day shocks | 20.5 | 2.96 |
+| Two-zone benchmark, previous-day shocks | 27.4 | 3.41 |
+| Eleven-zone, unconditional shocks | 30.4 | 3.11 |
+| Naive (same hour yesterday) | 44.6 | 4.95 |
+
+- **Against the benchmark.** With previous-day shocks, the eleven-zone model beats the two-zone benchmark on price
+  by 6.9 EUR/MWh [4.9, 9.2] and on net imports by 0.45 GW [0.26, 0.66] (90% block bootstrap).
+- **Low prices.** It is weakest at prices at or below zero (35 hours), consistent with the curve-end misfit.
+- **Time of day.** Its biases by time of day are small (−5 at the evening peak). The unconditional variant
+  underestimates peaks by 30–43 EUR/MWh, because the holdout's price level (mean 174) was far above training (101).
+
 ## 11. Open
 
 - **Tight-headroom solves.** Hybrid-coupling MTUs at η = 0.10 still fail to converge 48% of the time. A solver that

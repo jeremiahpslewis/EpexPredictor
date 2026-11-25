@@ -32,6 +32,9 @@ forecasts as a stand-in for participants' own, and outage notices not filtered b
 
 ## Where the errors sit
 
+The holdout's price level was much higher than training: mean 174 EUR/MWh (sd 85), against 101 in training.
+
+
 - **Prices at or below zero** (35 hours). Naive is best (MAE 23.6). The eleven-zone forecast misses by 37–50 and the
   two-zone (b) by 91. This is the low-end curve misfit found by the slope check and the curve-end work.
 - **Prices above €200** (582 hours). The eleven-zone (b) forecast is best (MAE 21.2), against 29.3 for the two-zone
