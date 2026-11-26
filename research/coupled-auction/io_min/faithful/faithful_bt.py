@@ -41,6 +41,17 @@ FRESH = os.environ.get("FAITHFUL_FRESH", "") == "1"
 FRESH_DIR = f"{SP}/fresh_data"
 SOURCE_STORES = f"{FRESH_DIR}/stores" if FRESH else f"{SP}/live_data"   # read-only source; copied once into WORK
 WORK = f"{SP}/faithful/stores_fresh" if FRESH else f"{SP}/faithful/stores"
+# FAITHFUL_LIVE=1 (team/E/live_forecast.py): a live forecast for one day D, on stores the app's own classes fetched that
+# morning into FAITHFUL_LIVE_DIR/stores (used in place, never written: serialize is off). Prices, gas and TSO figures are
+# cut at the cutoff as in the backtest; the weather is NOT replaced by vintages: the store holds the archive up to
+# yesterday and the latest forecast after it, exactly what the app reads. The grid vintages d1/d2 (matched variant)
+# come from the local files plus FAITHFUL_LIVE_DIR/grid_prev_live.parquet (fetched that morning, preferred).
+# Actual prices are blanked (no scoring of live or dry runs).
+LIVE = os.environ.get("FAITHFUL_LIVE", "") == "1"
+LIVE_DIR = os.environ.get("FAITHFUL_LIVE_DIR", "")
+if LIVE:
+    assert LIVE_DIR and os.path.isdir(f"{LIVE_DIR}/stores"), "FAITHFUL_LIVE=1 needs FAITHFUL_LIVE_DIR with a stores/ directory"
+    SOURCE_STORES = WORK = f"{LIVE_DIR}/stores"
 TZ = ZoneInfo("Europe/Berlin")
 SLOT = pd.Timedelta(minutes=15)
 STORE_FILES = ("prices_v3_", "gasprices_the_v1_", "weather_v2_", "gridweather_v1_", "generation_v1_")
@@ -52,7 +63,7 @@ MAX_K = 3  # deepest vintage held locally
 # ---------------------------------------------------------------------------------------------------- environment
 os.makedirs(WORK, exist_ok=True)
 for fn in os.listdir(SOURCE_STORES):
-    if fn.startswith(STORE_FILES) and not os.path.exists(f"{WORK}/{fn}"):
+    if SOURCE_STORES != WORK and fn.startswith(STORE_FILES) and not os.path.exists(f"{WORK}/{fn}"):
         shutil.copy2(f"{SOURCE_STORES}/{fn}", f"{WORK}/{fn}")
 os.environ["EPEXPREDICTOR_DATADIR"] = WORK
 os.environ["EPEXPREDICTOR_TIMESTRAL_MODEL"] = "mistralai/Timestral-123M"   # as deployed (revision pinned by the app)
@@ -169,10 +180,28 @@ class RLState:
 RLV = RLState
 
 
+def live_grid_prev() -> pd.DataFrame | None:
+    """the morning's grid previous-runs file (live mode), validated; None if absent or malformed, so a bad file can
+    never stop the champion (it only feeds the matched shadow and stored diagnostics)"""
+    fn = f"{LIVE_DIR}/grid_prev_live.parquet"
+    if not os.path.exists(fn):
+        return None
+    try:
+        g = pd.read_parquet(fn)
+        assert isinstance(g.index, pd.DatetimeIndex) and g.index.tz is not None and len(g) > 0
+        assert all(c.split("_")[0] in ("w120", "sw", "t2") and c.split("_")[-1] in ("d1", "d2", "d3") for c in g.columns)
+        return g
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"grid_prev_live.parquet ignored: {e!r}")
+        return None
+
+
 def load_d2_history() -> pd.DataFrame:
     h = pd.read_parquet(D2_HIST)
-    if FRESH:
+    if FRESH or LIVE:
         h = h.combine_first(pd.read_parquet(f"{FRESH_DIR}/grid_prev.parquet"))
+    if LIVE and live_grid_prev() is not None:   # the morning's previous-runs fetch first
+        h = live_grid_prev().combine_first(h)
     names = {"w120": "wind", "sw": "radiation", "t2": "temp"}
     cols = [c for c in h.columns if c.endswith("_d2") and c.split("_")[0] in names]
     return h[cols].rename(columns=lambda c: f"{names[c.split('_')[0]]}_{c.split('_')[1]}").astype(float).sort_index()
@@ -368,7 +397,7 @@ ResidualLoad.get_data = _rl_get_data
 def load_vintages() -> dict:
     """zone -> {k: hourly DataFrame with the store's column names}; 'GRID' for the dense grid"""
     out = {}
-    for zone, f in ZONE_FILE.items():
+    for zone, f in ({} if LIVE else ZONE_FILE).items():   # live: the zones' weather is the store's own
         frames = {}
         p23 = pd.read_parquet(f"{SP}/prev_all/prev_{f}.parquet")
         for k in (2, 3):
@@ -387,8 +416,10 @@ def load_vintages() -> dict:
                 frames[k] = frames[k].combine_first(fr[[c for c in fr.columns if c.endswith(f"_d{k}")]].rename(columns=lambda c: c.rsplit("_", 1)[0]))
         out[zone] = frames
     dense = pd.read_parquet(f"{SP}/dense/prev.parquet")
-    if FRESH:
+    if FRESH or LIVE:
         dense = dense.combine_first(pd.read_parquet(f"{FRESH_DIR}/grid_prev.parquet"))
+    if LIVE and live_grid_prev() is not None:
+        dense = live_grid_prev().combine_first(dense)
     names = {"w120": "wind", "sw": "radiation", "t2": "temp"}
     out["GRID"] = {k: dense[[c for c in dense.columns if c.endswith(f"_d{k}") and c.split("_")[0] in names]]
                    .rename(columns=lambda c: f"{names[c.split('_')[0]]}_{c.split('_')[1]}").astype(float) for k in (1, 2, 3)}
@@ -472,6 +503,8 @@ class Harness:
         for s in (self.rl.gridweather, self.rl.generation):
             self.orig[id(s)] = s.data
         self.actual = self.de.pricestore.data["price"].copy()
+        if LIVE:   # never score a live or dry run: no actual price is kept
+            self.actual[:] = np.nan
         g = self.rl.generation.data
         self.rl_true = (g.tso_load - g.tso_wind - g.tso_solar)
 
@@ -490,8 +523,14 @@ class Harness:
             w = p.weatherstore
             idx = pd.date_range(gate, last_needed, freq="15min")
             ks = wanted_k(idx, gate, a.vintage, pd.Timedelta(hours=a.latency), d - timedelta(days=1))
-            new, st = vintage_frame(self.vint[p.region.bidding_zone_entsoe], list(self.orig[id(w)].columns), idx, ks, True)
-            w.data = pd.concat([self.orig[id(w)].loc[:gate - SLOT], new])
+            if LIVE:   # the store as fetched: archive, then the latest forecast (the app's view); nothing replaced
+                new = self.orig[id(w)].reindex(idx)
+                st = {"live": True, "store_last": str(self.orig[id(w)].index.max()),
+                      "missing_cells_gate_to_D+2": int(new.isna().to_numpy().sum()), "cells": int(new.size)}
+                w.data = self.orig[id(w)]
+            else:
+                new, st = vintage_frame(self.vint[p.region.bidding_zone_entsoe], list(self.orig[id(w)].columns), idx, ks, True)
+                w.data = pd.concat([self.orig[id(w)].loc[:gate - SLOT], new])
             w.known_source_horizon = w.source_horizon_revalitation_ts = None
             w.last_updated = datetime.now(timezone.utc)
             info["weather"][p.region.bidding_zone_entsoe] = st
@@ -503,8 +542,14 @@ class Harness:
         gen.known_source_horizon = gen.source_horizon_revalitation_ts = None
         hidx = pd.date_range(gate.ceil("1h"), last_needed.floor("1h"), freq="1h")
         hks = wanted_k(hidx, gate, a.vintage, pd.Timedelta(hours=a.latency), d - timedelta(days=1))
-        new, st = vintage_frame(self.vint["GRID"], list(self.orig[id(gw)].columns), hidx, hks, False)
-        gw.data = pd.concat([self.orig[id(gw)].loc[:gate.ceil("1h") - pd.Timedelta(hours=1)], new])
+        if LIVE:
+            new = self.orig[id(gw)].reindex(hidx)
+            st = {"live": True, "store_last": str(self.orig[id(gw)].index.max()),
+                  "missing_cells_gate_to_D+2": int(new.isna().to_numpy().sum()), "cells": int(new.size)}
+            gw.data = self.orig[id(gw)]
+        else:
+            new, st = vintage_frame(self.vint["GRID"], list(self.orig[id(gw)].columns), hidx, hks, False)
+            gw.data = pd.concat([self.orig[id(gw)].loc[:gate.ceil("1h") - pd.Timedelta(hours=1)], new])
         gw.known_source_horizon = gw.source_horizon_revalitation_ts = None
         gw.last_updated = datetime.now(timezone.utc)
         info["weather"]["GRID"] = st
@@ -721,6 +766,9 @@ class Harness:
         os.makedirs(a.out, exist_ok=True)
         np.savez(fn + ".tmp.npz", meta=json.dumps(info), **res)
         os.replace(fn + ".tmp.npz", fn)
+        if LIVE:
+            log.info(f"{d}: {len(D)} slots | live run, not scored | blend mean {np.mean(res['issued']):.3f} ct/kWh | secs {info['secs']}")
+            return
         mae = {k: round(float(np.nanmean(np.abs(res[k] - res["actual"]))), 3) for k in ("trees", "timestral", "market", "issued")}
         log.info(f"{d}: {len(D)} slots | MAE ct/kWh {mae} | RL MAE GW trees {np.nanmean(np.abs(res['rl_trees'] - res['rl_true'])):.2f} "
                  f"mixed {np.nanmean(np.abs(res['rl_mixed'] - res['rl_true'])):.2f} | secs {info['secs']}")
@@ -741,7 +789,7 @@ async def main():
     if a.torch_threads > 0:
         import torch
         torch.set_num_threads(a.torch_threads)  # applies to the asyncio worker threads that run Timestral as well
-    if a.out is None and (a.rl_variant != "base" or FRESH):
+    if a.out is None and (a.rl_variant != "base" or FRESH or LIVE):
         ap.error("--out is required for every non-base variant and with FAITHFUL_FRESH=1 (the default path ignores FRESH)")
     if a.rl_variant in PUB_VARIANTS and not PUB_LOAD_AT_GATE:
         ap.error(f"{a.rl_variant} is disabled: PUB_LOAD_AT_GATE is False (D's TSO load not shown to be out by the gate)")
