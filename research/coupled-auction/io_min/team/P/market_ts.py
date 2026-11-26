@@ -67,7 +67,7 @@ def forecast(day, variant, rl_hist=None):
     hist = df.loc[:cutoff]
     n = len(hist)
     assert hist.index[-1] == cutoff and df.loc[D[0]:, "price"].isna().all(), "price known after the cutoff"
-    rl = df["residual_load"].copy()
+    rl = df["residual_load"].astype("float64").copy()
     if variant == "consist":
         past = rl_hist.reindex(rl.index[:n])
         past = past[past.index < D[0]]                     # only earlier days (stored at their own gates)
