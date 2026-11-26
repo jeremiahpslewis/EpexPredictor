@@ -22,9 +22,9 @@
   weather; the live pairing (d2-trained boosters on younger weather) has no backtest. Order in the team file:
   champion, else app. `matched` and its residual-load components are logged so the TSO figures of 11-28 show which
   residual load was closer on live weather.
-  Consequence for the benchmark: the strict-vintage backtest is pessimistic about weather age compared with live
-  operation (strict tree RL 2.56 GW; the live-logged series scored 2.11 GW on the same 61 days). The live log measures
-  the gap from 11-27.
+  Consequence for the benchmark: the strict-vintage backtest uses older weather than live operation (48 h+ lead on
+  74% of slots against about 24-44 h live). How much that changes residual-load error is not measured; the live log
+  measures it from 11-27.
 - **2026-11-26 ~16:20. Fourth member "similar day" (C009) dropped**: error correlation 0.4-0.57 with the members, but
   MAE 2.9-4.2, and it worsens the blend on the 61 days. Stacking and Timestral time-of-day bias correction closed (C007,
   C008). C continues with Timestral variants on replayed inputs.
@@ -39,3 +39,7 @@
   the 36 sampled days need about 1-2.5 thousand Open-Meteo calls first. Options: (A) a one-off exemption for the cache
   (36 days in 3 waves, about 40 min, and again per finalist); (B) one wave of 16 days and a rule by quarters. Until
   then the reference stays the 61 + 18 stored days plus the forward test.
+- **2026-11-26 ~17:30. Screening rule.** Weekly-refit screens do not rank tree changes (P008). Member changes are
+  screened at daily cadence on a pre-registered day list, one wave, and confirmed on days outside the screen.
+- **2026-11-26 ~17:30. Published load parked; shiftl1 dropped; nbpast goes to its confirmation wave; fclog approved
+  for one pre-registered run.**

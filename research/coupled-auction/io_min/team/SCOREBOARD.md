@@ -1,4 +1,4 @@
-# Scoreboard (S keeps it). Last update: 2026-11-26 16:00 UTC
+# Scoreboard (S keeps it). Last update: 2026-11-26 17:30 UTC
 
 MAE in ct/kWh over 96 quarter hours, mean of daily MAE. Champion = faithful rerun at 37978d1, `--rl-variant base`,
 strict vintage. Differences are candidate minus champion on the same days; intervals are paired circular 7-day block
@@ -20,11 +20,28 @@ blend 0.219 (61) and 0.263 (fresh18); trees 0.237, Timestral 0.230, market route
 Progress to target (61 days): trees 53% of the way, Timestral 15%, market route 26%, blend 19%, residual load 100%
 (to be confirmed on WF). Pooled 79 days, blend: -0.054 [-0.091,-0.015].
 
+## Candidates in screening (not on the board until confirmed)
+
+| candidate | owner | evidence so far | status |
+|---|---|---|---|
+| `matched` RL | I / E | 61 days: blend -0.061 [-0.102,-0.018]; pooled 79: -0.054 [-0.091,-0.015] | candidate; live shadow |
+| Timestral + neighbours' price history (nbpast) | C | 12 fixed days: Timestral -0.055 (61 half), -0.107 (fresh half); blend -0.016 / -0.044 | 20-day confirmation wave queued |
+| Trees trained on forecast-time rows (fclog) | P | none yet (pre-registered) | 1 run queued |
+| Tree shift target (shiftl1) | P | fresh18 weekly screen -0.255; 61 days +0.074; daily fixed days +0.332 | dropped |
+| Published TSO load on D | I | 4 days: blend +0.005 | parked |
+| True RL (bound, not a forecast) | I | 9 days: blend -0.225 [-0.468,+0.068]; beyond `matched` -0.069 | bound |
+| Weights, bias correction, stacking, similar-day member | S / C | about 150 variants, none better causally | closed |
+
 ## Champion status
 
 - Champion: unchanged (frozen base). No promotion yet: `matched` has a 90% interval excluding 0 on the 61 days and
   pooled, is negative in all 3 available months (09: -0.027, 10: -0.085, 11: -0.063 on the 61; fresh 11: -0.031), but
   the rule needs the walk-forward months. Status: **candidate, live shadow**.
+
+- **Caveat on `matched`.** Its gain, and the residual-load target it meets, are measured on strict-vintage weather
+  (2-day-old on 74% of slots). Live weather is younger, and `matched` on live weather has no backtest. A
+  strict-vintage walk-forward run would not settle that; the live residual-load log does. The Timestral candidate
+  (neighbours' prices) does not depend on weather age.
 
 ## By window, blend (champion → `matched`)
 

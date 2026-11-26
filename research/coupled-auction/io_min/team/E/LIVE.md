@@ -54,6 +54,29 @@ Known app quirk, not reproduced: the running app computes `currts` once per cycl
 5-20 s pauses, so after about a minute `needs_history_query` switches its later regions to the historical-forecast host.
 Here `now` is recomputed per store, so every store asks the forecast host.
 
+## Why `app` and `champion` differ (dry run 11-27: max |diff| trees 1.79, Timestral 0.31, market 0.32, blend 0.69 ct/kWh)
+
+Same code, same snapshot, one thread each, but not the same training set. Explanation from the code, not tested by an
+ablation run:
+- **Training window (harness deviation 7):** `app` trains on [now - 540 d, now + 7 d], `champion` on
+  [cutoff - 540 d, cutoff]. Rows after the cutoff have no price and are dropped either way. But the window starts about
+  6.5 h apart in the dry run (run at 16:20 UTC vs cutoff 22:45 UTC), and about 13 h apart in a 09:30 live run. So the
+  8 stage-1 models, the stage-2 model and the residual-load trees all see slightly different rows. LightGBM trees
+  are not stable under a change of training rows. This is the main source of the tree difference (1.79 at most,
+  smaller on average).
+- **Knock-on to Timestral and the market route:** both read the residual load from the trees, mixed with Timestral's
+  own. Different trees give a slightly different mixed residual load, hence the 0.3 differences. The price context is
+  identical.
+- **Gas:** not a factor in the 11-27 dry run, because the app path still cut gas then. From 11-28 the app path keeps
+  THE's gas day D if it is served before the gate, and the champion cuts it. That can add a difference on live days.
+  `gas_day_D_present` in the input log says whether it applied.
+- **Not a cause:**
+  - Prediction start: the harness predicts from cutoff - 14 d, the app from now - 540 d. Per-row tree predictions do not
+    depend on it.
+  - Seeds: LightGBM's default seed is fixed, and Timestral is deterministic given its inputs.
+
+Expect the two forecasts to differ by a few tenths of a ct/kWh on the blend every day.
+
 ## Daily rhythm (S, 2026-11-26)
 
 | when (UTC) | what |

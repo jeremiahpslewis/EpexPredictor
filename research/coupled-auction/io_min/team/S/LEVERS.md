@@ -60,8 +60,8 @@ Scripts: `S/anatomy.py`, `S/sizing.py` (seconds, offline). Everything here is po
   fourth member is decorrelated (0.4-0.57) but too weak (MAE 2.9-4.2) and hurts the blend (C009). Dropped.
 - **Mondays:** 11 Mondays carry 19% of blend error; all members miss low together (C). Passed to P.
 - **Forecast RL ≥ 50 GW:** 4% of slots, MAE above 5 for every member, about 13% of error (P anatomy). Gate-known.
-- **Weather age:** live weather is 24-44 h lead on D; the strict backtest uses 48 h+ on 74% of slots. The backtest
-  champion is therefore pessimistic about live RL quality; the gap is measured live from 11-27.
+- **Weather age:** live weather is 24-44 h lead on D; the strict backtest uses 48 h+ on 74% of slots. The size of
+  that gap is not measured; the live log measures it from 11-27.
 
 Revised ranking: (1) residual load: published load, weather age, wind/solar models (ceiling about 12% of the blend,
 20% of trees); (2) tree/market-route structure for Mondays, the ≥ 50 GW regime and hours 18-21, and the market
@@ -92,3 +92,20 @@ for both; (3) wind boosters offline, then more grid points (I, open); (4) market
 **Honest total.** `matched` -0.06, remaining RL ≤ -0.07..-0.15, plus the two unconfirmed member changes at blend level
 (a third of each member gain at best, less if correlation rises): the visible sum is about -0.15 to -0.25 ct,
 9-15% of 1.648. The 20% blend target (1.32) is not in sight with the levers found so far.
+
+## Update 17:30 UTC (confirmations)
+
+- **Tree shift target (shiftl1): dropped (P007).** On the 61 days with refits every 8 days it is +0.074
+  [-0.084, +0.219]; at daily cadence on the fixed days +0.332 (61 half, 2 of 6 days better). The fresh18 screen gain
+  was robustness to a stale weekly model. **Weekly-refit screens are not a valid ranker** (P008): the weekly base is
+  0.13-0.29 worse than daily, so earlier weekly drops (lags, L1, recency) are inconclusive.
+- **Timestral with neighbours' price history (nbpast): passed the 12-day screen (C012).** Timestral -0.055 on the 61
+  half (4 of 6 days), -0.107 on the fresh half (5 of 6); blend -0.016 / -0.044. The 20-day confirmation wave is
+  queued.
+- **Next tree candidate (P, pre-registered in `P/FCLOG_PREREG.md`):** train on a walk-forward log of forecast-time
+  rows. Side finding behind it: adding a few days of forecast-time rows moved the tree bias from -0.34 to -0.04.
+
+Ranking now: (1) nbpast confirmation (C); (2) forecast-time-row training for trees (P); (3) `matched` RL as base;
+(4) wind boosters offline and more grid points (I, not started); (5) market-route RL consistency (P with C's hook).
+The honest total is unchanged or lower: `matched` -0.06 and nbpast -0.02..-0.04 on the blend are the only gains with
+any support, about 5-6% of 1.648.

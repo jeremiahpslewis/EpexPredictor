@@ -116,5 +116,58 @@ def main(tag, names, dfile="D"):
         print(f"{tag} {name}: MAE {e:.3f} over {len(res)} days ({time.time() - t:.0f}s)", flush=True)
 
 
-if __name__ == "__main__":
+def main_daily(tag, names, dfile="D"):
+    """daily stage-2 refit on a weekly stage-1 dump: for each D, the origin's training frame plus the dumped D frames
+    (forecast-time features: vintage weather, forecast RL, out-of-sample cross prices) of the days from the origin up
+    to D-1, labelled with their known prices. Output variant name gets the suffix @d2."""
+    Ds, Ts = load_dump(tag, dfile)
+    origins = sorted(Ts)
+    ctx = {"pr": price_series()}
+    out = f"{SP}/P/screen/{tag}" + ("" if dfile == "D" else f"_{dfile}")
+    os.makedirs(out, exist_ok=True)
+    cache = {}
+    def frame(fn):
+        if fn not in cache:
+            cache[fn] = pd.read_parquet(fn).astype("float64")
+        return cache[fn]
+    for name in names:
+        fn = f"{out}/{name}@d2.npz"
+        if os.path.exists(fn):
+            continue
+        t = time.time(); res = {}
+        for d in sorted(Ds):
+            if d < origins[0]:
+                continue   # log-only days (no origin yet): not scored
+            o = max(x for x in origins if x <= d)
+            tr = frame(Ts[o]).dropna()
+            # fclog<W>: every earlier dumped D frame (a log of forecast-time rows, walk-forward), weight W
+            fclog = name.startswith("fclog")
+            prev = [frame(Ds[x]) for x in sorted(Ds) if (x < d if fclog else o <= x < d)]
+            Xtr, ytr = tr.drop(columns=["price"]), tr["price"]
+            w = np.ones(len(Xtr))
+            if prev:
+                P = pd.concat(prev)
+                # leak check: every logged row belongs to a local day before D (its price is known at D's gate)
+                assert P.index.max() < pd.Timestamp(d, tz="Europe/Berlin").tz_convert("UTC"), (d, P.index.max())
+                if fclog:   # rows of the log replace the training rows at the same times
+                    keep = ~Xtr.index.isin(P.index); Xtr, ytr, w = Xtr[keep], ytr[keep], w[keep]
+                W = float(name[5:]) if fclog else 1.0
+                Xtr = pd.concat([Xtr, P[Xtr.columns]]); ytr = pd.concat([ytr, P["actual"]]); w = np.r_[w, np.full(len(P), W)]
+                ok = (Xtr.notna().all(axis=1) & ytr.notna()).to_numpy()
+                Xtr, ytr, w = Xtr[ok], ytr[ok], w[ok]
+            XD = frame(Ds[d])
+            act = XD["actual"]; XD = XD[Xtr.columns]
+            if fclog:
+                p = fit_predict(Xtr, ytr, XD, {"num_threads": 1}, weight=w)
+            else:
+                p = variant(name, Xtr, ytr, XD, ctx)
+            res[d] = np.c_[XD.index.asi8, p, act.to_numpy()]
+        np.savez(fn, **res)
+        e = np.mean([np.abs(v[:96, 1] - v[:96, 2]).mean() for v in res.values()])
+        print(f"{tag} {name}@d2: MAE {e:.3f} over {len(res)} days ({time.time() - t:.0f}s)", flush=True)
+
+
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "--daily2":
+    main_daily(sys.argv[2], sys.argv[3].split(","), sys.argv[4] if len(sys.argv) > 4 else "D")
+elif __name__ == "__main__":
     main(sys.argv[1], sys.argv[2].split(","), sys.argv[3] if len(sys.argv) > 3 else "D")
