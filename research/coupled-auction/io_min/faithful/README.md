@@ -201,9 +201,9 @@ level (see `RLState` in `faithful_bt.py`; `predictor/` is unchanged). Non-base v
 
 | variant | what changes |
 |---|---|
-| `loadcorr` | tso_load + c·exp(−(j+1)/96) on every slot after the cutoff (j = 0 at D 00:00). c = mean(published TSO load − forecast) over the 24 quarter hours up to the cutoff (D-1 18:00–23:45 local). The forecast comes from an extra load booster trained on rows up to noon D-2 (the study's `d0 − 144`), so D-1 is out of sample as in the study, on the staged grid weather (d1 there). Wind and solar are untouched. |
+| `loadcorr` | The study's form (revised 2026-11-26 after review). A load booster held out to noon D-2 (the study's `d0 − 144`) forecasts D's load, plus its own mean residual (published TSO load − its forecast) over the 24 quarter hours of valid time ending at **gate − 2 h** (D-1 04:00–10:00 local), times exp(−lead/24 h). Lead runs from the window's end to the end of each slot, about 0.55 at D 00:00. The window forecast uses 1-day-old grid weather (the study's `prev_d1`). Wind and solar stay with the app's boosters. |
 | `matched` | Slots whose grid weather is d2 or older (per-quarter-hour rule of `--vintage`) use three boosters trained on the `_previous_day2` grid history; d1 slots keep the app's boosters. |
-| `both` | `matched`, each model set corrected with its own D-1 load residual (as `../rl/combo.py` "VM+decay(load)"). |
+| `both` | d1 slots as `loadcorr`. d2+ slots: matched wind/solar, and the held-out matched load booster (d2 weather, to noon D-2) plus its own residual ("VM+decay(load)" in `../rl/combo.py`). |
 
 - **2-day-old grid history** is the `*_d2` columns of `SP/dense/hist.parquet` (Open-Meteo previous-runs API,
   `dl_dense2.py`; 58 points, w120/sw/t2), 2025-10-01..2026-11-10. It equals `dense/prev.parquet` d2 on the overlap,
@@ -211,26 +211,45 @@ level (see `RLState` in `faithful_bt.py`; `predictor/` is unchanged). Non-base v
   (32.9k rows for D = 09-09, 36.3k for 10-14). The app's trees start at the first TSO figure, 2025-05-24 (45k–48.5k
   rows). The study trained both its base and `trd2` from 2025-10-01 and refit weekly up to noon D-2, so here the
   matched model has about 4 months less history than the model it replaces; in the study both had the same start.
-- **Deviations from the study, not resolved:**
-  - *Load correction.* In the study the model that made the D-1 residual is the model that forecasts D, and neither
-    had seen D-1. Here the residual comes from the held-out booster but is added to the app model, which is trained
-    through D-1 (the app retrains every day). The app model's own in-sample residual is much smaller: +0.05 / +0.61 GW
-    against +1.01 / +0.94 held out on the two smoke days. A live version must take the residual from a forecast made
-    before D-1's published load entered training. Using the app model's own in-sample residual would mostly cancel the
-    correction.
-  - *Matched models.* "matched vs base" mixes weather age with history length: 2025-10-01 against 2025-05-24. A
-    control (app weather from 2025-10-01) would separate the two; it is not built.
-- **Leak checks** (asserted): the correction window ends at the cutoff and has no gaps; generation data ≤ cutoff; under
-  `strict` the window's weather is d1 issued ≤ gate − latency and equals the staged vintage, not the archive; held-out
-  rows end before D − 36 h; d2 history for training ends at the hour after the cutoff, issued ≤ gate − latency; a
-  recomputed base RL equals the app's on every changed row.
+- **Stored, not fed:**
+  - the residual on the study's window (D-1 18:00–23:45 local, `studywin_*`, decay from the cutoff);
+  - the old form (held-out residual added to the app model's load: `rlc_base_tso_load + rlc_corr_app`);
+  - in `matched`/`both`, a **control set**: app weather, trained on exactly the matched set's rows (from 2025-10-01),
+    which separates weather age from history length (`rlc_control_*`).
+- **Publication timing** (evidence for the 2 h latency choice and for the base harness):
+  - The TSO day-ahead figures are forecasts. At 10:22 UTC on 2026-11-26, before the gate, energy-charts already
+    served the day-ahead **load** for all of 11-27; wind and solar stopped at the end of 11-26.
+  - The app's log shows the store at 10:02 UTC on 11-19 holding figures to 11-19 22:45 UTC and still looking for 11-20.
+    The `live_data` generation file, written 11-20 18:43 UTC, holds all of 11-21.
+  - So D-1's figures are out by D-2 evening, and D's load (not wind or solar) by about the gate. This rests on one
+    probe and two log/file observations; later revisions of stored values cannot be checked.
+  - The old window (D-1 18:00–24:00) was therefore published well before the gate. The 2 h latency on a window ending
+    before the gate is conservative and **assumed**, not measured.
+- **Base harness generation cut (unchanged, checked):**
+  - The RL trees train on TSO figures up to D-1 23:45 local: valid times up to 12 h after the gate (the last slot
+    starts 11.75 h after it), in CET and CEST alike.
+  - Those values were published on D-2. At the noon gate the deployed app holds the same: `fetch_range` drops a row
+    until all three figures exist, so the store advances only when wind and solar for D arrive in the D-1 evening.
+  - D's published load at the gate is therefore information the app does not use.
+- **Training windows:** held-out boosters [start, D − 36 h], app weather from the first TSO figure (2025-05-24) and
+  d2 from 2025-10-01; matched and control [2025-10-01, cutoff]. The study used 2025-10-01 for all, refit weekly to
+  noon D-2.
+- **Leak checks** (asserted):
+  - the primary window's last slot ends ≤ gate − 2 h;
+  - window weather is 1-day-old, issued ≤ gate − 6 h;
+  - generation data ≤ cutoff;
+  - held-out rows end before D − 36 h;
+  - d2 history for training ends at the hour after the cutoff and was issued ≤ gate − 6 h;
+  - a recomputed base RL equals the app's on every changed row;
+  - for `loadcorr`/`both`, the selected load equals held-out load + its residual × decay.
 - **Wiring checks** (asserted per day, stored in `meta["rl_check"]`): `residual_load` in the DE base and stage-2
   `prepare_dataframe` equals the variant series; `rl_mixed` = w·`rl_timestral` + (1−w)·variant with
   `TimestralLoad.weights`; a spy on `timestral.inputs` during the blend sees exactly `rl_mixed` (Timestral and the
   market route); for non-base variants the series differs from the app model's.
 - **Extra npz arrays**: `rlc_base_tso_{wind,solar,load}` (app boosters), `rlc_matched_*`, `rlc_decay`,
   `rlc_corr_app`, `rlc_corr_matched` (added terms), `rlc_k` (grid vintage per slot), `rlc_use_matched`,
-  `rlc_sel_*` (what the variant used), `rlc_hold_app_tso_load` / `rlc_hold_matched_tso_load` (the held-out
+  `rlc_sel_*` (what the variant used), `rlc_control_*` (control set), `rlc_decay_studywin` and
+  `rlc_corr_studywin_{app,matched}` (study-window diagnostic), `rlc_hold_app_tso_load` / `rlc_hold_matched_tso_load` (the held-out
   load boosters' own forecast on D, so the study-exact form can be scored without a rerun), `true_tso_*`, `rl_base_model`. `meta["rl_extra"]` holds the training windows and
   the D-1 residuals, held-out and in-sample.
 - **Erratum for `out_strict`**: `rl_mixed` was computed on a range ending at D's last slot, so for the last 3 slots of D
@@ -251,7 +270,7 @@ and `grid_prev.parquet`; these equal the local files on the overlap. With `FAITH
 (`SP/faithful/rlvar/fresh_stage_check.py`) finds D = 2026-11-09..11-26 complete: no missing or fallback weather cell,
 and 96 prices and TSO figures on D.
 
-## RL-variant smoke test (2026-11-26, strict, 2 days chosen because the base tree RL was bad there)
+## RL-variant smoke test, first version (SUPERSEDED: the old loadcorr definition; see the re-smoke below)
 
 Scored against EXPECTATIONS.md addendum S1–S6. RL figures are in GW (d1 = first ~6 h of D, d2+ = the rest); prices are
 MAE in ct/kWh. Table script: `SP/faithful/rlvar/smoke_table.py`; outputs in `SP/faithful/rlvar/smoke_<variant>/`.
@@ -289,3 +308,57 @@ The base `mixed RL` comes from `out_strict` and carries the erratum above.
   - **S6 met.** Every leak check passed. Wall clock per 2-day run: 4.8–6.1 min.
 
 These are 2 days picked for bad RL: this is not evidence of an average gain.
+
+## RL-variant re-smoke (2026-11-26, revised definitions; EXPECTATIONS.md addendum 2)
+
+Same 2 hand-picked days, strict. Outputs are in `SP/faithful/rlvar/smoke2_<variant>/`; scores come from
+`score_variants.py` (`SP/faithful/rlvar/score_smoke2_<variant>.md`). The base `mixed RL` excludes the last 3 slots of D
+(erratum).
+
+| D | variant | RL MAE d1 | RL MAE d2+ | RL bias d2+ | mixed RL | trees | Timestral | market | blend |
+|---|---|---|---|---|---|---|---|---|---|
+| 09-09 | base | 7.54 | 7.24 | −6.75 | 6.33 | 2.090 | 1.658 | 1.152 | 1.449 |
+| 09-09 | loadcorr | 7.51 | 7.96 | −7.56 | 6.50 | 2.249 | 1.719 | 1.159 | 1.537 |
+| 09-09 | matched | 7.54 | 3.74 | −1.87 | 5.39 | 1.228 | 1.276 | 1.439 | 1.030 |
+| 09-09 | both | 7.51 | 4.12 | −2.57 | 5.55 | 1.211 | 1.335 | 1.374 | 1.040 |
+| 10-14 | base | 5.49 | 4.52 | −4.45 | 3.06 | 3.410 | 2.669 | 2.196 | 2.614 |
+| 10-14 | loadcorr | 5.29 | 4.39 | −4.29 | 3.02 | 3.322 | 2.648 | 2.188 | 2.577 |
+| 10-14 | matched | 5.49 | 2.60 | −1.39 | 2.66 | 2.802 | 2.606 | 2.122 | 2.403 |
+| 10-14 | both | 5.29 | 2.60 | −1.41 | 2.68 | 2.629 | 2.598 | 2.115 | 2.382 |
+
+**Model sets on d2+ slots** (RL MAE / RL bias / solar bias / wind bias, GW):
+
+| model set | 09-09 | 10-14 |
+|---|---|---|
+| app | 7.24 / −6.75 / +2.64 / +3.33 | 4.52 / −4.45 / +0.77 / +2.81 |
+| control (app weather, matched rows) | 7.39 / −6.95 / +2.75 / +3.37 | 4.03 / −4.01 / +0.67 / +2.73 |
+| matched | 3.74 / −1.87 / +0.44 / +0.68 | 2.60 / −1.39 / −0.35 / +1.09 |
+
+The control behaves like the app model. On these days the matched gain comes from the age of the weather, not from the
+shorter history, and that holds for solar as well.
+
+**Load correction.**
+- The held-out booster (trained to noon D-2) is clearly worse on load than the app's booster trained to the cutoff:
+  - load MAE over both days 1.52 against 1.02 GW;
+  - on 09-09, d2+ bias −1.94 against −0.78.
+- Its own residual over the gate window (+1.16 / +0.35 GW), with decay 0.55 at D 00:00, recovers only part of that.
+  The primary (study-form) load MAE is 1.27.
+- Stored alternatives:
+  - study-window residual (D-1 evening, decay 0.99): 0.98;
+  - held-out residual added to the app's load (old diagnostic): 0.82.
+
+**Scoring against R1–R6:**
+- **R1 met.** `matched` reproduces the earlier run's prices and `rl_trees` to 1e-13.
+- **R2 partly met.**
+  - Control→matched keeps 100 % and 86 % of the app→matched bias reduction, so weather age dominates.
+  - On 09-09 the control is not between app and matched: its bias (−6.95) is slightly worse than the app model's.
+  - The solar hunch failed: the control keeps the solar bias.
+- **R3 met.** Residuals +1.16 / +0.35, the same sign as the study window.
+- **R4 met.**
+  - RL change on D: +0.52 / −0.15.
+  - Tree price change: +0.16 / −0.09.
+  - On 09-09 loadcorr worsens everything.
+- **R5 met.** d2+ RL and the blend are below base on both days.
+- **R6 met.**
+  - Every assertion passed, including the study-form identity (to 4e-15).
+  - Runs took 291 s (loadcorr), 375 s (matched) and 402 s (both) for 2 days.

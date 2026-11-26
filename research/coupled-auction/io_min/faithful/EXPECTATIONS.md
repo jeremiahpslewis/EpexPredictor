@@ -73,3 +73,110 @@ slots and −6.8 on d2 slots; 10-14 −5.5 / −4.5.
 - S5. The variant RL is what every consumer reads: `residual_load` in DE base and stage-2 `prepare_dataframe` equals
   the saved variant series; Timestral/market inputs equal w·Timestral + (1−w)·variant; `rl_timestral` equals base.
 - S6. Every leak assertion passes; each run < 20 min wall clock.
+
+---
+
+# Addendum 2 (2026-11-26): revised definitions, re-smoke of 09-09 and 10-14, written before running
+
+**Changes after review.**
+- **Correction window.** The residual window is now the 24 quarter hours of valid time ending at gate − 2 h. That is
+  D-1 04:00–10:00 local. The decay runs from the window's end: exp(−lead/24 h), lead = window end → end of slot, about 0.55 at D 00:00 local.
+  2 h is an assumed, conservative latency: the TSO day-ahead figures for D-1 were published on D-2 (README), so the
+  old window (D-1 18:00–24:00) was not a publication leak either. Its residual is still stored as a diagnostic
+  (`studywin_*`, decay from the cutoff).
+- **Window weather.** The window's forecast is made on the 1-day-old grid weather (the study's `prev_d1`), issued
+  ≤ gate − 6 h. Asserted.
+- **Primary loadcorr form (the study's).** The held-out load booster (app weather, rows up to noon D-2) forecasts D's
+  load, plus its own window residual × decay. Wind and solar stay with the app's boosters, trained to the cutoff.
+- **Primary `both`.** d1 slots as loadcorr. d2+ slots: matched wind/solar plus the held-out matched load booster
+  (d2 weather, rows to noon D-2) with its own residual. Stored diagnostic only: the held-out residual added to the app
+  model's load (`rlc_base_tso_load + rlc_corr_app`).
+- **Control set**, in matched and `both`, stored only: three boosters on app weather, trained on exactly the matched
+  set's rows (from 2025-10-01).
+
+**Expectations (the same two hand-picked days; post-hoc on used days, describing the mechanism only).**
+- R1. `matched` reproduces the earlier `smoke_matched` price arrays and `rl_trees` to float noise (the control is not
+  fed).
+- R2. **Control vs matched on d2+ slots.**
+  - The control's RL bias lies between the app model's and the matched model's.
+  - On both days, at least half of the bias reduction from app → matched remains between control and matched. This
+    would mean weather age, not history length, is the main driver.
+  - Solar: the control removes most of the solar bias on 09-09 (+2.64 app). That would make solar a history-length
+    effect. This is a hunch, stated so it can fail.
+- R3. **Window residual of the held-out app booster.**
+  - Between −1.5 and +1.5 GW on each day.
+  - Sign the same as the study-window residual (+1.01 / +0.94) on at least one day.
+- R4. **loadcorr (study form) vs base on D:** RL MAE change within ±0.6 GW, and tree price change within ±0.3
+  ct/kWh, on each day. The correction is weaker than the old one, since the decay starts at about 0.55.
+- R5. **`both`:** d2+ RL MAE below base on both days. Blend MAE below base on both days. Gains are smaller than the old
+  `both` on d1 slots.
+- R6. Every leak and wiring assertion passes, including the study-form identity, and each run takes < 20 min.
+
+---
+
+# Addendum 3 (2026-11-26): 61-day used-window runs, `matched` and `both`, written before launch (not yet approved)
+
+**Run.**
+- Commands: `faithful_bt.py --start 2026-09-08 --end 2026-11-08 --rl-variant matched`, then the same with `both`.
+  Strict vintages, sequential, one process at a time.
+- Outputs: `SP/faithful/out_strict_rlmatched` and `out_strict_rlboth`.
+- Scoring: `score_variants.py <dir> SP/faithful/out_strict <explicit .md>` on the same 61 local days as RESULTS.md
+  (2026-09-08..11-07).
+- **Status.** Post hoc: the window has been used many times, including the residual-load study, and 2 of its days
+  were the smoke days. This describes the mechanism; it is not a sealed test.
+
+**Expectations.** Base references: trees 1.787, Timestral 1.732, market 1.872, blend 1.648; tree RL bias on d2
+slots −1.32 GW, MAE 2.97.
+
+- **M1. Residual load on d2+ slots (`matched`).**
+  - The bias rises from −1.32 to between −0.6 and +0.3 GW.
+  - MAE falls by 0.2–0.6 GW (study: VM day 1 −0.05 to −0.22, h24-38 −0.28 to −0.36), with the interval excluding 0.
+  - d1 slots are unchanged, to float noise.
+- **M2. Control vs matched.**
+  - The control's d2+ bias is within ±0.3 GW of the app model's.
+  - Matched beats the control on d2+ MAE, with the interval excluding 0.
+- **M3. Prices under `matched`.**
+  - Trees: −0.02 to −0.10, the interval may include 0.
+  - Blend: within −0.06 to +0.02.
+  - Timestral and the market route: within ±0.05 each. The lead-weighted mix dilutes tree RL changes (study:
+    −0.06 GW on the mixed series).
+- **M4. `both` vs `matched`.**
+  - Day-level RL difference within ±0.15 GW, with the interval including 0. The held-out boosters are weaker on
+    load, which offsets the correction (smoke: load MAE 1.52 uncorrected, 1.27 corrected, against 1.02 for the app's
+    booster).
+  - Blend difference within ±0.03.
+- **M5. Primary loadcorr form against the stored alternatives** (scorer "load forms", app-weather side).
+  - The study-window residual and the old diagnostic (held-out residual added to the app's load) both have lower
+    load MAE than the primary form.
+  - The primary form's load MAE is within ±0.15 GW of the uncorrected app load.
+- **M6.** Every day passes the leak and wiring assertions. Failed days are listed; more than 3 makes the run
+  incomplete.
+
+---
+
+# Addendum 4 (2026-11-26): fresh days 2026-11-09..11-26 (18 days), written before any fresh variant run
+
+**Status.** Sealed so far:
+- No accuracy figure for these days has been looked at.
+- A stage-only check confirmed coverage.
+- The base output of 11-26 exists, from a feasibility run whose accuracy was not read.
+
+**Run.**
+- `FAITHFUL_FRESH=1 faithful_bt.py --start 2026-11-09 --end 2026-11-26` for `base` (to `SP/faithful/out_fresh_strict`),
+  then `--rl-variant matched` and `--rl-variant both`. `loadcorr` is optional.
+- Scoring: `score_variants.py` against `out_fresh_strict`, with an explicit output path.
+
+**Caveats.**
+- With 18 days and 7-day blocks, the bootstrap resamples only about 3 blocks. Intervals will be wide and unstable, so
+  a non-zero interval on one metric is weak evidence.
+- Treat the 61-day post-hoc result and this result as two looks, not one test.
+- November weather: more wind, little solar. Solar-bias effects will be small.
+
+**Expectations, given before any fresh figure.**
+- **N1.** `matched` lowers tree RL MAE on d2+ slots compared with base, with a point estimate below 0, on at least
+  11 of the 18 days.
+- **N2.** The matched d2+ RL bias is closer to zero than base's on the 18-day mean.
+- **N3.** Blend MAE change: `matched` and `both` each within −0.10 to +0.03 ct/kWh. The sign may go either way; the
+  interval is expected to include 0.
+- **N4.** `both` vs `matched` on blend: within ±0.04.
+- **N5.** No leak or wiring failure. A failed day is listed and not replaced.

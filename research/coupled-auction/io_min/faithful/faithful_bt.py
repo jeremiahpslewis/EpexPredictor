@@ -106,15 +106,24 @@ log.setLevel(logging.INFO)
 # its copy with ResidualLoad.__new__, so a subclass would not reach stage 2). Every consumer of the residual load reads
 # it through ResidualLoad.get_data (PricePredictor.prepare_dataframe -> tree features of stage 1 and 2, and
 # TimestralBlend.inputs -> Timestral's covariate and the market route, after TimestralLoad's mix).
-#   loadcorr: tso_load + mean(published - held-out forecast) over the last 24 qh up to the cutoff * exp(-(j+1)/96),
-#             j = 0 at the first slot after the cutoff (../rl/combo.py, daily_load.py "decay"). The held-out load
-#             booster is trained on rows up to noon D-2 (the study's d0 - 144), so D-1 is out of sample as in the study.
+#   loadcorr: the study form (../rl/combo.py, daily_load.py "decay"): a held-out load booster (trained on rows up to
+#             noon D-2, the study's d0 - 144) forecasts D's load, plus its own mean residual (published TSO load minus
+#             its forecast) over a 24-qh window, times exp(-lead / 24 h). The window is the last 6 h of valid time
+#             ending at gate - RL_PUB_LATENCY; lead runs from the window's end to the end of each slot (as the
+#             study's (j+1)/96). Wind and solar stay with the app's boosters (trained to the cutoff).
 #   matched:  slots whose grid weather is d2 or older use boosters trained on the _previous_day2 grid history
 #             (SP/dense/hist.parquet, *_d2 columns, from 2025-10-01); d1 slots keep the app's boosters.
-#   both:     matched, each model set corrected with its own D-1 load residual ("VM+decay(load)" in combo.py).
+#   both:     matched + the study-form load: d1 slots held-out app-weather load + its residual, d2+ slots held-out
+#             d2-weather load + its residual ("VM+decay(load)" in combo.py).
+# Stored only (not fed): the residual on the study's window (D-1 18:00-23:45 local, decay from the cutoff), the "old"
+# form (held-out residual added to the app's load), and in matched/both a control set: app weather, trained on the
+# matched set's rows (from 2025-10-01), so weather age and history length can be told apart.
 # Only rows after the cutoff without a published figure change; everything up to the cutoff is the app's.
-RL_DECAY_QH = 96
+RL_DECAY_H = 24.0
 RL_CORR_QH = 24
+# Latency between the gate and the newest TSO load value the correction may use (assumed, conservative): the
+# day-ahead TSO figures for D-1 were published on D-2 (store/log evidence in README), so this is stricter than needed
+RL_PUB_LATENCY = pd.Timedelta(hours=2)
 RL_HOLDOUT = pd.Timedelta(hours=36)     # held-out load models: rows < first slot of D - 36 h (= up to D-2 11:45 local)
 D2_HIST = f"{SP}/dense/hist.parquet"
 
@@ -127,6 +136,7 @@ class RLState:
     policy = "strict"
     day_m1: date | None = None
     grid_new: pd.DataFrame | None = None        # staged grid vintages (hourly), for the leak checks
+    grid_d1: pd.DataFrame | None = None         # hourly _previous_day1 grid weather, for the correction windows
     d2: pd.DataFrame | None = None              # hourly _previous_day2 grid history, store column names
     cache: dict = {}                            # extra boosters, shared by the DE base and stage-2's copy (same data)
     info: dict = {}
@@ -134,6 +144,10 @@ class RLState:
     @classmethod
     def uses(cls, part: str) -> bool:
         return cls.variant == part or cls.variant == "both"
+
+    @classmethod
+    def win_end(cls) -> pd.Timestamp:
+        return cls.gate - RL_PUB_LATENCY
 
 
 RLV = RLState
@@ -152,6 +166,11 @@ def slot_k(index: pd.DatetimeIndex) -> np.ndarray:
     """grid weather vintage per 15-min slot (same rule as the staging, applied per quarter hour); 0 before the gate"""
     k = wanted_k(index, RLV.gate, RLV.policy, RLV.latency, RLV.day_m1)
     return np.where(index >= RLV.gate, k, 0)
+
+
+def decay_from(index: pd.DatetimeIndex, end: pd.Timestamp) -> np.ndarray:
+    """exp(-lead / 24 h), lead from the window's end to the end of the slot"""
+    return np.exp(-np.asarray((index + SLOT - end) / pd.Timedelta(hours=1), dtype=float) / RL_DECAY_H)
 
 
 def _fit(features: pd.DataFrame, label: pd.Series) -> "lgb.Booster":
@@ -176,6 +195,18 @@ async def _training_set(rl: ResidualLoad, start, end, weather: str):
     return features[usable], published[usable]
 
 
+async def _window(rl: ResidualLoad, win: pd.DatetimeIndex):
+    """features on the 1-day-old grid weather (the study's prev_d1) and published TSO load on a correction window"""
+    aux = await rl.auxstore.get_data((win[0] - pd.Timedelta(hours=2)).to_pydatetime(), (win[-1] + pd.Timedelta(hours=3)).to_pydatetime())
+    w = RLV.grid_d1.loc[win[0].floor("1h") - pd.Timedelta(hours=1):win[-1].ceil("1h") + pd.Timedelta(hours=1)]
+    # leak check: every 1-day-old forecast used was issued (valid - 24 h) by gate - weather latency
+    assert w.index.max() - pd.Timedelta(hours=24) <= RLV.gate - RLV.latency, "window weather issued after the gate"
+    feats = generation_features(rl.region, w, aux).reindex(win)
+    pub = (await rl.generation.get_data(win[0].to_pydatetime(), win[-1].to_pydatetime()))["tso_load"].reindex(win)
+    assert pub.notna().all() and feats.notna().all().all(), f"correction window {win[0]}..{win[-1]} incomplete"
+    return feats, pub
+
+
 async def _extra_models(rl: ResidualLoad, start, end) -> dict:
     key = (pd.Timestamp(start), pd.Timestamp(end), RLV.cutoff)
     if key in RLV.cache:
@@ -192,34 +223,36 @@ async def _extra_models(rl: ResidualLoad, start, end) -> dict:
         X, Y = await _training_set(rl, start, end, "d2")
         out["matched"] = {t: await asyncio.to_thread(_fit, X, Y[t]) for t in ResidualLoad.TARGETS}
         info["matched"] = [str(X.index.min()), str(X.index.max()), int(len(X))]
+        # control: app weather on the matched rows (stored only)
+        Xa, Ya = await _training_set(rl, start, end, "app")
+        rows = Xa.index.intersection(X.index)
+        out["control"] = {t: await asyncio.to_thread(_fit, Xa.loc[rows], Ya.loc[rows, t]) for t in ResidualLoad.TARGETS}
+        info["control"] = [str(rows.min()), str(rows.max()), int(len(rows)), "matched rows without app weather", int(len(X) - len(rows))]
         if RLV.variant == "both":
             X, Y = await _training_set(rl, start, hold_end, "d2")
             assert X.index.max() <= first_d - RL_HOLDOUT - SLOT
             out["hold_matched_load"] = await asyncio.to_thread(_fit, X, Y["tso_load"])
             info["hold_matched"] = [str(X.index.min()), str(X.index.max()), int(len(X))]
-    # D-1 load residuals: the last 24 qh up to the cutoff, published TSO load against the held-out forecast made from
-    # the staged grid weather (d1 there under strict: forecasts made 24 h before valid time, all <= gate - latency)
-    win = pd.date_range(RLV.cutoff - (RL_CORR_QH - 1) * SLOT, RLV.cutoff, freq="15min")
-    feats = (await rl.get_features((win[0] - pd.Timedelta(hours=2)).to_pydatetime(), (win[-1] + pd.Timedelta(hours=3)).to_pydatetime())).reindex(win)
-    pub = (await rl.generation.get_data(win[0].to_pydatetime(), win[-1].to_pydatetime()))["tso_load"].reindex(win)
-    assert pub.notna().all() and feats.notna().all().all(), "D-1 correction window incomplete"
-    assert win[-1] == RLV.cutoff and rl.generation.data.index.max() <= RLV.cutoff
-    kw = slot_k(win)
-    if RLV.policy == "strict":
-        assert ((kw >= 1) & (win - pd.Timedelta(hours=24) * kw <= RLV.gate - RLV.latency)).all(), "D-1 weather newer than the gate"
-    # the window's weather is the staged vintage, not the archive
-    hrs = RLV.grid_new.index.intersection(pd.date_range(win[0].floor("1h"), win[-1].ceil("1h"), freq="1h"))
-    assert len(hrs) and np.allclose(rl.gridweather.data.loc[hrs, RLV.grid_new.columns].to_numpy(float), RLV.grid_new.loc[hrs].to_numpy(float), equal_nan=True)
-    res = {"insample_app": float((pub - rl.models["tso_load"].predict(feats)).mean())}
-    if "hold_app_load" in out:
-        res["app"] = float((pub - out["hold_app_load"].predict(feats)).mean())
-    if "hold_matched_load" in out:
-        res["matched"] = float((pub - out["hold_matched_load"].predict(feats)).mean())
-    if "matched" in out:
-        res["insample_matched"] = float((pub - out["matched"]["tso_load"].predict(feats)).mean())
+    # load residuals. Primary window: the 24 qh of valid time ending at gate - RL_PUB_LATENCY (published TSO figures of
+    # D-1, out since D-2). Study window (stored only): the 24 qh up to the cutoff.
+    wins = {"": pd.date_range(RLV.win_end() - RL_CORR_QH * SLOT, RLV.win_end() - SLOT, freq="15min"),
+            "studywin_": pd.date_range(RLV.cutoff - (RL_CORR_QH - 1) * SLOT, RLV.cutoff, freq="15min")}
+    assert wins[""][-1] + SLOT <= RLV.gate - RL_PUB_LATENCY, "correction window ends after gate - latency"
+    assert rl.generation.data.index.max() <= RLV.cutoff
+    res = {}
+    for pre, win in wins.items():
+        feats, pub = await _window(rl, win)
+        res[f"{pre}insample_app"] = float((pub - rl.models["tso_load"].predict(feats)).mean())
+        if "hold_app_load" in out:
+            res[f"{pre}app"] = float((pub - out["hold_app_load"].predict(feats)).mean())
+        if "hold_matched_load" in out:
+            res[f"{pre}matched"] = float((pub - out["hold_matched_load"].predict(feats)).mean())
+        if "matched" in out:
+            res[f"{pre}insample_matched"] = float((pub - out["matched"]["tso_load"].predict(feats)).mean())
+        info[f"{pre}corr_window"] = [str(win[0]), str(win[-1] + SLOT)]
     out["resid"] = res
     info["resid"] = {k: round(v, 4) for k, v in res.items()}
-    info["corr_window"] = [str(win[0]), str(win[-1])]
+    info["pub_latency_h"] = RL_PUB_LATENCY / pd.Timedelta(hours=1)
     RLV.info = info
     RLV.cache[key] = out
     return out
@@ -237,8 +270,8 @@ async def _rl_train(self, start, end):
 
 
 async def rl_components(rl: ResidualLoad, start, end) -> pd.DataFrame:
-    """Per slot after the cutoff: both model sets' wind/solar/load, the decayed corrections, the grid vintage, and the
-    selected (variant) wind/solar/load. Rows without weather are NaN."""
+    """Per slot after the cutoff: every model set's wind/solar/load, the decays and corrections, the grid vintage, and
+    the selected (variant) wind/solar/load. Rows without weather are NaN."""
     features = await rl.get_features(start, end)
     features = features.loc[features.index > RLV.cutoff]
     features = features[features.notna().all(axis=1)]
@@ -248,25 +281,26 @@ async def rl_components(rl: ResidualLoad, start, end) -> pd.DataFrame:
     for t, m in rl.models.items():
         out[f"base_{t}"] = np.asarray(m.predict(features))
     ex = getattr(rl, "extra", None) or {}
-    if "matched" in ex:
-        for t, m in ex["matched"].items():
-            out[f"matched_{t}"] = np.asarray(m.predict(features))
-    # the held-out load boosters' own forecast (stored only): the study corrected the model that made the residual,
-    # here the correction goes onto the app model trained through D-1 (see README)
+    for name in ("matched", "control"):
+        for t, m in ex.get(name, {}).items():
+            out[f"{name}_{t}"] = np.asarray(m.predict(features))
     for name in ("hold_app_load", "hold_matched_load"):
         if name in ex:
             out[f"{name[:-5]}_tso_load"] = np.asarray(ex[name].predict(features))
-    decay = np.exp(-np.asarray((features.index - RLV.cutoff) / SLOT, dtype=float) / RL_DECAY_QH)
-    out["decay"] = decay
-    out["corr_app"] = ex["resid"]["app"] * decay if "app" in ex.get("resid", {}) else 0.0
-    out["corr_matched"] = ex["resid"]["matched"] * decay if "matched" in ex.get("resid", {}) else 0.0
+    res = ex.get("resid", {})
+    out["decay"] = decay_from(features.index, RLV.win_end())
+    out["decay_studywin"] = decay_from(features.index, RLV.cutoff + SLOT)
+    for m in ("app", "matched"):
+        out[f"corr_{m}"] = res.get(m, 0.0) * out["decay"]                          # primary
+        out[f"corr_studywin_{m}"] = res.get(f"studywin_{m}", 0.0) * out["decay_studywin"]  # diagnostic
     out["k"] = slot_k(features.index)
     use_m = (out["k"].to_numpy() >= 2) if "matched" in ex else np.zeros(len(out), bool)
     for t in ResidualLoad.TARGETS:
         b = out[f"base_{t}"].to_numpy()
         out[f"sel_{t}"] = np.where(use_m, out[f"matched_{t}"].to_numpy(), b) if "matched" in ex else b
-    if RLV.uses("loadcorr") or RLV.variant == "both":
-        out["sel_tso_load"] += np.where(use_m, out["corr_matched"], out["corr_app"])
+    if RLV.uses("loadcorr"):   # loadcorr and both: the study form, held-out load + its own residual
+        app = out["hold_app_tso_load"] + out["corr_app"]
+        out["sel_tso_load"] = np.where(use_m, out["hold_matched_tso_load"] + out["corr_matched"], app) if "matched" in ex else app
     out["use_matched"] = use_m.astype(float)
     return out
 
@@ -442,6 +476,7 @@ class Harness:
         # residual-load variant state for this day
         RLV.cutoff, RLV.gate, RLV.latency, RLV.policy = cutoff, gate, pd.Timedelta(hours=a.latency), a.vintage
         RLV.day_m1, RLV.grid_new, RLV.cache, RLV.info = d - timedelta(days=1), new, {}, {}
+        RLV.grid_d1 = self.vint["GRID"][1]
         # caches keyed on store state
         self.de.europe_weather.cache.clear()
         if api.timestral.load is not None:
@@ -557,6 +592,12 @@ class Harness:
         chk["variant_minus_base_maxabs"] = float(np.max(np.abs(sel_rl - base_rl)))
         if a.rl_variant != "base":
             assert chk["variant_minus_base_maxabs"] > 0, "variant RL identical to base"
+        if a.rl_variant in ("loadcorr", "both"):   # study form: selected load = held-out load + its residual x decay
+            d1s = res["rlc_k"] == 1 if a.rl_variant == "both" else np.isfinite(res["rlc_k"])
+            chk["studyform_maxabs"] = float(np.max(np.abs(res["rlc_sel_tso_load"] - res["rlc_hold_app_tso_load"] - res["rlc_corr_app"])[d1s]))
+            if a.rl_variant == "both":
+                chk["studyform_matched_maxabs"] = float(np.max(np.abs(res["rlc_sel_tso_load"] - res["rlc_hold_matched_tso_load"] - res["rlc_corr_matched"])[~d1s]))
+            assert max(v for k, v in chk.items() if k.startswith("studyform")) < 1e-9, "selected load != study form"
         info["rl_check"] = chk
         info["rl_variant"] = a.rl_variant
         info["rl_extra"] = RLV.info
