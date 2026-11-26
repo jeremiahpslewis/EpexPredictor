@@ -35,3 +35,10 @@
 ## Not done / next candidates
 - Gas-day-D price as Timestral's horizon gas value. Today the gas covariate is forward-filled flat over D.
 - Combine nbpast with matched RL once the matched RL is promoted.
+
+Pooled over the 12 screen days and the 16 confirmation days (28 days). This includes the 12 days used to select the spec, so it is biased toward nbpast and is a record only:
+- Timestral -0.073, 90% [-0.131, -0.011], better on 18 of 28 days.
+- Blend -0.024, 90% [-0.048, -0.001].
+- By month: September -0.122, October +0.035, November -0.125. October is negative in every cut.
+
+Next screen, pre-registered: SCREEN3_PREREG.md.

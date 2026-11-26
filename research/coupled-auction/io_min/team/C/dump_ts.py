@@ -25,10 +25,12 @@ def cov_names(pred, df, nrows):
     return n
 
 
-async def run(days, out, de_only, context, also=(), tag=""):
+async def run(days, out, de_only, context, also=(), tag="", rl_variant="base"):
     os.makedirs(out, exist_ok=True)
-    args = argparse.Namespace(vintage="strict", latency=6.0, rl_variant="base", out=out)
-    fb.RLV.variant = "base"
+    args = argparse.Namespace(vintage="strict", latency=6.0, rl_variant=rl_variant, out=out)
+    fb.RLV.variant = rl_variant
+    if rl_variant in fb.MATCHED_VARIANTS:   # as faithful_bt.main
+        fb.RLV.d2 = fb.load_d2_history()
     h = fb.Harness(args); await h.setup()
     tb = fb.api.timestral; cap = {}
     tb.CONTEXT = context   # instance attribute only: longer history captured, cut back offline (8192 = deployed)
@@ -78,5 +80,6 @@ if __name__ == "__main__":
     logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(); ap.add_argument("--days", required=True); ap.add_argument("--de-only", action="store_true")
     ap.add_argument("--tag", default="base"); ap.add_argument("--context", type=int, default=32768)
-    ap.add_argument("--also", default=""); a = ap.parse_args()
-    asyncio.run(run([date.fromisoformat(x) for x in a.days.split(",")], f"{fb.SP}/C/tsdump/{a.tag}", a.de_only, a.context, tuple(x for x in a.also.split(",") if x), a.tag))
+    ap.add_argument("--also", default=""); ap.add_argument("--rl-variant", choices=("base", "matched"), default="base")
+    a = ap.parse_args()
+    asyncio.run(run([date.fromisoformat(x) for x in a.days.split(",")], f"{fb.SP}/C/tsdump/{a.tag}", a.de_only, a.context, tuple(x for x in a.also.split(",") if x), a.tag, a.rl_variant))

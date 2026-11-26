@@ -69,6 +69,18 @@ def rl_matched_D(z):
         if os.path.exists(f): return np.load(f, allow_pickle=True)["rl_mixed"].astype(float)
     raise FileNotFoundError(day)
 
+def gas_day_D(z):
+    """THE value for gas day D from the (fresh) gas store: the value stamped D 01:00 local (00:00 UTC), as the store steps.
+    Gate legality of this value must be confirmed before use (SCREEN3_PREREG.md precondition)."""
+    import gzip, json
+    zz = json.load(gzip.open(f"{SP}/faithful/stores_fresh/gasprices_the_v1_DE_LU.json.gz"))["gasprice"]
+    s = pd.Series({pd.Timestamp(int(k), unit="ms", tz="UTC"): v for k, v in zz.items()}).sort_index()
+    D0 = pd.to_datetime(z["D"][0], unit="us", utc=True)
+    return float(s[:D0 + pd.Timedelta(hours=2)].iloc[-1])
+
+def cov_gasD(z):
+    cov = z["cov"].copy(); n = z["n_hist"]; cov[list(z["names"]).index("gasprice"), n:] = gas_day_D(z); return cov
+
 def variants(z):
     leak_check(z)
     n = z["n_hist"]; names = list(z["nb_names"]); nb = z["nb"]
@@ -80,6 +92,8 @@ def variants(z):
         "m209": lambda: run(z, name="mistralai/Timestral-209M"),
         "m28": lambda: run(z, name="mistralai/Timestral-28M"),
         "nosym": lambda: run(z, sym=False),
+        "gasD": lambda: run(dict(z, cov=cov_gasD(z))),
+        "nbpast_gasD": lambda: run(dict(z, cov=cov_gasD(z)), past=past),
         "rlm": lambda: run(z, rl_override=rl_matched_D(z)),            # matched RL on D's slots only (approximation)
         "nbpast_rlm": lambda: run(z, past=past, rl_override=rl_matched_D(z)),
         "nbpast209": lambda: run(z, past=past, name="mistralai/Timestral-209M"),
