@@ -149,3 +149,12 @@ reports by month. Quarters are 3-month groups of those months.
 - (2) is best read as a guard against a gain carried by one season, not as significance.
 - Pooling the 61 used days, on which every candidate was developed, makes (1) optimistic. The 16 walk-forward days and
   the forward test are the only untouched evidence.
+
+**Test results (2026-11-26 23:11-23:17 UTC, 1 process, other jobs running):**
+- **`--vintage-extra`, stage-only, D = 2026-09-15:** in the second configuration the extra files *replace* the local
+  ones (`FAITHFUL_VINTAGE_EXTRA_ONLY=1`). The staged weather for the 8 zones and the grid, the price tails and the
+  generation tail are identical to the default staging (max |diff| 0.0, same NaN pattern, no fallback cells).
+- **`FAITHFUL_RL_LEAN=1` matched, D = 2026-09-15, against `out_strict_rlmatched`:**
+  - trees 1.0e-13, Timestral 0, market 1.1e-14, blend 3.9e-14, rl_trees 9.2e-14, rl_mixed 1.4e-14;
+  - this is LightGBM thread noise, the same order as in README R1, so the variant is the same;
+  - it took 244 s for the day (stage 1 105 s, stage 2 48 s, predict + blend 90 s), so 4 days per process fit in about 17 min.
