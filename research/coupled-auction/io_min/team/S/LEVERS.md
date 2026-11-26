@@ -70,3 +70,25 @@ similar-day member, linear cross-border corrections: closed.
 
 **Blend target check.** Stacking the levers at their bounds: RL oracle -12.5%, plus member structure fixes of unknown
 size. The 20% blend target is not reachable from RL alone even with perfect RL; it needs (2) to deliver on top.
+
+## Update 17:10 UTC (I's decomposition, P's and C's first screens)
+
+- **Residual load, decomposed (I003, 4 high-miss days):** true load alone (= `published`) moves the blend by +0.005;
+  true wind and solar alone by -0.288 (4 of 4 days). Published load is parked as a price lever.
+- **Room beyond `matched` (same 9 days):** oracle minus `matched` is -0.069 on the blend (trees -0.122, Timestral
+  -0.179, market route -0.018). `matched` already holds most of the RL gain; what is left is about 0.07-0.15 ct and
+  sits in wind, mostly through Timestral's own RL path.
+- **TSO day-ahead wind/solar for D is not gate-known** (ENTSO-E probe 16:26 UTC on 11-26: DE wind/solar for 11-27
+  absent, load present).
+- **Trees, structural "shift" target with L1 (P, screen on fresh18, weekly refits, best of about 8 variants):** 2.420 →
+  2.165, -0.255 [-0.494, -0.028], largest in 16-21 h. Unconfirmed; fresh18 is now its selection set.
+- **Timestral with neighbours' price history as past covariates (C011, 4 days of the 61):** 1.935 → 1.802, blend
+  -0.039. Unconfirmed; 12-day screen running, 20-day confirmation designed.
+- **Market route:** gains nothing from true RL and gets worse when Timestral's RL is also true; it double-corrects (P).
+
+Ranking now: (1) tree shift target (P) and Timestral neighbour covariates (C): confirm; (2) `matched` RL as the base
+for both; (3) wind boosters offline, then more grid points (I, open); (4) market-route RL consistency (P).
+
+**Honest total.** `matched` -0.06, remaining RL ≤ -0.07..-0.15, plus the two unconfirmed member changes at blend level
+(a third of each member gain at best, less if correlation rises): the visible sum is about -0.15 to -0.25 ct,
+9-15% of 1.648. The 20% blend target (1.32) is not in sight with the levers found so far.

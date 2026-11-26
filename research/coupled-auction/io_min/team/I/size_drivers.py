@@ -35,6 +35,7 @@ def load_champ(d):
 
 
 Q = pd.concat([load_champ("out_strict").assign(set="61"), load_champ("out_fresh_strict").assign(set="fresh18")], ignore_index=True)
+Q = Q[(Q.set != "61") | Q.day.between("2026-09-08", "2026-11-07")]   # the 61-day window (out_strict also holds 11-08)
 Q["tl"] = Q.t.dt.tz_convert("Europe/Berlin")
 Q["win"] = pd.cut(Q.tl.dt.hour, WIN, labels=WL).astype(str)
 Q["e"] = Q.issued - Q.actual
