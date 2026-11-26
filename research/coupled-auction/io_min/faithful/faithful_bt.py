@@ -118,7 +118,18 @@ log.setLevel(logging.INFO)
 # Stored only (not fed): the residual on the study's window (D-1 18:00-23:45 local, decay from the cutoff), the "old"
 # form (held-out residual added to the app's load), and in matched/both a control set: app weather, trained on the
 # matched set's rows (from 2025-10-01), so weather age and history length can be told apart.
+#   published:  app boosters for wind and solar; on the slots of the local delivery day D the load is D's day-ahead TSO
+#               load as published at the gate (energy-charts serves D's load, not wind/solar, before the gate; probe
+#               2026-11-26). After D (D+1.., Timestral's horizon) the app's load booster stays.
+#   matchedpub: matched wind/solar (as `matched`) + the published load on D; matched/app load after D.
+#   The published value is taken from the stored generation figures (never revised, README), restricted to D's slots,
+#   because the historical publication time per day cannot be checked. PUB_LOAD_AT_GATE switches both variants off.
 # Only rows after the cutoff without a published figure change; everything up to the cutoff is the app's.
+# Set to False if the timing recheck finds D's TSO load is NOT out by the gate (CEST gate = 10:00 UTC; the probes of
+# 2026-11-26 were on a CET day). The variants then refuse to run instead of silently falling back to the model's load.
+PUB_LOAD_AT_GATE = True
+PUB_VARIANTS = ("published", "matchedpub")
+MATCHED_VARIANTS = ("matched", "both", "matchedpub")
 RL_DECAY_H = 24.0
 RL_CORR_QH = 24
 # Latency between the gate and the newest TSO load value the correction may use (assumed, conservative): the
@@ -138,11 +149,16 @@ class RLState:
     grid_new: pd.DataFrame | None = None        # staged grid vintages (hourly), for the leak checks
     grid_d1: pd.DataFrame | None = None         # hourly _previous_day1 grid weather, for the correction windows
     d2: pd.DataFrame | None = None              # hourly _previous_day2 grid history, store column names
+    pub_load: pd.Series | None = None           # D's published TSO load (published variants), D's slots only
     cache: dict = {}                            # extra boosters, shared by the DE base and stage-2's copy (same data)
     info: dict = {}
 
     @classmethod
     def uses(cls, part: str) -> bool:
+        if part == "matched":
+            return cls.variant in MATCHED_VARIANTS
+        if part == "pub":
+            return cls.variant in PUB_VARIANTS
         return cls.variant == part or cls.variant == "both"
 
     @classmethod
@@ -214,8 +230,9 @@ async def _extra_models(rl: ResidualLoad, start, end) -> dict:
     first_d = RLV.cutoff + SLOT
     hold_end = (first_d - RL_HOLDOUT - SLOT).to_pydatetime()
     out, info = {}, {}
-    # held-out load boosters: fed in loadcorr/both, stored only in matched (every load-correction form, RL level)
-    if RLV.variant != "base":
+    # held-out load boosters: fed in loadcorr/both, stored only in matched (every load-correction form, RL level);
+    # not trained in the published variants (nothing of them is fed or needed there)
+    if RLV.variant in ("loadcorr", "matched", "both"):
         X, Y = await _training_set(rl, start, hold_end, "app")
         assert X.index.max() <= first_d - RL_HOLDOUT - SLOT
         out["hold_app_load"] = await asyncio.to_thread(_fit, X, Y["tso_load"])
@@ -224,6 +241,7 @@ async def _extra_models(rl: ResidualLoad, start, end) -> dict:
         X, Y = await _training_set(rl, start, end, "d2")
         out["matched"] = {t: await asyncio.to_thread(_fit, X, Y[t]) for t in ResidualLoad.TARGETS}
         info["matched"] = [str(X.index.min()), str(X.index.max()), int(len(X))]
+    if RLV.variant in ("matched", "both"):
         # control: app weather on the matched rows (stored only)
         Xa, Ya = await _training_set(rl, start, end, "app")
         rows = Xa.index.intersection(X.index)
@@ -314,6 +332,12 @@ async def rl_components(rl: ResidualLoad, start, end) -> pd.DataFrame:
         app = out["hold_app_tso_load"] + out["corr_app"]
         out["sel_tso_load"] = np.where(use_m, out["hold_matched_tso_load"] + out["corr_matched"], app) if "matched" in ex else app
     out["use_matched"] = use_m.astype(float)
+    if RLV.uses("pub"):   # published load on D's slots (and only there); model load (as selected above) after D
+        pub = RLV.pub_load.reindex(out.index)
+        use_p = pub.notna().to_numpy()
+        assert (out.index[use_p] <= RLV.pub_load.index.max()).all()
+        out["sel_tso_load"] = np.where(use_p, pub.to_numpy(dtype=float), out["sel_tso_load"].to_numpy())
+        out["use_pub"] = use_p.astype(float)
     return out
 
 
@@ -489,6 +513,18 @@ class Harness:
         RLV.cutoff, RLV.gate, RLV.latency, RLV.policy = cutoff, gate, pd.Timedelta(hours=a.latency), a.vintage
         RLV.day_m1, RLV.grid_new, RLV.cache, RLV.info = d - timedelta(days=1), new, {}, {}
         RLV.grid_d1 = self.vint["GRID"][1]
+        RLV.pub_load = None
+        if RLV.uses("pub"):
+            # D's day-ahead TSO load as served at the gate = the stored figure (never revised, README), restricted to the
+            # slots of the local day D: nothing with a valid time after D can be read through it
+            D = day_index(d)
+            pub = self.orig[id(gen)]["tso_load"].reindex(D)
+            assert len(pub) == len(D) and pub.notna().all(), f"published TSO load missing on D ({int(pub.isna().sum())} slots)"
+            assert pub.index.min() == cutoff + SLOT and pub.index.max() + SLOT <= day_index(d + timedelta(days=1))[0]
+            RLV.pub_load = pub.astype(float)
+            info["pub_load"] = {"slots": len(pub), "first": str(pub.index.min()), "last": str(pub.index.max()),
+                                "source": "stored generation figures (assumed = as served at the gate)",
+                                "PUB_LOAD_AT_GATE": PUB_LOAD_AT_GATE}
         # caches keyed on store state
         self.de.europe_weather.cache.clear()
         if api.timestral.load is not None:
@@ -511,6 +547,59 @@ class Harness:
         df = await self.de.prepare_dataframe(D[0], D[-1])
         got = df.loc[D, [c for c in self.de_weather_new.columns if c.startswith("wind_")]]
         assert np.allclose(got.to_numpy(), self.de_weather_new.loc[D, got.columns].to_numpy(), equal_nan=True)
+
+    async def check_pub(self, d, D, res, chk, rl_ts, seen, seen_rng):
+        """published/matchedpub wiring: published load on every slot of D (and nowhere else), model load after D,
+        wind/solar as the variant's base (app boosters / matched selection), Timestral's own RL and mix after D"""
+        a = self.args
+        pub = RLV.pub_load.reindex(D).to_numpy(float)
+        assert np.isfinite(pub).all() and np.array_equal(res["rlc_use_pub"], np.ones(len(D))), "published load not on every D slot"
+        chk["pub_slots"] = int(res["rlc_use_pub"].sum())
+        chk["pub_load_maxabs"] = float(np.max(np.abs(res["rlc_sel_tso_load"] - pub)))
+        chk["pub_vs_true_maxabs"] = float(np.max(np.abs(pub - res["true_tso_load"])))
+        k = res["rlc_k"]
+        for t in ("tso_wind", "tso_solar"):
+            want = np.where(k >= 2, res[f"rlc_matched_{t}"], res[f"rlc_base_{t}"]) if a.rl_variant == "matchedpub" else res[f"rlc_base_{t}"]
+            chk[f"{t}_vs_{'matched' if a.rl_variant == 'matchedpub' else 'base'}_maxabs"] = float(np.max(np.abs(res[f"rlc_sel_{t}"] - want)))
+        if a.rl_variant == "published":   # only the load moved: rl_trees - app RL = published - app load
+            chk["published_delta_maxabs"] = float(np.max(np.abs((res["rl_trees"] - res["rl_base_model"]) - (pub - res["rlc_base_tso_load"]))))
+        # after D (D+1 up to the end of Timestral's horizon): model load, get_data = selection, spy = mix of that
+        D1 = day_index(d + timedelta(days=1))
+        end = rl_ts.index[-1] if rl_ts is not None else D1[-1]
+        comp = await rl_components(self.de.residual_load, (D[0] - pd.Timedelta(hours=2)).to_pydatetime(), (end + pd.Timedelta(hours=3)).to_pydatetime())
+        after = comp.loc[(comp.index > D[-1]) & (comp.index <= end)]
+        assert len(after) >= len(D1) and (after["use_pub"] == 0).all(), "published load used after D"
+        model_load = np.where(after["k"] >= 2, after["matched_tso_load"], after["base_tso_load"]) if a.rl_variant == "matchedpub" else after["base_tso_load"].to_numpy()
+        chk["after_D_slots"] = int(len(after))
+        chk["after_D_load_maxabs"] = float(np.max(np.abs(after["sel_tso_load"].to_numpy() - model_load)))
+        got = (await self.de.residual_load.get_data(D[0].to_pydatetime(), (end + pd.Timedelta(hours=3)).to_pydatetime()))[ResidualLoad.FEATURE]
+        var_after = after["sel_tso_load"] - after["sel_tso_wind"] - after["sel_tso_solar"]
+        chk["after_D_getdata_maxabs"] = float(np.max(np.abs(got.reindex(after.index).to_numpy(float) - var_after.to_numpy())))
+        if rl_ts is not None:
+            # per spy call, on its own range (the tree RL of the last ~3 slots of a range is NaN, the hourly weather is
+            # interpolated only between known hours; there TimestralLoad.apply lets Timestral stand alone)
+            w = pd.Series(TimestralLoad.weights(len(rl_ts)), index=rl_ts.index)
+            n_slots, dev, alone = [], [], 0
+            for sv, (s0, e0) in zip(seen, seen_rng):
+                trees = (await self.de.residual_load.get_data(s0, e0))[ResidualLoad.FEATURE]
+                idx = sv.index[(sv.index > D[-1]) & sv.index.isin(w.index[w > 0])]
+                tr = trees.reindex(idx)
+                # rows of D+1.. where the trees have a value: those are the variant's (model load) series
+                ok = tr.notna() & tr.index.isin(var_after.index)
+                assert np.allclose(tr[ok].to_numpy(), var_after.reindex(tr[ok].index).to_numpy(), atol=1e-9), "spy range RL != variant after D"
+                expect = (w[idx] * rl_ts[idx] + (1 - w[idx]) * tr).where(tr.notna(), rl_ts[idx])
+                dev.append(float(np.nanmax(np.abs(sv.reindex(idx).to_numpy(float) - expect.to_numpy()))))
+                n_slots.append(int(ok.sum()))
+                alone += int((~tr.notna()).sum())
+            chk["after_D_spy_slots"] = min(n_slots)
+            chk["after_D_spy_timestral_alone"] = alone
+            chk["after_D_spy_maxabs"] = max(dev)
+            assert chk["after_D_spy_slots"] > 0
+        for key in ("pub_load_maxabs", "pub_vs_true_maxabs", "tso_wind_vs_base_maxabs", "tso_solar_vs_base_maxabs",
+                    "tso_wind_vs_matched_maxabs", "tso_solar_vs_matched_maxabs", "published_delta_maxabs",
+                    "after_D_load_maxabs", "after_D_getdata_maxabs", "after_D_spy_maxabs"):
+            if key in chk:
+                assert chk[key] < 1e-9, f"published-load wiring: {key} = {chk[key]}"
 
     async def run_day(self, d: date):
         a = self.args
@@ -538,12 +627,13 @@ class Harness:
         trees = neweval["price"].copy()
         others = {"market": api.market_route} if api.market_route is not None else None
         # spy: the frames Timestral and the market route read during the blend
-        seen, orig_inputs = [], api.timestral.inputs
+        seen, seen_rng, orig_inputs = [], [], api.timestral.inputs
 
         async def spy_inputs(predictor, start, end):
             df = await orig_inputs(predictor, start, end)
             if predictor is self.de and df is not None and ResidualLoad.FEATURE in df.columns:
                 seen.append(df[ResidualLoad.FEATURE].copy())
+                seen_rng.append((start, end))
             return df
         api.timestral.inputs = spy_inputs
         try:
@@ -613,6 +703,8 @@ class Harness:
             if a.rl_variant == "both":
                 chk["studyform_matched_maxabs"] = float(np.max(np.abs(res["rlc_sel_tso_load"] - res["rlc_hold_matched_tso_load"] - res["rlc_corr_matched"])[~d1s]))
             assert max(v for k, v in chk.items() if k.startswith("studyform")) < 1e-9, "selected load != study form"
+        if RLV.uses("pub"):
+            await self.check_pub(d, D, res, chk, rl_ts, seen, seen_rng)
         info["rl_check"] = chk
         info["rl_variant"] = a.rl_variant
         info["rl_extra"] = RLV.info
@@ -642,17 +734,20 @@ async def main():
     ap.add_argument("--vintage", choices=("strict", "d1"), default="strict")
     ap.add_argument("--latency", type=float, default=6.0, help="hours between a model run's nominal time and its availability")
     ap.add_argument("--out")
-    ap.add_argument("--rl-variant", choices=("base", "loadcorr", "matched", "both"), default="base",
-                    help="residual-load variant (see RLState); non-base variants write to out_<vintage>[_lat]_rl<variant>")
+    ap.add_argument("--rl-variant", choices=("base", "loadcorr", "matched", "both") + PUB_VARIANTS, default="base",
+                    help="residual-load variant (see RLState); every non-base variant needs an explicit --out")
     ap.add_argument("--torch-threads", type=int, default=0, help="0 = torch default; lower it on a contended machine")
     a = ap.parse_args()
     if a.torch_threads > 0:
         import torch
         torch.set_num_threads(a.torch_threads)  # applies to the asyncio worker threads that run Timestral as well
-    a.out = a.out or (f"{SP}/faithful/out_{a.vintage}" + ("" if a.latency == 6.0 else f"_lat{a.latency:g}")
-                      + ("" if a.rl_variant == "base" else f"_rl{a.rl_variant}"))
+    if a.out is None and (a.rl_variant != "base" or FRESH):
+        ap.error("--out is required for every non-base variant and with FAITHFUL_FRESH=1 (the default path ignores FRESH)")
+    if a.rl_variant in PUB_VARIANTS and not PUB_LOAD_AT_GATE:
+        ap.error(f"{a.rl_variant} is disabled: PUB_LOAD_AT_GATE is False (D's TSO load not shown to be out by the gate)")
+    a.out = a.out or (f"{SP}/faithful/out_{a.vintage}" + ("" if a.latency == 6.0 else f"_lat{a.latency:g}"))
     RLV.variant = a.rl_variant
-    if a.rl_variant in ("matched", "both"):
+    if a.rl_variant in MATCHED_VARIANTS:
         RLV.d2 = load_d2_history()
     days = ([date.fromisoformat(x) for x in a.days.split(",")] if a.days else
             [date.fromisoformat(a.start) + timedelta(days=i) for i in range((date.fromisoformat(a.end) - date.fromisoformat(a.start)).days + 1)])

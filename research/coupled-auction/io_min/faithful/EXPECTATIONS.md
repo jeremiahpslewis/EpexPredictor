@@ -222,3 +222,100 @@ slots −1.32 GW, MAE 2.97.
   - **N8.** Price changes (matched − base), point estimates: trees −0.20..+0.05, blend −0.12..+0.03, Timestral and
     market route each within ±0.08. Intervals may include 0 (about 3 blocks).
   - **N9.** REF (published load) below F0 on RL MAE; no F1–F4 form below F0 by more than 0.10 GW.
+
+---
+
+# Addendum 5 (2026-11-26): published-load variants `published` and `matchedpub`, written before any run of them
+
+**What changes.**
+- **`published`:** the app's boosters for wind and solar. On every slot of the local delivery day D, `tso_load` is
+  replaced by D's day-ahead TSO load as published by energy-charts at the gate.
+- **`matchedpub`:** the `matched` wind and solar (app boosters on d1 slots, d2-trained boosters on d2+ slots), with the
+  published load on D.
+- **After D** (D+1 and D+2, inside Timestral's horizon), both variants keep the model's load: the app booster under
+  `published` and the matched set under `matchedpub`.
+- The variant RL goes to every consumer: the DE base and stage-2 features, and the Timestral-mixed series that
+  Timestral and the market route read.
+- **Assumption.** The published value is taken from the stored generation figures (`live_data`, or the fresh refetch),
+  because historical publication times cannot be checked. Two pieces of evidence support this:
+  - D's load was out before the gate in a probe on 11-26;
+  - the stored figures are never revised (4,892 slots).
+
+  Both probes were on a CET day, at 10:22 and 14:49 UTC. The CET gate is 11:00 UTC; in CEST it is 10:00 UTC, so the
+  evidence does not directly cover the CEST days, which are most of the 61. Under ENTSO-E's transparency rules the
+  day-ahead load is due 2 h before the day-ahead gate; energy-charts' own delay is not known. A module flag in
+  `faithful_bt.py` disables both variants if tomorrow's timing recheck fails.
+- **Status of the windows.**
+  - Both windows have been looked at once at RL level: the REF row in RESULTS_MATCHED.md and RESULTS_FRESH.md. The
+    RL figures below are therefore identities computed from stored arrays, not predictions.
+  - The fresh window stays sealed for the price effects of these two variants. The one fresh smoke day is reported as
+    pass/fail only.
+
+**Smoke test (2026-09-09 and 2026-10-14, strict; post hoc, 2 hand-picked days).** The exact RL comes from
+`smoke3_matched`'s stored arrays: `pub_tso_load_gate`, `rlc_base_*` and `rlc_sel_*`.
+- **P1. Tree RL MAE on D (GW), all slots and then d1/d2+.** Each must match to 0.01 GW; anything else is a wiring
+  error.
+
+  | D | base | `published` | `matched` | `matchedpub` |
+  |---|---|---|---|---|
+  | 09-09 | 7.32 (7.54/7.24) | 6.99 (8.22/6.55) | 4.73 | 4.66 (8.22/3.41) |
+  | 10-14 | 4.77 (5.49/4.52) | 3.79 (3.57/3.86) | 3.35 | 2.83 (3.57/2.56) |
+- **P2. Wiring identities, asserted on every day.**
+  - `rl_trees` and the DE base and stage-2 features equal the variant series.
+  - On D, the selected load equals the published load. A published value exists for each of D's 92, 96 or 100 slots,
+    and none has a valid time after D.
+  - After D, the selected load is the model's, and so is `get_data`'s RL.
+  - `rl_mixed` = w·`rl_timestral` + (1−w)·variant. The spy on Timestral's inputs sees `rl_mixed`, including the D+1
+    slots.
+  - Wind and solar: under `published`, identical to the app boosters; under `matchedpub`, identical to `matched`'s
+    selection.
+- **P3. Cross-run checks, offline, to 1e-6.**
+  - `rl_timestral` equals `out_strict`'s on both days.
+  - `published`'s wind and solar equal `smoke3_matched`'s `rlc_base_*`; `matchedpub`'s equal its `rlc_sel_*`.
+- **P4. Prices.**
+  - 10-14: the tree price under `published` is below base, and under `matchedpub` below `matched`. RL falls by 0.98
+    and 0.52 GW.
+  - 09-09: the direction is unclear, with the tree change within ±0.3 ct/kWh. RL rises on d1 slots and falls on d2+.
+  - Blend changes are within ±0.25 ct/kWh on each day.
+- **P5.** Each 2-day run takes under 20 min with `--torch-threads 1`. Runtime per day is at most `matched`'s, because
+  these variants train no held-out or control boosters. The fresh day (`matchedpub`, `FAITHFUL_FRESH=1`, explicit
+  `--out`) passes every assertion.
+
+**Later runs (expectations; a launch is not requested here).**
+- **Q1. RL, identities.** Means over the days, with the paired 7-day block bootstrap at 90 %:
+  - **61-day `published` − base:** tree RL MAE −0.333 [−0.42, −0.23] GW. That is −0.22 on d1 slots and −0.37 on d2+.
+    It is better on 50 of 61 days.
+  - **61-day `matchedpub` − `matched`:** −0.262 [−0.39, −0.15], which is the REF row.
+  - **Fresh `matchedpub` − `matched`:** −0.435 [−0.59, −0.28], the REF row.
+  - **Fresh `published` − base:** not computed, to avoid a new look. The expected range is −0.3 to −0.7 GW, larger
+    than on the used window because the fresh load bias is about −0.8 GW against −0.1.
+  - A deviation of more than 0.005 GW from any of the computed identities is a bug.
+- **Q2. Timestral-mixed RL.** With `matched` the mixed series moved about 45 % as much as the tree RL; the published
+  load acts like that, with a little extra on D+1 from Timestral's covariate. Expected ranges:
+
+  | comparison | 61 days | fresh |
+  |---|---|---|
+  | `published` − base | −0.08 to −0.20 GW | −0.10 to −0.35 |
+  | `matchedpub` − `matched` | −0.05 to −0.15 | −0.10 to −0.30 |
+- **Q3. Prices, 61 days.** The prior is `matched`: −0.27 GW of tree RL gave trees −0.093, blend −0.061, Timestral
+  −0.025 and the market route −0.048. The load error is smoother and more bias-like than the wind error, so the price
+  effect per GW may be smaller.
+
+  | comparison | trees | blend | Timestral, market route |
+  |---|---|---|---|
+  | `published` − base | −0.02 to −0.12 | −0.01 to −0.07 | each within −0.06 to +0.02 |
+  | `matchedpub` − `matched` | −0.01 to −0.10 | 0.00 to −0.06 | |
+
+  The intervals may include 0.
+- **Q4. Prices, fresh (sealed until the fresh variant runs; about 3 blocks).**
+  - Base and `matched` carry a load bias of about −0.8 GW on fresh days, so gains are expected to be larger than on
+    the 61 days.
+  - `matchedpub` − `matched`: trees −0.03 to −0.20, blend −0.01 to −0.10.
+  - `published` − base: blend −0.02 to −0.12.
+  - The intervals are expected to include 0 on at least one of the two.
+- **Q5. Every day passes all leak and wiring assertions.** A failed day is listed and not replaced; more than 3 make a
+  run incomplete. If the timing recheck finds D's load published after the gate on CEST-like timing, the price
+  results of both variants are void (the flag is turned off), and only the RL REF stays as an upper bound.
+
+*Note (2026-11-26, after the smoke run):* the ENTSO-E rule cited above (day-ahead load due 2 h before the day-ahead
+gate) is recalled, not verified in this session.

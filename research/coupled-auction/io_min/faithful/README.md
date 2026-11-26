@@ -193,11 +193,13 @@ loading the model (two samples). On an idle 4-core machine, expect about **3–5
 for the 62 days** (inferred, not measured).
 At the contention seen here it is about **20 h**. `--torch-threads 1` may help when the machine is shared (untested).
 
-## Residual-load variants (`--rl-variant base|loadcorr|matched|both`, added 2026-11-26)
+## Residual-load variants (`--rl-variant base|loadcorr|matched|both|published|matchedpub`, added 2026-11-26)
 
 The two recommendations of `../rl/RESULTS.md`, patched onto `ResidualLoad.train` / `ResidualLoad.get_data` at class
-level (see `RLState` in `faithful_bt.py`; `predictor/` is unchanged). Non-base variants write to
-`out_<vintage>[_lat<h>]_rl<variant>`. Only rows after the cutoff without a published figure change.
+level (see `RLState` in `faithful_bt.py`; `predictor/` is unchanged). Since 2026-11-26 every non-base variant, and
+any run with `FAITHFUL_FRESH=1`, needs an explicit `--out` (the default path ignores FRESH); the runs so far used
+`out_<vintage>[_lat<h>]_rl<variant>`. Only rows after the cutoff without a published figure change. The published-load
+variants `published` and `matchedpub` are described in their own section below.
 
 | variant | what changes |
 |---|---|
@@ -387,3 +389,119 @@ shorter history, and that holds for solar as well.
   - F4 −0.16;
   - REF (published load at the gate) −0.30.
 - Two hand-picked days decide nothing (addendum 3 amendment, L5).
+
+## Published-load variants (`--rl-variant published|matchedpub`, added 2026-11-26)
+
+**What they feed.**
+- **`published`:** wind and solar come from the app's boosters. On every slot of the local delivery day D (92, 96 or
+  100 quarter hours, D 00:00 to D 24:00 local), `tso_load` is D's day-ahead TSO load as served by energy-charts at the
+  gate.
+- **`matchedpub`:** wind and solar as in `matched` (app boosters on d1 slots, d2-trained boosters on d2+ slots), with
+  the same published load on D.
+- **After D** (D+1 and D+2, inside Timestral's horizon), both variants keep the model's load: the app booster, or
+  under `matchedpub` the matched selection. That part was not out at the gate; the probe found load only to the end
+  of D.
+- These variants train no held-out or control boosters, so the F0–F4 load forms are not stored. `matchedpub` trains
+  only the three matched boosters on top of the app's.
+
+**Why the app does not use it.** `ResidualLoad.fetch_range` drops a row until wind, solar and load all exist. D's load
+therefore sits unused at the gate, even though energy-charts already serves it.
+
+**Assumption (`PUB_LOAD_AT_GATE` in `faithful_bt.py`).** The published value is taken from the stored generation figures (`live_data`, or the
+fresh refetch with `FAITHFUL_FRESH=1`).
+- The publication time cannot be checked for past days.
+- The figures are never revised (4,892 slots, see above).
+- On 2026-11-26 D's load was out before the gate: the 10:22 UTC probe found all of 11-27.
+
+Both probes were on a CET day (gate 11:00 UTC). For CEST days (gate 10:00 UTC), which are most of the 61-day window,
+the evidence is indirect: ENTSO-E's transparency rules are recalled (not verified here) to require the day-ahead load
+2 h before the day-ahead gate, and energy-charts' delay is unknown. If the timing recheck fails, set `PUB_LOAD_AT_GATE = False`. Both variants then refuse to start
+(argparse error) instead of silently falling back to model load; this was tested on a scratch copy with the flag set
+to False, and no output was written. The flag is also recorded in `meta["pub_load"]`.
+
+**Leak and wiring checks (asserted per day, stored in `meta["rl_check"]`).** These come on top of the existing
+checks: DE base and stage-2 features equal the variant series; `rl_mixed` = w·Timestral + (1−w)·variant; the spy
+sees `rl_mixed` on D.
+- **The published series**, in `stage_day`:
+  - it is `tso_load` reindexed to exactly D's slots;
+  - its first slot is cutoff + 15 min, and its last slot ends at or before the first slot of D+1, so no valid time
+    after D can be read;
+  - there is no NaN, so a published value exists for every D slot.
+- **On D:**
+  - every slot is fed the published load (`pub_slots`, `pub_load_maxabs` = 0), and it equals `true_tso_load`;
+  - under `published`, wind and solar equal the app boosters, and `rl_trees − rl_base_model = published − app load`;
+  - under `matchedpub`, wind and solar equal `where(k ≥ 2, matched, app)`.
+- **After D**, on the 144 slots to the end of Timestral's horizon:
+  - `use_pub` is 0;
+  - the selected load equals the model's;
+  - `get_data` returns that RL;
+  - for each spy call, on its own range, Timestral and the market route read w·Timestral + (1−w)·that RL. The last ~3
+    slots of each range have no tree RL, and there Timestral stands alone, as in `TimestralLoad.apply`
+    (`after_D_spy_timestral_alone`, 6 slots).
+  
+  A first version compared against an RL asked on a different range and failed by 0.40 GW for that reason; it was
+  fixed before any output was written.
+- **`--out` is now mandatory** for every non-base variant and whenever `FAITHFUL_FRESH=1`.
+- **Scoring.** `score_variants.py` adds a "Published load on D" section. When the base is a `matched` run, it also
+  reports the deviation of `rl_trees` from the base run's REF form (its wind and solar plus the published
+  load). When the base has no `rlc_*` arrays (`out_strict`), it reports `rl_base_model` − the base run's
+  `rl_trees` instead, which ties the variant's app boosters to the base run. In both cases it reports `rl_timestral`
+  − the base run's. On the smoke days all of these are 0, or 1.3e-13.
+
+**Smoke test** (2026-11-26; EXPECTATIONS.md addendum 5, P1–P5; the two hand-picked used days, strict, `--torch-threads 1`, 3 processes at once)
+- Outputs: `SP/faithful/rlvar/smoke_{published,matchedpub}/`.
+- Scores: `SP/faithful/rlvar/score_smoke_{published,matchedpub}.md` (`published` against `out_strict`, `matchedpub` against `smoke3_matched`).
+- Offline checks: `SP/faithful/rlvar/pub_smoke_check.py`.
+
+RL figures are in GW; prices are MAE in ct/kWh.
+
+| D | variant | tree RL MAE (d1 / d2+) | mixed RL\* | trees | Timestral | market | blend |
+|---|---|---|---|---|---|---|---|
+| 09-09 | base (`out_strict`) | 7.32 (7.54 / 7.24) | 6.33 | 2.090 | 1.658 | 1.152 | 1.449 |
+| 09-09 | `published` | 6.99 (8.22 / 6.55) | 6.17 | 1.957 | 1.618 | 1.185 | 1.398 |
+| 09-09 | `matched` (`smoke3`) | 4.73 (7.54 / 3.74) | 5.39 | 1.228 | 1.276 | 1.439 | 1.030 |
+| 09-09 | `matchedpub` | 4.66 (8.22 / 3.41) | 5.24 | 1.304 | 1.259 | 1.504 | 1.057 |
+| 10-14 | base | 4.77 (5.49 / 4.52) | 3.06 | 3.410 | 2.669 | 2.196 | 2.614 |
+| 10-14 | `published` | 3.79 (3.57 / 3.86) | 2.85 | 3.139 | 2.611 | 2.204 | 2.509 |
+| 10-14 | `matched` | 3.35 (5.49 / 2.60) | 2.66 | 2.802 | 2.606 | 2.122 | 2.403 |
+| 10-14 | `matchedpub` | 2.83 (3.57 / 2.56) | 2.58 | 2.712 | 2.565 | 2.138 | 2.344 |
+
+\* All but the last 3 slots of D.
+
+**Results against P1–P5:**
+- **P1 met exactly.** The tree RL equals the value predicted from `smoke3_matched`'s stored arrays (max |diff| ≤ 1.3e-13).
+- **P2 met.** Every assertion passed on both days for both variants. The deviations are 0, or ≤ 2.6e-13 for stage-2
+  features under LightGBM threading.
+- **P3 met.** `rl_timestral` is bit-identical to `out_strict`. Wind and solar are identical to `smoke3_matched`'s
+  `rlc_base_*` (`published`) and `rlc_sel_*` (`matchedpub`), to 1.3e-13.
+- **P4 met.**
+  - 10-14: trees fall from 3.410 to 3.139 (`published`) and from 2.802 to 2.712 (`matchedpub`).
+  - 09-09: tree changes of −0.13 and +0.08.
+  - Blend changes: −0.05, −0.11, +0.03 and −0.06.
+  - On 09-09 the published load worsens RL on d1 slots (7.54 → 8.22). The load error there partly cancelled the wind
+    error.
+- **P5 met, except the runtime clause, which is not shown.**
+  - The clause said a day takes at most `matched`'s time. Per day, `matchedpub` took 233–309 s, against 186–205 s
+    for `smoke3_matched`, but under different contention, so the comparison does not settle it.
+  - Each 2-day run finished in under 10 min: 208–309 s per day plus about 17 s of setup.
+  - Fresh mode: one `matchedpub` day (2026-11-26, `FAITHFUL_FRESH=1`, `--out SP/faithful/rlvar/smoke_fresh_matchedpub`)
+    passed every assertion, with 96 published slots and no missing weather. Its accuracy is not reported (fresh price
+    effects are sealed).
+
+Two hand-picked days decide nothing about the average.
+
+**Runtime estimate for the full runs** (not launched). The basis is the 09-09 figures, the only day that ran with
+three processes on 4 cores (`--torch-threads 1`); on 10-14 only two processes were left:
+- Measured on 09-09: 266 s (`published`) and 309 s (`matchedpub`); the fresh day took 308 s. On 10-14, with two
+  processes: 208 s and 233 s.
+- The earlier `matched` runs took 298–360 s per day with three processes in parallel.
+- With 4 processes, assume 280–360 s per day plus about 20 s of setup.
+
+| run | layout | time per process | wall clock |
+|---|---|---|---|
+| 61 days, one variant | 7 chunks of ≤ 9 days (9×5 + 8×2), 4 processes at a time | 9 days ≈ 43–55 min | 2 waves, about 1.5–2 h |
+| 61 days, both variants | 14 chunks | | 4 waves, about 3–4 h |
+| 18 fresh days, one variant | 2 chunks of 9 | ≈ 45–55 min | |
+| 18 fresh days, both variants | 4 chunks of 9, in parallel | | about 1 h |
+
+Every process stays well under 2 h. Even at 450 s per day, 9 days take about 68 min. Always pass `--out`; the fresh runs also need `FAITHFUL_FRESH=1`.

@@ -11,7 +11,9 @@ Reports (MAE in ct/kWh, RL in GW; per day first, then the mean over days):
   d2+), with the same bootstrap on the per-day differences;
 - Timestral-mixed RL, without the last 3 slots of D (out_strict's rl_mixed is Timestral alone there, README erratum);
 - where stored: the components of each model set (app, matched, control, held-out) on d2+ slots, and the alternative
-  load-correction forms (study window, held-out residual on the app model).
+  load-correction forms (study window, held-out residual on the app model);
+- for `published` / `matchedpub`: the slots fed with the published load, and (base = a matched run) the deviation of
+  the variant's tree RL from the base run's REF form (its wind/solar + published load), which must be float noise.
 """
 import json
 import os
@@ -151,6 +153,25 @@ if "rlc_form_hold_matched_gate" in z0.files and "rlc_matched_tso_load" in z0.fil
                 best = (kind, dd.mean())
     lines += ["", "L5 decision: " + ("n/a (fewer than 7 days)" if n < 7 else
                                      (f"request a price pass for {best[0]} ({best[1]:+.3f} GW)" if best else "no form qualifies")), ""]
+
+# ---- published-load variants (EXPECTATIONS addendum 5): fed load on D and the REF identity
+if json.loads(str(z0["meta"])).get("rl_variant") in ("published", "matchedpub"):
+    lines += ["## Published load on D", ""]
+    for d in days:
+        z, b = V[d], B[d]
+        line = (f"- {d}: published-load slots {int(np.nansum(z['rlc_use_pub']))}/{len(z['idx'])}, "
+                f"fed load − published max |diff| {np.max(np.abs(z['rlc_sel_tso_load'] - z['pub_tso_load_gate'])):.1e}")
+        if "rlc_sel_tso_wind" in b.files and "pub_tso_load_gate" in b.files:
+            # the base run's own wind/solar + the published load (its REF form) must be what the variant fed
+            ref = b["pub_tso_load_gate"] - b["rlc_sel_tso_wind"] - b["rlc_sel_tso_solar"]
+            dev = float(np.max(np.abs(z["rl_trees"] - ref)))
+            line += f", rl_trees − base run's REF form max |diff| {dev:.1e}"
+        elif "rl_base_model" in z.files:
+            # base run without rlc arrays (out_strict): the variant's app-booster RL must equal the base run's tree RL
+            line += f", rl_base_model − base rl_trees max |diff| {np.max(np.abs(z['rl_base_model'] - b['rl_trees'])):.1e}"
+        line += f", rl_timestral − base max |diff| {np.max(np.abs(z['rl_timestral'] - b['rl_timestral'])):.1e}"
+        lines.append(line)
+    lines.append("")
 
 lines += ["Wiring checks per day: " + "; ".join(f"{d}: {json.loads(str(V[d]['meta'])).get('rl_check')}" for d in days),
           "", "Runtime per day (s): " + ", ".join(f"{d} {json.loads(str(V[d]['meta']))['secs']['total']}" for d in days)]
