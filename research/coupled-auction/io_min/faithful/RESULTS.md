@@ -74,3 +74,7 @@ the TSO figure.
   conclusions therefore stand on a like-for-like rerun of the app code.
 - **Members.** The equal-thirds blend beats each member clearly. The market route is the weakest member on its own,
   but it improves the blend.
+
+Erratum (2026-11-26): the stored `rl_mixed` is Timestral alone on the last 3 quarter hours of each day (range too
+narrow, see README "Residual-load variants"), so the Timestral-mixed RL figures above are slightly off there. Prices and
+the tree RL are unaffected.

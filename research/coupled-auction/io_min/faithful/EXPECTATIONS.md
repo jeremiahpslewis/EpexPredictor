@@ -43,3 +43,33 @@ issued blend at 1.740 earlier): trees 1.818 (opt weather), Timestral 1.747, mark
   explain before any number from this run is used.
 - **F7.** Every day passes the leak assertions. Failed days are logged and listed; if more than 3 fail, the run is
   reported as incomplete.
+
+---
+
+# Addendum 2026-11-26: residual-load variants (`--rl-variant`), smoke test, written before running
+
+**What is tested.** The two recommendations of `../rl/RESULTS.md`, wired into the harness without touching `predictor/`:
+- `loadcorr`: tso_load forecast + mean(published − held-out model forecast) over the last 24 quarter hours of D-1, times
+  exp(−(j+1)/96) for the j-th slot after the cutoff. The residual comes from a load booster trained on rows up to
+  noon D-2 (the study's `d0 − 144`), so D-1 is out of sample, as in the study.
+- `matched`: slots whose grid weather is d2/d3 use wind/solar/load boosters trained on the `_previous_day2` grid
+  history (`SP/dense/hist.parquet`, from 2025-10-01); d1 slots keep the app's boosters.
+- `both`: each model set with its own D-1 load residual (as `../rl/combo.py` "VM+decay(load)").
+
+**Smoke days:** 2026-09-09 and 2026-10-14, picked because base tree RL was bad there (7.32 and 4.77 GW). Biased choice
+on purpose: they show the mechanism, not the average effect. Base figures (out_strict): 09-09 tree RL bias +7.5 GW on d1
+slots and −6.8 on d2 slots; 10-14 −5.5 / −4.5.
+
+**Expectations (no tuning on these days; numbers only describe two days):**
+- S1. `base` rerun into a scratch dir reproduces `out_strict` for these days (all arrays to ~1e-6; prices to 1e-3 ct/kWh).
+- S2. `matched`: d1 slots bit-identical to base in RL. d2 slots: RL bias moves upward (less negative) on both days,
+  because the study found the near-current-weather model over-forecasts wind on 2-day-old weather by ~0.8 GW. Expected
+  d2-slot RL MAE change: −0.3 to −2 GW on 10-14; on 09-09 direction unclear (the d1/d2 sign flip suggests something
+  other than the wind bias, e.g. a TSO-figure jump).
+- S3. `loadcorr`: wind and solar identical to base; the load change is a constant times the decay. |correction| at the
+  first slot of D ≤ 2 GW. RL MAE change on D within ±0.5 GW on each day.
+- S4. `both`: d2-slot RL MAE below base on 10-14; tree price MAE change within ±0.5 ct/kWh; blend change within
+  ±0.2 ct/kWh (Timestral's lead-weighted mix dilutes tree RL changes, study: −0.06 GW).
+- S5. The variant RL is what every consumer reads: `residual_load` in DE base and stage-2 `prepare_dataframe` equals
+  the saved variant series; Timestral/market inputs equal w·Timestral + (1−w)·variant; `rl_timestral` equals base.
+- S6. Every leak assertion passes; each run < 20 min wall clock.

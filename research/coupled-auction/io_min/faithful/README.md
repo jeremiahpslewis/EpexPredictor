@@ -192,3 +192,100 @@ For comparison, the live app on this machine took about 70–210 s from "retrain
 loading the model (two samples). On an idle 4-core machine, expect about **3–5 min per day**, which is **about 3–5 h
 for the 62 days** (inferred, not measured).
 At the contention seen here it is about **20 h**. `--torch-threads 1` may help when the machine is shared (untested).
+
+## Residual-load variants (`--rl-variant base|loadcorr|matched|both`, added 2026-11-26)
+
+The two recommendations of `../rl/RESULTS.md`, patched onto `ResidualLoad.train` / `ResidualLoad.get_data` at class
+level (see `RLState` in `faithful_bt.py`; `predictor/` is unchanged). Non-base variants write to
+`out_<vintage>[_lat<h>]_rl<variant>`. Only rows after the cutoff without a published figure change.
+
+| variant | what changes |
+|---|---|
+| `loadcorr` | tso_load + c·exp(−(j+1)/96) on every slot after the cutoff (j = 0 at D 00:00). c = mean(published TSO load − forecast) over the 24 quarter hours up to the cutoff (D-1 18:00–23:45 local). The forecast comes from an extra load booster trained on rows up to noon D-2 (the study's `d0 − 144`), so D-1 is out of sample as in the study, on the staged grid weather (d1 there). Wind and solar are untouched. |
+| `matched` | Slots whose grid weather is d2 or older (per-quarter-hour rule of `--vintage`) use three boosters trained on the `_previous_day2` grid history; d1 slots keep the app's boosters. |
+| `both` | `matched`, each model set corrected with its own D-1 load residual (as `../rl/combo.py` "VM+decay(load)"). |
+
+- **2-day-old grid history** is the `*_d2` columns of `SP/dense/hist.parquet` (Open-Meteo previous-runs API,
+  `dl_dense2.py`; 58 points, w120/sw/t2), 2025-10-01..2026-11-10. It equals `dense/prev.parquet` d2 on the overlap,
+  and its no-suffix columns equal the store's grid weather. So the matched training window is **[2025-10-01, cutoff]**
+  (32.9k rows for D = 09-09, 36.3k for 10-14). The app's trees start at the first TSO figure, 2025-05-24 (45k–48.5k
+  rows). The study trained both its base and `trd2` from 2025-10-01 and refit weekly up to noon D-2, so here the
+  matched model has about 4 months less history than the model it replaces; in the study both had the same start.
+- **Deviations from the study, not resolved:**
+  - *Load correction.* In the study the model that made the D-1 residual is the model that forecasts D, and neither
+    had seen D-1. Here the residual comes from the held-out booster but is added to the app model, which is trained
+    through D-1 (the app retrains every day). The app model's own in-sample residual is much smaller: +0.05 / +0.61 GW
+    against +1.01 / +0.94 held out on the two smoke days. A live version must take the residual from a forecast made
+    before D-1's published load entered training. Using the app model's own in-sample residual would mostly cancel the
+    correction.
+  - *Matched models.* "matched vs base" mixes weather age with history length: 2025-10-01 against 2025-05-24. A
+    control (app weather from 2025-10-01) would separate the two; it is not built.
+- **Leak checks** (asserted): the correction window ends at the cutoff and has no gaps; generation data ≤ cutoff; under
+  `strict` the window's weather is d1 issued ≤ gate − latency and equals the staged vintage, not the archive; held-out
+  rows end before D − 36 h; d2 history for training ends at the hour after the cutoff, issued ≤ gate − latency; a
+  recomputed base RL equals the app's on every changed row.
+- **Wiring checks** (asserted per day, stored in `meta["rl_check"]`): `residual_load` in the DE base and stage-2
+  `prepare_dataframe` equals the variant series; `rl_mixed` = w·`rl_timestral` + (1−w)·variant with
+  `TimestralLoad.weights`; a spy on `timestral.inputs` during the blend sees exactly `rl_mixed` (Timestral and the
+  market route); for non-base variants the series differs from the app model's.
+- **Extra npz arrays**: `rlc_base_tso_{wind,solar,load}` (app boosters), `rlc_matched_*`, `rlc_decay`,
+  `rlc_corr_app`, `rlc_corr_matched` (added terms), `rlc_k` (grid vintage per slot), `rlc_use_matched`,
+  `rlc_sel_*` (what the variant used), `rlc_hold_app_tso_load` / `rlc_hold_matched_tso_load` (the held-out
+  load boosters' own forecast on D, so the study-exact form can be scored without a rerun), `true_tso_*`, `rl_base_model`. `meta["rl_extra"]` holds the training windows and
+  the D-1 residuals, held-out and in-sample.
+- **Erratum for `out_strict`**: `rl_mixed` was computed on a range ending at D's last slot, so for the last 3 slots of D
+  the tree RL was NaN and the stored mix is Timestral alone there. Timestral and the market route read a wider range,
+  so prices are unaffected. Fixed here; a base rerun now matches `out_strict` bit for bit except those 3 values.
+
+## Fresh days (`FAITHFUL_FRESH=1`)
+
+`fetch_fresh.py` re-fetches with the app's own store classes into `SP/fresh_data/stores`, a copy of `live_data`:
+prices for 8 zones, TSO generation and THE gas (DE, AT, BE stores) up to 2026-11-26, and the zone and grid weather
+archive from 2026-11-08 on. The `live_data` weather is not archive-like after about 11-10. Measured as wind MAE
+against the d1 vintage, the grid jumps from about 3.4 to 6–10 km/h from 11-11 on, and the zones from about 3 to
+8–17 km/h from 11-15 on. The refetched archive stays at 2–5 km/h, and on 11-08..11-10 it equals the old store and
+`hist` d0. It also fetches the
+previous-runs d1..d3 for every zone's points and the 58-point grid, 2026-11-01..11-28, into `SP/fresh_data/prev_*.parquet`
+and `grid_prev.parquet`; these equal the local files on the overlap. With `FAITHFUL_FRESH=1` the harness works on
+`SP/faithful/stores_fresh` and appends these vintages and the grid d2 history to the local ones. A stage-only check
+(`SP/faithful/rlvar/fresh_stage_check.py`) finds D = 2026-11-09..11-26 complete: no missing or fallback weather cell,
+and 96 prices and TSO figures on D.
+
+## RL-variant smoke test (2026-11-26, strict, 2 days chosen because the base tree RL was bad there)
+
+Scored against EXPECTATIONS.md addendum S1–S6. RL figures are in GW (d1 = first ~6 h of D, d2+ = the rest); prices are
+MAE in ct/kWh. Table script: `SP/faithful/rlvar/smoke_table.py`; outputs in `SP/faithful/rlvar/smoke_<variant>/`.
+
+| D | variant | RL MAE d1 | RL MAE d2+ | RL bias d2+ | mixed RL | trees | Timestral | market | blend |
+|---|---|---|---|---|---|---|---|---|---|
+| 09-09 | base | 7.54 | 7.24 | −6.75 | 6.16 | 2.090 | 1.658 | 1.152 | 1.449 |
+| 09-09 | loadcorr | 8.43 | 6.81 | −6.20 | 6.09 | 2.015 | 1.629 | 1.158 | 1.418 |
+| 09-09 | matched | 7.54 | 3.74 | −1.87 | 5.23 | 1.228 | 1.276 | 1.439 | 1.030 |
+| 09-09 | both | 8.43 | 3.52 | −1.03 | 5.10 | 1.317 | 1.242 | 1.505 | 1.060 |
+| 10-14 | base | 5.49 | 4.52 | −4.45 | 2.97 | 3.410 | 2.669 | 2.196 | 2.614 |
+| 10-14 | loadcorr | 4.67 | 4.07 | −3.94 | 2.87 | 3.317 | 2.639 | 2.168 | 2.561 |
+| 10-14 | matched | 5.49 | 2.60 | −1.39 | 2.58 | 2.802 | 2.606 | 2.122 | 2.403 |
+| 10-14 | both | 4.67 | 2.37 | −0.84 | 2.50 | 2.726 | 2.577 | 2.102 | 2.345 |
+
+The base `mixed RL` comes from `out_strict` and carries the erratum above.
+
+- **D-1 load residual**: held out it is +1.01 / +0.94 GW, in sample (the app's own model) +0.05 / +0.61. The
+  matched model's held-out residual is +1.54 / +1.01.
+- **On d2 slots the matched trees remove most of the wind and solar over-forecast** (app model / matched model):
+  - 09-09: wind bias +3.33 / +0.68, solar bias +2.64 / +0.44;
+  - 10-14: wind bias +2.81 / +1.09, solar bias +0.77 / −0.35.
+- **09-09's d1 error** (+7.5 GW RL, wind under-forecast by 8.3 GW in the first 6 h) is untouched by design. The load
+  correction makes it worse there.
+- **Scoring against S1–S6:**
+  - **S1 met.** The only difference is the 3-slot `rl_mixed` erratum.
+  - **S2 met.** d1 slots are identical to base (to 1e-13 on 10-14, LightGBM threading). On d2 slots the bias rises on
+    both days, and the d2 MAE on 10-14 falls by 1.92.
+  - **S3 met except the RL range.** Wind and solar are identical, the load change is constant × decay, and the
+    correction is at most 1.0 GW. The RL change on 10-14 is −0.54, just outside the expected ±0.5.
+  - **S4 not met on magnitude, on the good side.** The d2 RL is below base on 10-14 as expected. But the tree price
+    change (−0.77, −0.68) and the blend change (−0.39, −0.27) are larger than the ±0.5 and ±0.2 expected. The market
+    route got worse on 09-09 (+0.35).
+  - **S5 met.**
+  - **S6 met.** Every leak check passed. Wall clock per 2-day run: 4.8–6.1 min.
+
+These are 2 days picked for bad RL: this is not evidence of an average gain.
