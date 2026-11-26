@@ -212,6 +212,10 @@ level (see `RLState` in `faithful_bt.py`; `predictor/` is unchanged). Non-base v
   rows). The study trained both its base and `trd2` from 2025-10-01 and refit weekly up to noon D-2, so here the
   matched model has about 4 months less history than the model it replaces; in the study both had the same start.
 - **Stored, not fed:**
+  - every load-correction form, in `matched` too: `rlc_hold_{app,matched}_tso_load`, and `rlc_form_{hold,diag}_{app,matched}_{gate,study}`
+    (held-out load + own residual, or cutoff-trained load + held-out residual; gate or study window);
+  - `pub_tso_load_gate`: D's TSO load as published by the gate. It equals the stored figure, given no revisions and
+    load published before the gate. It is a load-error-0 reference at RL level, never fed;
   - the residual on the study's window (D-1 18:00–23:45 local, `studywin_*`, decay from the cutoff);
   - the old form (held-out residual added to the app model's load: `rlc_base_tso_load + rlc_corr_app`);
   - in `matched`/`both`, a **control set**: app weather, trained on exactly the matched set's rows (from 2025-10-01),
@@ -221,6 +225,13 @@ level (see `RLState` in `faithful_bt.py`; `predictor/` is unchanged). Non-base v
     served the day-ahead **load** for all of 11-27; wind and solar stopped at the end of 11-26.
   - The app's log shows the store at 10:02 UTC on 11-19 holding figures to 11-19 22:45 UTC and still looking for 11-20.
     The `live_data` generation file, written 11-20 18:43 UTC, holds all of 11-21.
+  - **No revisions** (checked 2026-11-26 10:49 UTC, one refetch per series for 2026-10-01..11-21 into `SP/revcheck/`):
+    - 11-21, served ahead in `live_data` (written 11-20 18:43 UTC): wind, solar and load are identical to the refetch
+      (max |diff| 0.0000 GW, 96 slots);
+    - 10-01..11-20 in `live_data`: identical (4,892 slots);
+    - the RL study's `ecfc` files, fetched 11-13 ~16:50 UTC: 11-13 identical, and the load for 11-14 (served the day
+      before) identical.
+    So `rl_true`, base scoring and the old window all use figures exactly as first published.
   - So D-1's figures are out by D-2 evening, and D's load (not wind or solar) by about the gate. This rests on one
     probe and two log/file observations; later revisions of stored values cannot be checked.
   - The old window (D-1 18:00–24:00) was therefore published well before the gate. The 2 h latency on a window ending
@@ -362,3 +373,17 @@ shorter history, and that holds for solar as well.
 - **R6 met.**
   - Every assertion passed, including the study-form identity (to 4e-15).
   - Runs took 291 s (loadcorr), 375 s (matched) and 402 s (both) for 2 days.
+
+### Matched re-smoke with every load form stored (2026-11-26)
+
+- **Unchanged:** prices, `rl_trees` and `rl_mixed` are identical to `smoke2_matched` (max |diff| 0), so the extra
+  arrays are not fed.
+- **Time per day:** 205 s (09-09) and 186 s (10-14), against 191/166 s before; the two held-out boosters are now
+  trained in `matched` as well.
+- **Load forms at RL level** (`score_variants.py`), both days pooled, RL MAE over all slots of D (form − F0):
+  - F1 (primary) +0.12;
+  - F2 −0.08;
+  - F3 −0.00;
+  - F4 −0.16;
+  - REF (published load at the gate) −0.30.
+- Two hand-picked days decide nothing (addendum 3 amendment, L5).

@@ -113,6 +113,45 @@ if "rlc_hold_app_tso_load" in z0.files:
                      f"{np.mean([bias(f(V[d]), V[d]['true_tso_load'], np.isfinite(V[d]['rlc_k'])) for d in days]):+.2f} |")
     lines.append("")
     lines += ["Residuals per day (GW): " + "; ".join(f"{d}: {json.loads(str(V[d]['meta']))['rl_extra']['resid']}" for d in days), ""]
+# ---- load forms at RL level (EXPECTATIONS addendum 3 amendment, F0-F4 + REF; needs a matched/both run with forms)
+if "rlc_form_hold_matched_gate" in z0.files and "rlc_matched_tso_load" in z0.files:
+    def form(z, kind):
+        d2 = z["rlc_k"] >= 2
+        pick = lambda a, m: np.where(d2, z[m], z[a])  # noqa: E731 - app set on d1 slots, matched set on d2+
+        if kind == "F0":
+            return pick("rlc_base_tso_load", "rlc_matched_tso_load")
+        if kind == "REF":
+            return z["pub_tso_load_gate"]
+        tag = {"F1": "hold_{}_gate", "F2": "hold_{}_study", "F3": "diag_{}_gate", "F4": "diag_{}_study"}[kind]
+        return pick("rlc_form_" + tag.format("app"), "rlc_form_" + tag.format("matched"))
+    names = {"F0": "fed in matched: cutoff-trained load", "F1": "PRIMARY held-out + own resid, gate window",
+             "F2": "held-out + own resid, study window", "F3": "cutoff-trained + held-out resid, gate window",
+             "F4": "cutoff-trained + held-out resid, study window", "REF": "published TSO load at the gate (load error 0)"}
+    ws = lambda z: z["rlc_sel_tso_wind"] + z["rlc_sel_tso_solar"]  # noqa: E731 - matched run's wind + solar
+    lines += ["## Load forms at RL level (wind/solar as in matched; load per form)", "",
+              "Diff = form − F0, per-day RL MAE, paired 7-day block bootstrap. Decision rule L5: a price pass only for the "
+              "F1–F4 form with the largest all-slot gain ≥ 0.10 GW whose interval excludes 0.", "",
+              "| form | RL MAE all | diff all | RL MAE d1 | diff d1 | RL MAE d2+ | diff d2+ | load MAE | load bias |",
+              "|---|---|---|---|---|---|---|---|---|"]
+    best = None
+    for d in days:   # F0 is what a matched run feeds: its RL must equal the stored tree RL
+        if json.loads(str(V[d]["meta"])).get("rl_variant") == "matched":
+            assert np.allclose(form(V[d], "F0") - ws(V[d]), V[d]["rl_trees"], atol=1e-9, equal_nan=True), d
+    f0 = {seg: np.array([mae(form(V[d], "F0") - ws(V[d]), V[d]["rl_true"], mf(V[d])) for d in days]) for seg, mf in masks.items()}
+    for kind in ("F0", "F1", "F2", "F3", "F4", "REF"):
+        r = {seg: np.array([mae(form(V[d], kind) - ws(V[d]), V[d]["rl_true"], mf(V[d])) for d in days]) for seg, mf in masks.items()}
+        lm = np.mean([mae(form(V[d], kind), V[d]["true_tso_load"]) for d in days])
+        lb = np.mean([bias(form(V[d], kind), V[d]["true_tso_load"], np.isfinite(V[d]["rlc_k"])) for d in days])
+        cell = lambda seg: "—" if kind == "F0" else ci(r[seg] - f0[seg])  # noqa: E731
+        lines.append(f"| {kind}: {names[kind]} | {r['all'].mean():.2f} | {cell('all')} | {r['d1'].mean():.2f} | {cell('d1')} | "
+                     f"{r['d2+'].mean():.2f} | {cell('d2+')} | {lm:.2f} | {lb:+.2f} |")
+        if kind in ("F1", "F2", "F3", "F4") and n >= 7:
+            dd = r["all"] - f0["all"]; lo, hi = boot(dd)
+            if dd.mean() <= -0.10 and hi < 0 and (best is None or dd.mean() < best[1]):
+                best = (kind, dd.mean())
+    lines += ["", "L5 decision: " + ("n/a (fewer than 7 days)" if n < 7 else
+                                     (f"request a price pass for {best[0]} ({best[1]:+.3f} GW)" if best else "no form qualifies")), ""]
+
 lines += ["Wiring checks per day: " + "; ".join(f"{d}: {json.loads(str(V[d]['meta'])).get('rl_check')}" for d in days),
           "", "Runtime per day (s): " + ", ".join(f"{d} {json.loads(str(V[d]['meta']))['secs']['total']}" for d in days)]
 open(OUT, "w").write("\n".join(lines) + "\n")

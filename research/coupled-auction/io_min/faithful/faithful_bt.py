@@ -214,7 +214,8 @@ async def _extra_models(rl: ResidualLoad, start, end) -> dict:
     first_d = RLV.cutoff + SLOT
     hold_end = (first_d - RL_HOLDOUT - SLOT).to_pydatetime()
     out, info = {}, {}
-    if RLV.uses("loadcorr"):
+    # held-out load boosters: fed in loadcorr/both, stored only in matched (every load-correction form, RL level)
+    if RLV.variant != "base":
         X, Y = await _training_set(rl, start, hold_end, "app")
         assert X.index.max() <= first_d - RL_HOLDOUT - SLOT
         out["hold_app_load"] = await asyncio.to_thread(_fit, X, Y["tso_load"])
@@ -228,11 +229,11 @@ async def _extra_models(rl: ResidualLoad, start, end) -> dict:
         rows = Xa.index.intersection(X.index)
         out["control"] = {t: await asyncio.to_thread(_fit, Xa.loc[rows], Ya.loc[rows, t]) for t in ResidualLoad.TARGETS}
         info["control"] = [str(rows.min()), str(rows.max()), int(len(rows)), "matched rows without app weather", int(len(X) - len(rows))]
-        if RLV.variant == "both":
-            X, Y = await _training_set(rl, start, hold_end, "d2")
-            assert X.index.max() <= first_d - RL_HOLDOUT - SLOT
-            out["hold_matched_load"] = await asyncio.to_thread(_fit, X, Y["tso_load"])
-            info["hold_matched"] = [str(X.index.min()), str(X.index.max()), int(len(X))]
+        # held-out matched load booster (d2 weather, to noon D-2): fed in both, stored only in matched
+        X, Y = await _training_set(rl, start, hold_end, "d2")
+        assert X.index.max() <= first_d - RL_HOLDOUT - SLOT
+        out["hold_matched_load"] = await asyncio.to_thread(_fit, X, Y["tso_load"])
+        info["hold_matched"] = [str(X.index.min()), str(X.index.max()), int(len(X))]
     # load residuals. Primary window: the 24 qh of valid time ending at gate - RL_PUB_LATENCY (published TSO figures of
     # D-1, out since D-2). Study window (stored only): the 24 qh up to the cutoff.
     wins = {"": pd.date_range(RLV.win_end() - RL_CORR_QH * SLOT, RLV.win_end() - SLOT, freq="15min"),
@@ -293,6 +294,17 @@ async def rl_components(rl: ResidualLoad, start, end) -> pd.DataFrame:
     for m in ("app", "matched"):
         out[f"corr_{m}"] = res.get(m, 0.0) * out["decay"]                          # primary
         out[f"corr_studywin_{m}"] = res.get(f"studywin_{m}", 0.0) * out["decay_studywin"]  # diagnostic
+    # every load-correction form, stored (RL level); which one is fed is decided below by the variant
+    if "hold_app_tso_load" in out:
+        out["form_hold_app_gate"] = out["hold_app_tso_load"] + out["corr_app"]          # primary (study form)
+        out["form_hold_app_study"] = out["hold_app_tso_load"] + out["corr_studywin_app"]  # study window
+        out["form_diag_app_gate"] = out["base_tso_load"] + out["corr_app"]               # held-out resid on app load
+        out["form_diag_app_study"] = out["base_tso_load"] + out["corr_studywin_app"]     # first-smoke loadcorr
+    if "hold_matched_tso_load" in out:
+        out["form_hold_matched_gate"] = out["hold_matched_tso_load"] + out["corr_matched"]
+        out["form_hold_matched_study"] = out["hold_matched_tso_load"] + out["corr_studywin_matched"]
+        out["form_diag_matched_gate"] = out["matched_tso_load"] + out["corr_matched"]
+        out["form_diag_matched_study"] = out["matched_tso_load"] + out["corr_studywin_matched"]
     out["k"] = slot_k(features.index)
     use_m = (out["k"].to_numpy() >= 2) if "matched" in ex else np.zeros(len(out), bool)
     for t in ResidualLoad.TARGETS:
@@ -567,6 +579,9 @@ class Harness:
         g = self.orig[id(self.rl.generation)]
         for t in ResidualLoad.TARGETS:
             res[f"true_{t}"] = onD(g[t])
+        # D's day-ahead TSO load as it stood at the gate: out before the gate (probe 2026-11-26) and never revised
+        # (refetch diff, README), so it equals the stored figure. RL-level reference only, never fed.
+        res["pub_tso_load_gate"] = res["true_tso_load"].copy()
         sel_rl = res["rlc_sel_tso_load"] - res["rlc_sel_tso_wind"] - res["rlc_sel_tso_solar"]
         base_rl = res["rlc_base_tso_load"] - res["rlc_base_tso_wind"] - res["rlc_base_tso_solar"]
         res["rl_base_model"] = base_rl

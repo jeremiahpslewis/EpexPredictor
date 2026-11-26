@@ -116,6 +116,35 @@ slots and −6.8 on d2 slots; 10-14 −5.5 / −4.5.
 
 # Addendum 3 (2026-11-26): 61-day used-window runs, `matched` and `both`, written before launch (not yet approved)
 
+**Amendment (2026-11-26, after review, before anything ran).**
+- **`both` is deferred.** Only `matched` is requested for the 61 days. M4 is void; M5 is replaced by L1–L5 below.
+- **Load forms are scored at RL level only.** The `matched` run stores every load form as RL-level arrays: held-out
+  boosters of both weather sets, both residual windows, and the diagnostics. `score_variants.py` scores them at RL
+  level on the 61 days.
+- **A price pass for a load form is requested only if a form wins at RL level** under L5's rule. Nothing is chosen
+  from the two smoke days.
+- **The forms.** Each one keeps the matched run's wind and solar (app boosters on d1 slots, matched on d2+). Load is
+  the set's own on each slot (app set on d1, matched set on d2+):
+  - **F0**, as fed in `matched`: the cutoff-trained load, uncorrected.
+  - **F1**, primary study form: held-out load (to noon D-2) + its own residual over the gate window (D-1 04:00–10:00
+    local), decay from 10:00.
+  - **F2**: held-out load + its own residual over the study window (D-1 18:00–24:00), decay from the cutoff.
+  - **F3**: the cutoff-trained load + the held-out residual over the gate window (the old diagnostic).
+  - **F4**: the cutoff-trained load + the held-out residual over the study window (the first-smoke `loadcorr`).
+  - **REF**: D's published TSO load as at the gate (load error 0). Energy-charts does not revise these figures, so
+    this equals the stored figure. It is an upper bound, not a candidate.
+- **Expectations** (RL MAE over all slots of D, form − F0; paired 7-day block bootstrap, 90 %):
+  - **L1.** F1 within ±0.10 GW of F0. The held-out booster is weaker on load; its own residual offsets that only in
+    part.
+  - **L2.** F3 and F4 below F0 by 0.03–0.20 GW. At least one of them has an interval excluding 0. The study: load
+    decay −0.11 to −0.15 GW on day 1.
+  - **L3.** F2 between F1 and F4 on the 61-day mean.
+  - **L4.** REF below F0 by 0.3–0.9 GW. Of the RL error at gate weather, load contributes about 13–18 % (study E1).
+    By MAE the drop may be larger, because the load bias is systematic.
+  - **L5, decision rule** (fixed now). A price pass is requested for at most one of F1–F4: the one with the largest
+    RL improvement over F0, provided it is ≥ 0.10 GW and its 90 % interval excludes 0. The rule applies to all
+    slots of D. If no form meets it, there is no price pass and loadcorr is reported as not shown at RL level.
+
 **Run.**
 - Commands: `faithful_bt.py --start 2026-09-08 --end 2026-11-08 --rl-variant matched`, then the same with `both`.
   Strict vintages, sequential, one process at a time.
@@ -140,12 +169,12 @@ slots −1.32 GW, MAE 2.97.
   - Blend: within −0.06 to +0.02.
   - Timestral and the market route: within ±0.05 each. The lead-weighted mix dilutes tree RL changes (study:
     −0.06 GW on the mixed series).
-- **M4. `both` vs `matched`.**
+- **M4 (VOID: `both` deferred, see the amendment). `both` vs `matched`.**
   - Day-level RL difference within ±0.15 GW, with the interval including 0. The held-out boosters are weaker on
     load, which offsets the correction (smoke: load MAE 1.52 uncorrected, 1.27 corrected, against 1.02 for the app's
     booster).
   - Blend difference within ±0.03.
-- **M5. Primary loadcorr form against the stored alternatives** (scorer "load forms", app-weather side).
+- **M5 (REPLACED by L1–L5). Primary loadcorr form against the stored alternatives** (scorer "load forms", app-weather side).
   - The study-window residual and the old diagnostic (held-out residual added to the app's load) both have lower
     load MAE than the primary form.
   - The primary form's load MAE is within ±0.15 GW of the uncorrected app load.
