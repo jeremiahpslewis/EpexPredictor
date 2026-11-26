@@ -114,3 +114,24 @@ the model (`ORACLE_TS=0`). Each cell is the change against the champion.
     before 11:00 UTC.
   - **"No"** is `ACK No matching data found`.
   - The DE A65 line answers the `published` load question the same way.
+
+## 5. Wind booster screen (I004, I005; pre-registered in WIND_PREREG.md, `wind_lab.py`, `wind_score.py`)
+
+**Setup.** d2 history and d2 weather; wind MAE against the TSO figure on k ≥ 2 slots; 61 and fresh 18 days.
+
+**Weekly refits (I004).**
+- V0 scores 2.019 / 1.775 GW, against the stored daily `matched` 1.894 / 1.663. Weekly refits alone cost about 7%.
+- Best variant: V7, the capacity-factor target plus extra aggregates, chosen post hoc: −5.0% / −3.3%.
+
+**Daily check on 8 fixed days (I005).** The weekly winner V1 turns worse with daily refits (+4.5% / +18%), because
+its trend correction only offsets staleness. So the weekly screen cannot rank variants (P found the same for the
+price trees).
+
+**Verdict.** No variant comes near −10% on both windows. Booster form is not where the wind error is. Nothing goes to
+a price screen.
+
+## 6. Grid points / second NWP
+
+`GRID_REQUEST.md` is a request list only. It proposes a sizing pilot first: about 2,700 weighted Open-Meteo calls
+of archive wind on about 90 denser northern points, scored with archive weather. Vintage history follows only on a
+go.

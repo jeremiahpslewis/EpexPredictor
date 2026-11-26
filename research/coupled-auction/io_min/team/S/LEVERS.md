@@ -109,3 +109,24 @@ Ranking now: (1) nbpast confirmation (C); (2) forecast-time-row training for tre
 (4) wind boosters offline and more grid points (I, not started); (5) market-route RL consistency (P with C's hook).
 The honest total is unchanged or lower: `matched` -0.06 and nbpast -0.02..-0.04 on the blend are the only gains with
 any support, about 5-6% of 1.648.
+
+## Update 23:50 UTC (after the pause: confirmations and screens)
+
+- **Timestral with neighbours' prices (nbpast), 16 confirmation days (C014):** Timestral -0.067 [-0.148, +0.013],
+  blend -0.020 [-0.046, +0.005]. Promising, not confirmed; October is positive in every cut. Goes to the 16-day
+  walk-forward wave. About 3% on Timestral and 1% on the blend if real.
+- **Trees on forecast-time rows (fclog): dropped (P009-P010).** Worse on fresh18 (+0.162 [+0.010, +0.314]) and on the
+  61 days (+0.099).
+- **Market route with a consistent RL history ("consist", P011):** the route's shift history and RL covariate use the
+  residual-load forecast it read at each earlier gate, not the published figure. Six fresh days: market route
+  2.457 → 2.087 (-0.370, 5 of 6 days), blend -0.104; one day (11-16) carries much of it. One confirmation run on the
+  other 12 fresh days is approved. Testable only from September on, where forecast-time RL is stored.
+- **Wind boosters on existing grid data (I004-I005): closed.** Seven variants at weekly refits, best -5% / -3%; at
+  daily refits the ranking changes and nothing reaches -10%. A denser-grid pilot is written up (`I/GRID_REQUEST.md`,
+  about 2,700 weighted calls) and runs only if quota is left after the walk-forward backfill.
+- **Gas price of day D:** THE revises it after the gate by up to about 0.7 EUR/MWh, and the store keeps one value per
+  day, so any backtest of it is an upper bound; only the live log can test it (C).
+
+Ranking now: (1) market-route RL consistency (P): confirm; (2) nbpast and `matched` on the walk-forward wave;
+(3) Timestral screen 3 (matched RL over the whole horizon, pre-registered); (4) denser wind grid pilot.
+Trees have no candidate left beyond `matched` RL.

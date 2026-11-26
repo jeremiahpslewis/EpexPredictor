@@ -133,6 +133,7 @@ def run(variants, cadence, which):
         E = E[E.set == which]
     cap = pd.Series(capacity(F2.index), index=F2.index)
     feats = {"V0": F2, "V1": F2, "V2": F2, "V3": F2, "V4": physical(F2, w), "V5": aggregates(F2, w), "V6": F2}
+    feats["V7"] = feats["V5"]   # post hoc: V1 (capacity-factor target) + V5 features, the two that beat V0 on both windows
     groups = E.groupby(E.day.map(lambda d: cutoff_of(d, cadence)))
     for v in variants:
         t0 = time.time(); preds = []
@@ -141,7 +142,7 @@ def run(variants, cadence, which):
             ok = X.index <= cut
             ok &= X.notna().all(axis=1).to_numpy() & y.notna().to_numpy()
             Xt, yt = X[ok], y[ok]
-            if v == "V1":
+            if v in ("V1", "V7"):
                 m = fit(Xt, yt / cap[ok]); p = m.predict(X.loc[ev.index]) * cap.loc[ev.index].to_numpy()
             elif v == "V2":
                 p = fit(Xt, yt, "regression_l1").predict(X.loc[ev.index])
