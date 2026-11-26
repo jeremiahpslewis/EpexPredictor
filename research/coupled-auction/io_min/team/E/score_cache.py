@@ -63,8 +63,11 @@ def main():
     ap.add_argument("--md")
     a = ap.parse_args()
     if a.days:
-        days = [x.strip() for x in open(a.days) if x.strip()]
+        lines = [x.split("\t") for x in open(a.days) if x.strip()]
+        days = [x[0].strip() for x in lines]
+        group = {x[0].strip(): x[1].strip() for x in lines if len(x) > 1}   # e.g. the quarter of sample_wf16.txt
     else:
+        group = {}
         days = sorted(set(os.path.basename(f)[:10] for f in glob.glob(f"{a.champion}/*.npz"))
                       & set(os.path.basename(f)[:10] for f in glob.glob(f"{a.challenger}/*.npz")))
     ch = day_maes(a.champion, days)
@@ -106,6 +109,20 @@ def main():
         n = sum(1 for d in both if d.startswith(mo))
         cells = [f"{v.loc[mo, 'c']:.2f} / {v.loc[mo, 'x']:.2f} / {v.loc[mo, 'diff']:+.2f}" if mo in v.index else "" for v in bymonth.values()]
         out.append(f"| {mo} | {n} | " + " | ".join(cells) + " |")
+    if group:
+        out += ["", "## By group of the days file (e.g. quarter): mean diff challenger - champion, days, sign", "",
+                "| group | n | " + " | ".join(m if m != "issued" else "blend" for m in bymonth) + " |", "|---|---|" + "---|" * len(bymonth)]
+        for gname in sorted(set(group[d] for d in both if d in group)):
+            gd = [d for d in both if group.get(d) == gname]
+            cells = []
+            for m in bymonth:
+                diffs = [cl[d][m] - ch[d][m] for d in gd if m in ch[d] and m in cl[d]]
+                cells.append(f"{np.mean(diffs):+.3f}" if diffs else "")
+            out.append(f"| {gname} | {len(gd)} | " + " | ".join(cells) + " |")
+        for m in bymonth:
+            signs = [np.mean([cl[d][m] - ch[d][m] for d in both if group.get(d) == g and m in cl[d]]) < 0
+                     for g in sorted(set(group.values()))]
+            out.append(f"- {m if m != 'issued' else 'blend'}: negative in {sum(signs)} of {len(signs)} groups")
     txt = "\n".join(out) + "\n"
     print(txt)
     if a.md:

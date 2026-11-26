@@ -59,6 +59,12 @@ STORE_FILES = ("prices_v3_", "gasprices_the_v1_", "weather_v2_", "gridweather_v1
 IRRADIANCE_SHIFT = pd.Timedelta(minutes=-22.5)
 ZONE_FILE = {"DE_LU": "DE", "AT": "AT", "BE": "BE", "FR": "FR", "NL": "NL", "SE_4": "SE4", "DK_1": "DK1", "DK_2": "DK2"}
 MAX_K = 3  # deepest vintage held locally
+# FAITHFUL_VINTAGE_EXTRA=DIR (or --vintage-extra DIR; team/E, walk-forward days before 2026-08/09): extra previous-runs
+# vintages in the local formats, DIR/prev_<zone>.parquet (<var>_<i>_d<k>) and DIR/grid_prev.parquet (w120/sw/t2_<i>_d<k>),
+# fetched by team/E/fetch_wf16.py. They only fill cells the local files lack (local values win), so days that already
+# have data are unchanged. FAITHFUL_VINTAGE_EXTRA_ONLY=1 (tests only): the extra files REPLACE the local ones.
+VEXTRA = os.environ.get("FAITHFUL_VINTAGE_EXTRA", "")
+VEXTRA_ONLY = os.environ.get("FAITHFUL_VINTAGE_EXTRA_ONLY", "") == "1"
 
 # ---------------------------------------------------------------------------------------------------- environment
 os.makedirs(WORK, exist_ok=True)
@@ -146,6 +152,9 @@ RL_CORR_QH = 24
 # Latency between the gate and the newest TSO load value the correction may use (assumed, conservative): the
 # day-ahead TSO figures for D-1 were published on D-2 (store/log evidence in README), so this is stricter than needed
 RL_PUB_LATENCY = pd.Timedelta(hours=2)
+# FAITHFUL_RL_LEAN=1 (team/E walk-forward waves): `matched` skips the boosters it only STORES (held-out load, control
+# set, held-out matched load); what is fed (the three d2-trained boosters on d2+ slots) is unchanged. Saves ~90 s/day.
+RL_LEAN = os.environ.get("FAITHFUL_RL_LEAN", "") == "1"
 RL_HOLDOUT = pd.Timedelta(hours=36)     # held-out load models: rows < first slot of D - 36 h (= up to D-2 11:45 local)
 D2_HIST = f"{SP}/dense/hist.parquet"
 
@@ -261,7 +270,7 @@ async def _extra_models(rl: ResidualLoad, start, end) -> dict:
     out, info = {}, {}
     # held-out load boosters: fed in loadcorr/both, stored only in matched (every load-correction form, RL level);
     # not trained in the published variants (nothing of them is fed or needed there)
-    if RLV.variant in ("loadcorr", "matched", "both"):
+    if RLV.variant in ("loadcorr", "both") or (RLV.variant == "matched" and not RL_LEAN):
         X, Y = await _training_set(rl, start, hold_end, "app")
         assert X.index.max() <= first_d - RL_HOLDOUT - SLOT
         out["hold_app_load"] = await asyncio.to_thread(_fit, X, Y["tso_load"])
@@ -270,7 +279,7 @@ async def _extra_models(rl: ResidualLoad, start, end) -> dict:
         X, Y = await _training_set(rl, start, end, "d2")
         out["matched"] = {t: await asyncio.to_thread(_fit, X, Y[t]) for t in ResidualLoad.TARGETS}
         info["matched"] = [str(X.index.min()), str(X.index.max()), int(len(X))]
-    if RLV.variant in ("matched", "both"):
+    if RLV.variant == "both" or (RLV.variant == "matched" and not RL_LEAN):
         # control: app weather on the matched rows (stored only)
         Xa, Ya = await _training_set(rl, start, end, "app")
         rows = Xa.index.intersection(X.index)
@@ -414,12 +423,21 @@ def load_vintages() -> dict:
             fr = pd.read_parquet(f"{FRESH_DIR}/prev_{f}.parquet")
             for k in (1, 2, 3):
                 frames[k] = frames[k].combine_first(fr[[c for c in fr.columns if c.endswith(f"_d{k}")]].rename(columns=lambda c: c.rsplit("_", 1)[0]))
+        if VEXTRA and os.path.exists(f"{VEXTRA}/prev_{f}.parquet"):
+            ex = pd.read_parquet(f"{VEXTRA}/prev_{f}.parquet")
+            for k in (1, 2, 3):
+                part = ex[[c for c in ex.columns if c.endswith(f"_d{k}")]].rename(columns=lambda c: c.rsplit("_", 1)[0])
+                if len(part.columns):
+                    frames[k] = part if VEXTRA_ONLY else frames[k].combine_first(part)
         out[zone] = frames
     dense = pd.read_parquet(f"{SP}/dense/prev.parquet")
     if FRESH or LIVE:
         dense = dense.combine_first(pd.read_parquet(f"{FRESH_DIR}/grid_prev.parquet"))
     if LIVE and live_grid_prev() is not None:
         dense = live_grid_prev().combine_first(dense)
+    if VEXTRA and os.path.exists(f"{VEXTRA}/grid_prev.parquet"):
+        ex = pd.read_parquet(f"{VEXTRA}/grid_prev.parquet")
+        dense = ex if VEXTRA_ONLY else dense.combine_first(ex)
     names = {"w120": "wind", "sw": "radiation", "t2": "temp"}
     out["GRID"] = {k: dense[[c for c in dense.columns if c.endswith(f"_d{k}") and c.split("_")[0] in names]]
                    .rename(columns=lambda c: f"{names[c.split('_')[0]]}_{c.split('_')[1]}").astype(float) for k in (1, 2, 3)}
@@ -785,11 +803,15 @@ async def main():
     ap.add_argument("--rl-variant", choices=("base", "loadcorr", "matched", "both") + PUB_VARIANTS, default="base",
                     help="residual-load variant (see RLState); every non-base variant needs an explicit --out")
     ap.add_argument("--torch-threads", type=int, default=0, help="0 = torch default; lower it on a contended machine")
+    ap.add_argument("--vintage-extra", help="directory of extra previous-runs vintages (= FAITHFUL_VINTAGE_EXTRA)")
     a = ap.parse_args()
+    if a.vintage_extra:
+        global VEXTRA
+        VEXTRA = a.vintage_extra
     if a.torch_threads > 0:
         import torch
         torch.set_num_threads(a.torch_threads)  # applies to the asyncio worker threads that run Timestral as well
-    if a.out is None and (a.rl_variant != "base" or FRESH or LIVE):
+    if a.out is None and (a.rl_variant != "base" or FRESH or LIVE or VEXTRA):
         ap.error("--out is required for every non-base variant and with FAITHFUL_FRESH=1 (the default path ignores FRESH)")
     if a.rl_variant in PUB_VARIANTS and not PUB_LOAD_AT_GATE:
         ap.error(f"{a.rl_variant} is disabled: PUB_LOAD_AT_GATE is False (D's TSO load not shown to be out by the gate)")

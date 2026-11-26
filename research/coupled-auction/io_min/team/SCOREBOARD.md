@@ -1,4 +1,4 @@
-# Scoreboard (S keeps it). Last update: 2026-11-26 17:30 UTC
+# Scoreboard (S keeps it). Last update: 2026-11-26 23:25 UTC
 
 MAE in ct/kWh over 96 quarter hours, mean of daily MAE. Champion = faithful rerun at 37978d1, `--rl-variant base`,
 strict vintage. Differences are candidate minus champion on the same days; intervals are paired circular 7-day block
@@ -25,7 +25,7 @@ Progress to target (61 days): trees 53% of the way, Timestral 15%, market route 
 | candidate | owner | evidence so far | status |
 |---|---|---|---|
 | `matched` RL | I / E | 61 days: blend -0.061 [-0.102,-0.018]; pooled 79: -0.054 [-0.091,-0.015] | candidate; live shadow |
-| Timestral + neighbours' price history (nbpast) | C | 12 fixed days: Timestral -0.055 (61 half), -0.107 (fresh half); blend -0.016 / -0.044 | 20-day confirmation wave queued |
+| Timestral + neighbours' price history (nbpast) | C | 12 screen days: Timestral -0.055 (61 half), -0.107 (fresh half). **16 confirmation days (C014): Timestral 2.145 → 2.078, -0.067 [-0.148,+0.013], 9 of 16 days; blend -0.020 [-0.046,+0.005]; Sep -0.093, Oct +0.021, Nov -0.146** | promising, not confirmed; goes to the 16-day walk-forward wave |
 | Trees trained on forecast-time rows (fclog) | P | none yet (pre-registered) | 1 run queued |
 | Tree shift target (shiftl1) | P | fresh18 weekly screen -0.255; 61 days +0.074; daily fixed days +0.332 | dropped |
 | Published TSO load on D | I | 4 days: blend +0.005 | parked |

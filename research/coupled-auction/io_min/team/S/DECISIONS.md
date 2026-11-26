@@ -52,3 +52,10 @@
   - S scores the D = 2026-11-28 live row after about 11:45 UTC on 11-27.
   - C's confirmation wave was killed by the pause and is restarted from scratch (16 days from one run). Then P's
     single fclog run and I's offline wind-booster screen, then P's market-route replay (one run).
+- **2026-11-26 ~23:10. Option B promotion rule (text and statistics from E, `E/WALKFORWARD_PLAN.md`).** Evidence is the
+  paired 90% block-bootstrap interval over the pooled days (61 + fresh 18 + 16 walk-forward days, 92 distinct days;
+  optimistic because the 61 days were used for development). "Negative in at least 3 of the 4 quarters" of the
+  16-day sample is only a guard against a gain concentrated in one season: with no real effect it passes 31% of the
+  time. The 16 days are frozen in `E/sample_wf16.txt` (4 per quarter; weekends under-represented, 2 of 16).
+  Backfill of about 1,080 weighted Open-Meteo calls for the 12 days before 2026-08-15 is approved for after the live
+  run.

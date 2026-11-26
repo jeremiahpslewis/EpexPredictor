@@ -49,3 +49,34 @@ if __name__ == "__main__":
     print("weekdays:", dict(sorted(Counter(d.strftime("%a") for d in days).items())))
     print("months:", dict(Counter(d.strftime("%Y-%m") for d in days)))
     print(",".join(map(str, days)))
+
+
+# ---------------------------------------------------------------------------------------------------- option B (16 days)
+# Coordinator decision 2026-11-26 (option B): ONE wave of 16 days. Rule (fixed before any scoring): the first-third day of
+# every month of sample_core36 (12) plus the second-third day of one month per quarter (4), the month drawn with
+# rng(SEED + 16). Quarters of the window (meteorological): Q1 = Dec-Feb, Q2 = Mar-May, Q3 = Jun-Aug, Q4 = Sep-Nov.
+QUARTER = {12: "Q1 (DJF)", 1: "Q1 (DJF)", 2: "Q1 (DJF)", 3: "Q2 (MAM)", 4: "Q2 (MAM)", 5: "Q2 (MAM)",
+           6: "Q3 (JJA)", 7: "Q3 (JJA)", 8: "Q3 (JJA)", 9: "Q4 (SON)", 10: "Q4 (SON)", 11: "Q4 (SON)"}
+
+
+def wf16(core_days):
+    by_month = {}
+    for d in core_days:
+        by_month.setdefault((d.year, d.month), []).append(d)
+    first = [sorted(v)[0] for v in by_month.values()]
+    rng = np.random.default_rng(SEED + 16)
+    extra = []
+    for q in ("Q1 (DJF)", "Q2 (MAM)", "Q3 (JJA)", "Q4 (SON)"):
+        months = [ym for ym in by_month if QUARTER[ym[1]] == q]
+        ym = months[rng.integers(len(months))]
+        extra.append(sorted(by_month[ym])[1])
+    return sorted(first + extra)
+
+
+if __name__ == "__main__":
+    days16 = wf16(days)
+    assert len(days16) == 16 and set(days16) <= set(days)
+    fn16 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample_wf16.txt")
+    open(fn16, "w").write("".join(f"{d}\t{QUARTER[d.month]}\n" for d in days16))
+    print(fn16)
+    print("per quarter:", dict(Counter(QUARTER[d.month] for d in days16)), "weekdays:", dict(Counter(d.strftime("%a") for d in days16)))
