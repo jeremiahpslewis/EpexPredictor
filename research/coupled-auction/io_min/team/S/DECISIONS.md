@@ -43,3 +43,12 @@
   screened at daily cadence on a pre-registered day list, one wave, and confirmed on days outside the screen.
 - **2026-11-26 ~17:30. Published load parked; shiftl1 dropped; nbpast goes to its confirmation wave; fclog approved
   for one pre-registered run.**
+- **2026-11-26 ~23:00. Team resumed after a pause (coordinator's decisions while the user has not answered).**
+  - Walk-forward: option B. One wave of 16 sampled days (list fixed by rule before scoring, 4 per quarter); promotion
+    is judged by quarter. The Open-Meteo grid backfill runs only after the live run on 11-27 (after 10:30 UTC), only
+    for those 16 days, in small resumable batches.
+  - No licensed futures data; public, gate-known sources only.
+  - The coordinator starts the live run at 09:15 UTC on 11-27; the machine is reserved 09:10-10:30 UTC.
+  - S scores the D = 2026-11-28 live row after about 11:45 UTC on 11-27.
+  - C's confirmation wave was killed by the pause and is restarted from scratch (16 days from one run). Then P's
+    single fclog run and I's offline wind-booster screen, then P's market-route replay (one run).
