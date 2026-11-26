@@ -209,3 +209,16 @@ slots −1.32 GW, MAE 2.97.
   interval is expected to include 0.
 - **N4.** `both` vs `matched` on blend: within ±0.04.
 - **N5.** No leak or wiring failure. A failed day is listed and not replaced.
+
+**Amendment to addendum 4 (2026-11-26, after the 61-day matched result, before any fresh figure is seen).**
+- `both` is dropped (deferred on the used window; L5 found no load form worth a price pass). N4 is void; N3 applies to
+  `matched` only.
+- Runs: `base` for 11-09..11-25 (11-26 exists, unread) to `--out SP/faithful/out_fresh_strict`, and `matched` for
+  11-09..11-26 to `--out SP/faithful/out_fresh_strict_rlmatched`, several processes in parallel with `--torch-threads 1`.
+  `--out` is given explicitly because the default path ignores `FAITHFUL_FRESH`.
+- Added expectations, using the 61-day result as the prior:
+  - **N6.** Matched d2+ tree RL bias within ±0.6 GW on the 18-day mean; base's is negative.
+  - **N7.** Matched minus control d2+ RL MAE has a point estimate below 0.
+  - **N8.** Price changes (matched − base), point estimates: trees −0.20..+0.05, blend −0.12..+0.03, Timestral and
+    market route each within ±0.08. Intervals may include 0 (about 3 blocks).
+  - **N9.** REF (published load) below F0 on RL MAE; no F1–F4 form below F0 by more than 0.10 GW.
