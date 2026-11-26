@@ -18,6 +18,15 @@ toward the earlier day): 2026-10-07 (10-09 equally near, later). sample_wf16 als
 this list. gasD runs only if E's 11-27 input log again shows THE gas-day-D present before the gate ("observed twice",
 not proven for summer).
 
+Gas vintage check (2026-11-26, coordinator request): the THE store keeps ONE value per gas day, with no record of what
+was served when, so a stored historical day-D value is the value as of the last fetch, not the one served at the gate.
+The two fetches compare as follows:
+- Live fetch before the 11-26 gate (SP/live/stores): gas day 11-27 = 90.744, 11-26 = 90.274.
+- Later refetch (SP/fresh_data/stores = SP/faithful/stores_fresh): gas day 11-27 = 91.428, 11-26 = 90.259.
+So day D's value is revised after the gate by up to about 0.7 EUR/MWh (preliminary vs final). gasD and nbpast_gasD on the screen-3 days therefore use
+post-gate values and are an UPPER BOUND (a mild leak), labelled as such. A gain claimed for gasD needs a live/forward
+test with the value as served at the gate (E's input log).
+
 ## What runs per day
 `dump_ts.py --rl-variant matched --de-only --context 8192 --also nbpast,gasD,nbpast_gasD`, tag `screen3`.
 - The dump runs under the harness's `matched` RL variant, so Timestral's RL covariate is matched over the WHOLE horizon
