@@ -59,3 +59,8 @@
   time. The 16 days are frozen in `E/sample_wf16.txt` (4 per quarter; weekends under-represented, 2 of 16).
   Backfill of about 1,080 weighted Open-Meteo calls for the 12 days before 2026-08-15 is approved for after the live
   run.
+- **2026-11-27 00:05. End of day 1.** Dropped after pre-registered tests: tree shift target, trees on forecast-time
+  rows, market-route RL consistency (in the mixed-history form), wind-booster variants on existing grid data.
+  nbpast stays a candidate. Champion unchanged. Tomorrow after 10:30 UTC: backfill for the 12 early walk-forward
+  days, then one wave each for champion, `matched` (lean) and nbpast on the 16 days; C's screen 3 (`C/screen3_wave.sh`,
+  `nogas` unless the 11-27 input log shows gas day D before the gate; any gas result is an upper bound).

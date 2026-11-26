@@ -130,3 +130,20 @@ any support, about 5-6% of 1.648.
 Ranking now: (1) market-route RL consistency (P): confirm; (2) nbpast and `matched` on the walk-forward wave;
 (3) Timestral screen 3 (matched RL over the whole horizon, pre-registered); (4) denser wind grid pilot.
 Trees have no candidate left beyond `matched` RL.
+
+## Update 00:05 UTC on 11-27 (all confirmation runs scored)
+
+- **Market-route RL consistency: confirmation failed (P012).** Against a like-built control on 73 days: +0.036
+  [-0.065, +0.134]; blend +0.002. By length of the forecast-time log: 0-19 days +0.137, 20-39 days +0.094, 40-60 days
+  -0.102 [-0.332, +0.160]. A history that mixes published and forecast residual load is worse than either; a full
+  85-day forecast-time history is untested and needs the live log (the app's log stores tree and Timestral RL
+  separately, so the mix has to be rebuilt or logged).
+
+**State of the levers after day 1.** Confirmed at 90%: only `matched` residual load (blend -0.054 pooled, on
+strict-vintage weather). Promising, not confirmed: Timestral with neighbours' prices (blend -0.02). Everything else
+tried on trees, the market route, the blend and the wind boosters is dropped or closed. Supported total: about 4-5%
+of the blend against a 20% target; no member is at its 10% target (trees 53% of the way with `matched`).
+
+Open, in order: (1) walk-forward wave of 16 days for champion, `matched`, nbpast (after the backfill, 11-27 after
+10:30 UTC); (2) live log: RL on live weather for base and matched boosters, gas day D as served at the gate, mixed RL
+per gate; (3) Timestral screen 3 (pre-registered); (4) denser wind grid pilot if quota allows.

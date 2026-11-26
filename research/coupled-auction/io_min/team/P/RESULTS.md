@@ -8,8 +8,8 @@ are logged in `../TRIALS.md` as P001-P011.
 
 - **No change to either member is promotable.**
 - **Trees:** shiftl1 and fclog both failed their pre-registered tests. The trees target (≤ 1.61) is not reached.
-- **Market route:** one lead, "consist": -0.370 on 6 days, blend -0.104. It needs E's walk-forward sample before it
-  counts. The market target (≤ 1.69) is not established.
+- **Market route:** the lead "consist" (-0.370 on 6 screened days) failed its confirmation (P012): pooled +0.036
+  [-0.065, +0.134] over 73 days, blend +0.002. The market target (≤ 1.69) is not reached.
 
 ## Trees
 
@@ -61,11 +61,40 @@ are logged in `../TRIALS.md` as P001-P011.
   days start 09-08; older context days keep the published RL.
 - **Dropped heuristics (P005).** 10 stored-array shift or demand changes, all worse.
 
+## consist confirmation (P012; CONSIST_SPEC.md, CONSIST_PREREG.md, `market_ts2.py`, `score_consist.py`)
+
+**Setup.**
+- Frames are rebuilt from the stores; history matches C's dumped frames to 4e-6.
+- The horizon is D only in both arms, and the paired control is repro96.
+- The leak assertion passed on all 73 days.
+
+| set | days | consist96 − repro96 | better |
+|---|---|---|---|
+| A: 61 window (independent of the screen) | 61 | +0.040 [-0.064, +0.141] | 28/61 |
+| B: 12 unscreened fresh days | 12 | +0.013 [-0.206, +0.247] | 8/12 |
+| pooled | 73 | +0.036 [-0.065, +0.134] | 36/73 |
+| pooled without best day (11-26) | 72 | +0.052 [-0.060, +0.161] | 35/72 |
+| Sep / Oct / Nov | 23 / 31 / 19 | +0.146 [+0.071, +0.226] / +0.054 / -0.126 [-0.309, +0.072] | 7 / 15 / 14 |
+| A, log 0-19 / 20-39 / 40-60 days | 20 / 20 / 21 | +0.137 [+0.062, +0.219] / +0.094 / -0.102 [-0.332, +0.160] | 5 / 9 / 14 |
+
+- **Blend:** with consist replacing the market route, +0.002 [-0.030, +0.034].
+- **Error correlation:** consist with the champion market route 0.93, with Timestral 0.84, with the trees 0.76.
+- **Construction effect** (horizon 96 vs the app's 192): repro96 − stored +0.019.
+- **Verdict:** dropped as specified.
+- **What stays open:** the effect turns from harmful to helpful as the logged share of the 85-day context grows. A
+  history that mixes published RL (old days) and forecast RL (recent days) looks worse than either. A full-log
+  version is untested.
+
+**What the app would need to log live for consist:**
+- The Timestral-mixed RL the route reads at each gate, for the 96 qh of the next delivery day.
+- Alternatively, the issue just before each gate from `loadforecastlog`, which stores the trees' RL and Timestral's RL
+  separately; the mix is rebuilt with `TimestralLoad.weights`.
+- About 85 days of it is needed before a full-log test is possible, from 2026-11-27 that is about late February 2027,
+  unless an RL-only replay builds the log.
+
 ## Next
 
-1. **consist on E's walk-forward days.** It needs forecast-time RL for each sample day's 85-day context.
-   - That is a cache-wide RL log, either from E's champion cache or a cheap RL-only replay per context day.
-   - For the 12 pre-September sample days the vintages are missing (E), so it can only be tested where a stored RL
-     history exists: the 4 Sep-Nov sample days plus more fresh days.
+1. **consist with a full log.** This needs an RL-only replay that produces the forecast-time RL for each context day,
+   or the live log. It is a new pre-registration, not a re-spec on these days.
 2. **Tree changes at daily cadence only.** This means the exact daily dump (about 190 s/day at 1 thread, matched RL)
    or the @d2 proxy, never weekly.
