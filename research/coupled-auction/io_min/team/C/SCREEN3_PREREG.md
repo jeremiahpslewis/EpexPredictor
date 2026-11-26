@@ -7,10 +7,16 @@ dropped and never topped up. Selection rule fixed here; no comparison on the 12 
 Candidates: 09-08..11-26 minus the 12 screen days, the 21 days ever listed for confirmation, 10-25 (clock change) and 11-08.
 61-window: 40 candidates, 9 taken evenly (positions round(i*(n-1)/8), i=0..8). Fresh: 5 candidates, 3 taken evenly.
 - proc 1: 2026-09-08,2026-09-16,2026-09-24
-- proc 2: 2026-10-01,2026-10-08,2026-10-14
+- proc 2: 2026-10-01,2026-10-07,2026-10-14
 - proc 3: 2026-10-22,2026-10-31,2026-11-07
 - proc 4: 2026-11-11,2026-11-17,2026-11-24
 All procs with FAITHFUL_FRESH=1 (fresh mode reproduced 61-window days exactly: 10-15, 10-19, 10-24 in C014).
+
+Swap (2026-11-26, before any run): 2026-10-08 is in E's frozen walk-forward list (team/E/sample_wf16.txt) and is
+replaced by the nearest 61-window day not in any screen list, confirmation list, this list or sample_wf16 (tie broken
+toward the earlier day): 2026-10-07 (10-09 equally near, later). sample_wf16 also holds 10-16 and 11-02: neither is in
+this list. gasD runs only if E's 11-27 input log again shows THE gas-day-D present before the gate ("observed twice",
+not proven for summer).
 
 ## What runs per day
 `dump_ts.py --rl-variant matched --de-only --context 8192 --also nbpast,gasD,nbpast_gasD`, tag `screen3`.
