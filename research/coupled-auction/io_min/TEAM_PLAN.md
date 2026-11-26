@@ -10,7 +10,7 @@ earlier) is reported as well, so months with different price levels compare fair
 **Targets.**
 - Each price member at least 10% better than its champion version.
 - Residual load (the input all members share) at least 10% better.
-- The blend at least 20% better.
+- The blend at least 20% better (target confirmed by the user).
 
 | | Champion, 61 days (09-08..11-07) | Target | Champion, 18 fresh days (11-09..11-26) |
 |---|---|---|---|
@@ -26,7 +26,8 @@ targets then become 10% and 20% relative to those numbers.
 ## Evaluation without a sealed window
 
 1. **Long walk-forward window.**
-   - Every day from 2025-12-01 to the present (about 360 origins) is forecast with information up to its gate only.
+   - A stratified sample of days from 2025-12-01 to the present (about 2 per week, every weekday and month represented)
+     is forecast with information up to its gate only.
    - That makes every forecast out of sample by construction.
    - Members train weekly for screening and daily for the final check.
 2. **Promotion rule.**
@@ -68,6 +69,11 @@ targets then become 10% and 20% relative to those numbers.
 - `predictor/` is not modified. Promotion to the deployed app is a separate decision for the user.
 - The ENTSO-E key stays in `$SP/entsoe/key`. No EPEX licensed data, no data files in the repo. Branch
   `claude/eager-fermat-vyfgf0`.
-- Compute: 4 cores. E schedules runs (at most 4 single-thread processes, each under 2 h). Compute runs within the user's
-  standing budget; anything beyond it goes to the user.
+- **Compute (user rule, 2026-11-26): every run is at most 20 min wall clock, by design, and the intent counts, not only
+  the letter.**
+  - Experiments are built to fit: cached member arrays, subsampled origins, screening proxies, cheaper refits.
+  - A long job is not split into chained 20-minute chunks to get round the rule.
+  - The one-off champion cache over the long window is built from a stratified sample of origins (for example 2 days
+    per week across 12 months). It is not built from every day.
+  - At most 4 single-thread processes at once; E keeps the queue. Anything still needing more goes to the user.
 - Check-ins: S posts a scoreboard to the user each day after scoring the live forecast.
