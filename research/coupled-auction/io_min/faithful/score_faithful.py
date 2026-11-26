@@ -15,7 +15,7 @@ F = {k: np.full_like(a, np.nan) for k in K}; rl_pes = np.full_like(a, np.nan); h
 for j, c in enumerate(cut):
     d = (c + pd.Timedelta(minutes=15)).tz_convert("Europe/Berlin").date(); fn = f"{OUT}/{d}.npz"
     if not os.path.exists(fn): continue
-    z = np.load(fn); idx = pd.to_datetime(z["idx"], utc=True); want = c + pd.to_timedelta(np.arange(96) * 15, "min")
+    z = np.load(fn); iv = np.asarray(z["idx"]); idx = pd.to_datetime(iv, unit="us" if np.abs(iv).max() < 1e17 else "ns", utc=True); want = c + pd.to_timedelta(np.arange(96) * 15, "min")
     pos = pd.Index(idx).get_indexer(want)
     if (pos < 0).any(): continue
     for k in K: F[k][j] = z[k][pos]
