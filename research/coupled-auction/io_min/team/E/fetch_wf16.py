@@ -37,12 +37,19 @@ ZONES = {"DE": list(range(6, 11)), "AT": None, "BE": None, "FR": None, "NL": Non
 
 
 def get(url):
-    try:
-        with urllib.request.urlopen(url, timeout=180) as r:
-            data = json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        raise SystemExit(f"HTTP {e.code}: {e.read()[:200]!r} - stopping (resume later)")
-    return [data] if isinstance(data, dict) and "hourly" in data else data
+    for attempt in range(4):   # the 429s seen on 11-26/27 came and went within a minute: retry 3x after 60 s
+        try:
+            with urllib.request.urlopen(url, timeout=180) as r:
+                data = json.loads(r.read())
+            return [data] if isinstance(data, dict) and "hourly" in data else data
+        except urllib.error.HTTPError as e:
+            msg = f"HTTP {e.code}: {e.read()[:200]!r}"
+        except (urllib.error.URLError, ConnectionError, OSError) as e:
+            msg = repr(e)[:200]
+        print(f"  {msg} (attempt {attempt + 1})", flush=True)
+        if attempt < 3:
+            time.sleep(60)
+    raise SystemExit(f"{msg} - stopping (resume later)")
 
 
 def prev_runs(lats, lons, variables, ks, s, e, extra=""):

@@ -198,7 +198,9 @@ async def fetch_stores(d: date, only=None) -> dict:
             log["gas"][z] = {"before": str(before), "last": str(g.data.dropna().index.max()), "fetched_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}
 
     async def weather():
-        stores = [(z, WeatherStore, PriceRegionName(z).to_region()) for z in ZONES] + [("GRID", GridWeatherStore, de)]
+        # the grid first: it feeds the residual load of every member, and on 2026-11-27 it came last and found the shared
+        # retry budget spent (it stayed on the 11-26 fetch)
+        stores = [("GRID", GridWeatherStore, de)] + [(z, WeatherStore, PriceRegionName(z).to_region()) for z in ZONES]
         w_t0 = time.time()
         for name, cls, region in stores:
             w = await cls(region, LIVE_STORES).load()
@@ -208,9 +210,11 @@ async def fetch_stores(d: date, only=None) -> dict:
             # primary, fallback; then twice more after a pause (the 429s seen on 2026-11-26 came and went within seconds)
             for i, attempt in enumerate(("primary", "fallback", "primary", "fallback", "primary", "fallback")):
                 if i in (2, 4):
-                    if time.time() - w_t0 > 240:   # weather budget: no more pauses after 4 min, the stored forecast stays
+                    # per-store retry after a pause (the 429s come and go within a minute); overall cap 9 min, after
+                    # which a store keeps its stored forecast
+                    if time.time() - w_t0 > 540:
                         break
-                    await asyncio.sleep(45 * i // 2)
+                    await asyncio.sleep(40 * i // 2)
                 REWRITE["on"] = attempt == "fallback"
                 t = datetime.now(timezone.utc)      # recomputed per store: the app's host choice gives the forecast API
                 try:
@@ -237,7 +241,7 @@ async def fetch_stores(d: date, only=None) -> dict:
             entry["weather_fetched_utc"] = wft.get(name, {}).get("fetched_utc", "seed (fresh_data, 2026-11-26 ~10 UTC)")
             entry["weather_source"] = wft.get(name, {}).get("source", "seed")
             log["weather"][name] = entry
-            await asyncio.sleep(2)
+            await asyncio.sleep(15)   # spacing between stores, as the app's 5-20 s (per-minute limit)
 
     parts = {"prices": prices, "generation": generation, "gas": gas, "weather": weather}
     await asyncio.gather(*(f() for k, f in parts.items() if only is None or k == only))

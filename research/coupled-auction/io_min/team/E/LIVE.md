@@ -87,3 +87,22 @@ Expect the two forecasts to differ by a few tenths of a ct/kWh on the blend ever
 | D+1 | D's TSO wind/solar/load complete: RL score per run and model set (base vs matched boosters on live weather) |
 
 Live and dry runs are never scored inside `live_forecast.py` (actual prices are blanked); scoring is a separate step.
+
+## Incident 2026-11-27 (D = 11-28): the grid weather was not refreshed
+
+- **What happened**: the DE grid store (`gridweather_v1`), which feeds the residual load of every member, kept the
+  stored 2026-11-26 15:56 UTC fetch. The 8 zone stores were refreshed between 09:17 and 09:22: DE, AT, BE, SE4 and DK1
+  from the forecast host, FR, NL and DK2 from the fallback host.
+- **Cause**: Open-Meteo returned 429 ("Daily API request limit exceeded") on and off from 09:17. The grid store came
+  last in the loop, after AT had used the retries. Its two attempts at 09:22:22 failed on both hosts, and the shared
+  4-minute retry budget was spent, so it was not retried.
+- **Quota state**: at 10:37 the previous-runs host reported X-RateLimit-Remaining 0 of 10,000 for the day, with reset
+  at 00:00:54 UTC; the forecast host answered. The daily counters appear to be shared beyond our own use: this egress
+  IP had exhausted the previous-runs quota by 10:37.
+- **Fix in `live_fetch.py`, from 11-28 on**:
+  - the grid store is fetched first;
+  - each store gets its own retries: primary, fallback, then 40 s pause, then both again, then 80 s pause, then both
+    again;
+  - the overall cap is 9 min, after which a store keeps its stored forecast, labelled;
+  - 15 s spacing between stores, as in the app.
+  - In the worst case the fetch takes about 11 min, so a 09:15 start still finishes before 09:45.
