@@ -1,4 +1,4 @@
-# Scoreboard (S keeps it). Last update: 2026-11-27 00:05 UTC
+# Scoreboard (S keeps it). Last update: 2026-11-27 12:10 UTC
 
 MAE in ct/kWh over 96 quarter hours, mean of daily MAE. Champion = faithful rerun at 37978d1, `--rl-variant base`,
 strict vintage. Differences are candidate minus champion on the same days; intervals are paired circular 7-day block
@@ -57,6 +57,12 @@ Progress to target (61 days): trees 53% of the way, Timestral 15%, market route 
 
 ## Live forward test (from D = 2026-11-28)
 
-| D | app | frozen champion | team forecast (variant) | shadows | issued UTC | hashes |
-|---|---|---|---|---|---|---|
-| 2026-11-28 | pending | pending | = frozen champion config on live inputs (see S/DECISIONS.md) | `matched` | | |
+Blend MAE in ct/kWh against the published day-ahead prices; scored with `E/score_live.py`. One day is noise (daily
+blend MAE ranged from about 0.4 to 3.2 on the stored days); the table is a running record, not a ranking.
+
+| D | naive (D-7) | app | team = champion config | `matched` shadow | team minus app | issued UTC | notes |
+|---|---|---|---|---|---|---|---|
+| 2026-11-28 (Sat) | 1.924 | 0.816 | 0.867 | 0.929 | +0.051 | 11-27 09:31 | grid weather stale (fetched 11-26 15:56 UTC, Open-Meteo 429); hashes in `E/live/2026-11-28.md` |
+
+Members on 2026-11-28 (trees / Timestral / market route): app 0.803 / 1.032 / 0.833; champion 0.950 / 1.070 / 0.841;
+`matched` 0.931 / 1.127 / 0.866. Residual-load scores follow on 11-29.
