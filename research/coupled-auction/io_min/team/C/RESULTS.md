@@ -42,3 +42,18 @@ Pooled over the 12 screen days and the 16 confirmation days (28 days). This incl
 - By month: September -0.122, October +0.035, November -0.125. October is negative in every cut.
 
 Next screen, pre-registered: SCREEN3_PREREG.md.
+
+## Screen 3 (2026-11-27): a negative result
+Setup:
+- Third pre-registered list of 12 days, all valid. These are calm days: the champion's Timestral error averages 1.52 here, against 2.1 on the confirmation days.
+- Dumps used the matched RL. The gas variants were not run.
+
+Results, Timestral against the champion:
+- rlmH (matched RL over the whole horizon): +0.045, 90% [+0.014, +0.077], better on 4 of 12 days.
+- nbpast (on top of matched RL): +0.090, 90% [+0.033, +0.146], better on 2 of 12 days. On the fresh days alone it is +0.245.
+- In the blend: rlmH +0.001, nbpast +0.019.
+
+What this means:
+- The nbpast gain seen earlier came from days with large level misses (09-14, 11-09, 11-10). On calm days nbpast adds noise.
+- Over all 44 days scored, the evidence for nbpast is mixed. I recommend it is not carried into the walk-forward as a candidate, or only as a diagnostic.
+- Matched RL as Timestral's covariate does not help on these days either.

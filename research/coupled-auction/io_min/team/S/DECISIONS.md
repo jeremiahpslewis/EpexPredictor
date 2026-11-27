@@ -64,3 +64,14 @@
   nbpast stays a candidate. Champion unchanged. Tomorrow after 10:30 UTC: backfill for the 12 early walk-forward
   days, then one wave each for champion, `matched` (lean) and nbpast on the 16 days; C's screen 3 (`C/screen3_wave.sh`,
   `nogas` unless the 11-27 input log shows gas day D before the gate; any gas result is an upper bound).
+- **2026-11-27 ~11:20. nbpast downgraded to "not supported" (C017).** On 12 further pre-registered days it is worse
+  than the champion Timestral by +0.090 [+0.033, +0.146]. Over all 44 days the evidence is mixed: it helps on days
+  with large level misses and adds noise on calm days. It is taken out of the walk-forward plan, which is now two
+  waves: champion and lean `matched`. Timestral keeps base residual load as its covariate.
+- **2026-11-27 ~11:20. Walk-forward backfill blocked today**: the previous-runs host's daily quota (10,000, shared
+  beyond this team) was exhausted before 10:40 UTC. Recommended to the coordinator: start `E/fetch_wf16.py
+  --prefetch-day 2026-11-29` at about 00:05 UTC on 11-28 (it first stores the live weather for the 11-28 run, then
+  backfills while at least 6,000 calls remain); the two waves follow after the 11-28 live run.
+- **2026-11-27 ~11:20. Live run of 11-27 (D = 11-28):** issued 09:31 UTC, all three runs passed. The grid weather was
+  stale (fetched 11-26 15:56 UTC; Open-Meteo 429 at 09:22), labelled in the file headers. E changed the fetch order
+  and retries. D's TSO load was absent on energy-charts at 09:20 and 09:31 UTC and present at 10:39 UTC.
