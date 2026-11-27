@@ -36,11 +36,24 @@ ZV = {"wind_speed_80m": "wind", "temperature_2m": "temp", "global_tilted_irradia
 ZONES = {"DE": list(range(6, 11)), "AT": None, "BE": None, "FR": None, "NL": None, "SE4": None, "DK1": None, "DK2": None}
 
 
+REMAINING: dict = {}            # last X-RateLimit-Remaining seen on the previous-runs host (daily window)
+KEEP_FOR_LIVE = 6000            # S, 2026-11-27: leave at least this many calls for the morning live run
+
+
+def remaining_now() -> float | None:
+    """one 1-location request (cost 1) to read the daily remaining on the previous-runs host"""
+    get("https://previous-runs-api.open-meteo.com/v1/forecast?latitude=52.5&longitude=13.4&hourly=temperature_2m&forecast_days=1")
+    return REMAINING.get("previous-runs")
+
+
 def get(url):
     for attempt in range(4):   # the 429s seen on 11-26/27 came and went within a minute: retry 3x after 60 s
         try:
             with urllib.request.urlopen(url, timeout=180) as r:
                 data = json.loads(r.read())
+                rem = r.headers.get("X-RateLimit-Remaining")
+                if rem is not None and "previous-runs" in url:
+                    REMAINING["previous-runs"] = float(rem)
             return [data] if isinstance(data, dict) and "hourly" in data else data
         except urllib.error.HTTPError as e:
             msg = f"HTTP {e.code}: {e.read()[:200]!r}"
@@ -70,6 +83,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--max-days", type=int, default=99)
     ap.add_argument("--dry", action="store_true")
+    ap.add_argument("--prefetch-day", help="FIRST run live_fetch.py for this delivery day (GRID first) into the persistent "
+                                           "live store, so the morning run has a same-night weather fetch to fall back on")
     a = ap.parse_args()
     days = [date.fromisoformat(x.split()[0]) for x in open(f"{HERE}/sample_wf16.txt") if x.strip()]
     todo = [d for d in days if any(needs(d))]
@@ -83,7 +98,23 @@ def main():
     os.makedirs(f"{OUT}/days", exist_ok=True)
     pts = json.load(open(f"{SP}/dense/points.json"))["points"]
     done = 0
+    if a.prefetch_day:
+        import subprocess
+        pdir = f"{SP}/live/prefetch/{a.prefetch_day}_{time.strftime('%H%M', time.gmtime())}"
+        print(f"prefetch for D={a.prefetch_day} -> {pdir}", flush=True)
+        r = subprocess.run([f"{SP}/tsvenv/bin/python", f"{HERE}/live_fetch.py", "--day", a.prefetch_day, "--outdir", pdir],
+                           cwd=HERE, env=dict(os.environ, SP=SP), stdout=open(f"{pdir}.log", "w"), stderr=subprocess.STDOUT)
+        try:
+            w = json.load(open(f"{pdir}/fetch_log.json"))["weather"]
+            print("prefetch exit", r.returncode, {k: (v.get("source"), v.get("fetched_utc")) for k, v in w.items()}, flush=True)
+        except Exception as e:  # noqa: BLE001
+            print("prefetch exit", r.returncode, "no fetch log:", repr(e)[:100], flush=True)
     for d in todo:
+        rem = remaining_now()
+        print(f"previous-runs daily calls remaining: {rem}", flush=True)
+        if rem is not None and rem < KEEP_FOR_LIVE + 100:
+            print(f"stopping: fewer than {KEEP_FOR_LIVE} + one batch left for the live run (resume after the next reset)")
+            break
         if done >= a.max_days:
             break
         s, e = d - timedelta(days=1), d + timedelta(days=2)

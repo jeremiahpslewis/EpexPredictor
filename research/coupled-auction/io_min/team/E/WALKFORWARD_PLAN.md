@@ -1,5 +1,22 @@
 # Long walk-forward window: sample, coverage, cost (team E, 2026-11-26)
 
+> **Night command, coordinator, about 00:05 UTC on 2026-11-28 (after the Open-Meteo reset at 00:00:54).**
+> One command, network only, about 15-25 min:
+> ```
+> SP=/tmp/claude-0/-home-user-EpexPredictor/d6125cc0-c431-5b93-a06f-0110cd871ab6/scratchpad; cd /home/user/EpexPredictor/research/coupled-auction/io_min/team/E && SP=$SP $SP/tsvenv/bin/python fetch_wf16.py --prefetch-day 2026-11-29 2>&1 | tee -a $SP/wf16_backfill.log
+> ```
+> 1. **Prefetch.** It first runs `live_fetch.py` for D = 2026-11-29, grid first, into the persistent live store
+>    (log `$SP/live/prefetch/2026-11-29_HHMM.log`). The 11-28 09:15 live run then has a same-night weather fetch to
+>    fall back on.
+> 2. **Backfill.** It then fetches the 12 early days one at a time. Before each day it reads the previous-runs host's
+>    `X-RateLimit-Remaining`, and it stops while at least 6,000 calls are still left for the morning live run.
+> 3. **Resume.** It is resumable: rerun the same command later to continue.
+>
+> After the 11-28 live run (after 10:30 UTC), with C's runs done and the machine empty, run the three waves one at a
+> time: `wave_wf16.py run champion`, then `run matched`, then `run nbpast`, then `assemble`. Score each with
+> `score_cache.py --champion $SP/E/wf16/champion --challenger $SP/E/wf16/<x> --days team/E/sample_wf16.txt`.
+
+
 ## Sample
 
 `sample_core36.txt` (written by `sample_days.py` before any scoring, seed 20261126): 3 days per month for
