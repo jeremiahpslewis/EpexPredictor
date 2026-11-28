@@ -232,9 +232,21 @@ def run_raw(model, init, var, yx):
     meta = run_meta(model, init)
     if meta is None or var not in meta["variables"]:
         return None
-    vt = pd.DatetimeIndex(pd.to_datetime(meta["valid_times"], utc=True))
-    v = _read_points(f"data_run/{model}/{init:%Y/%m/%d/%H%M}Z/{var}.om", yx)
-    return vt[:v.shape[1]], v
+    path = f"data_run/{model}/{init:%Y/%m/%d/%H%M}Z/{var}.om"
+    with _reader(path) as r:
+        # each file carries its own valid times (backward-averaged variables start one step after init)
+        tm = None
+        for i in range(r.num_children):
+            c = r.get_child_by_index(i)
+            if c.name == "time":
+                tm = np.asarray(c[...])
+        out = np.full((len(yx), r.shape[2]), np.nan, np.float32)
+        for k, c in enumerate(yx):
+            if c is not None:
+                out[k] = r[c[0], c[1], :]
+    vt = pd.DatetimeIndex(pd.to_datetime(tm, unit="s", utc=True)) if tm is not None else \
+        pd.DatetimeIndex(pd.to_datetime(meta["valid_times"], utc=True))[-out.shape[1]:]
+    return vt, out
 
 
 # ---------------------------------------------------------------- derived variables and time interpolation
@@ -323,8 +335,6 @@ def model_var_runs(model, var, yx, t_dst, pick, strict_rad=False):
             continue
         vt = raws[0][0]
         vals = f(*[r[1] for r in raws])
-        if var in RADIATION and len(vt) and vt[0] == pd.Timestamp(init):
-            vals[:, 0] = np.nan                    # first step of a run lacks backward averages
         mask = t_dst.isin(ts.index)
         out[:, mask] = on_times(var, vt, vals, t_dst[mask])
         used[str(init)] = int(mask.sum())
