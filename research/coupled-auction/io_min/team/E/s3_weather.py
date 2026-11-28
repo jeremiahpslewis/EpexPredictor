@@ -34,6 +34,7 @@ usage:
   omvenv/bin/python s3_weather.py vintage --store GRID --k 1 2 3 --start 2026-11-20 --end 2026-11-30 --out y.parquet
 """
 import argparse
+import asyncio
 import json
 import os
 import sys
@@ -159,16 +160,57 @@ def cells(model, points):
 
 # ---------------------------------------------------------------- raw readers
 
-def _read_points(path, yx, tsl=slice(None)):
-    """values [npoint, ntime] at the given cells from one .om file (time last); NaN where a cell is None"""
-    with _reader(path) as r:
+CONCURRENCY = int(os.environ.get("S3W_CONCURRENCY", "32"))   # ranged GETs in flight per file
+
+
+async def _aread_points(path, yx, tsl, want_time):
+    import s3fs
+    from omfiles import OmFileReaderAsync
+    afs = s3fs.S3FileSystem(anon=True, asynchronous=True, skip_instance_cache=True)
+    r = await OmFileReaderAsync.from_fsspec(afs, f"{BUCKET}/{path}")
+    try:
         nt = r.shape[2]
         t = range(nt)[tsl]
+        tsl = slice(t.start, t.stop) if len(t) else slice(0, 0)
         out = np.full((len(yx), len(t)), np.nan, np.float32)
-        for k, c in enumerate(yx):
-            if c is not None:
-                out[k] = r[c[0], c[1], tsl]
-    return out
+        sem = asyncio.Semaphore(CONCURRENCY)
+
+        async def one(k, c):
+            async with sem:
+                out[k] = np.asarray(await r.read_array((slice(c[0], c[0] + 1), slice(c[1], c[1] + 1), tsl))).reshape(-1)
+        await asyncio.gather(*(one(k, c) for k, c in enumerate(yx) if c is not None))
+        tm = None
+        if want_time:
+            try:
+                ch = await r.get_child_by_name("time")
+                tm = np.asarray(await ch.read_array((slice(None),))).reshape(-1)
+            except Exception:  # noqa: BLE001 - older files: no time child
+                tm = None
+        return out, tm
+    finally:
+        r.close()
+        try:
+            s = afs._s3
+            if s is not None:
+                await s.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _read_points(path, yx, tsl=slice(None), want_time=False):
+    """values [npoint, ntime] at the given cells from one .om file (time last); NaN where a cell is None.
+    All points of a file are read concurrently (async ranged GETs); a read that fails (e.g. the rolling chunk being
+    overwritten by a new run at that moment) is retried twice."""
+    for attempt in range(3):
+        try:
+            out, tm = asyncio.run(_aread_points(path, yx, tsl, want_time))
+            return (out, tm) if want_time else out
+        except FileNotFoundError:
+            raise
+        except Exception:  # noqa: BLE001
+            if attempt == 2:
+                raise
+            time.sleep(3 + 5 * attempt)
 
 
 def rolling_raw(model, var, yx, start, end):
@@ -233,17 +275,8 @@ def run_raw(model, init, var, yx):
     if meta is None or var not in meta["variables"]:
         return None
     path = f"data_run/{model}/{init:%Y/%m/%d/%H%M}Z/{var}.om"
-    with _reader(path) as r:
-        # each file carries its own valid times (backward-averaged variables start one step after init)
-        tm = None
-        for i in range(r.num_children):
-            c = r.get_child_by_index(i)
-            if c.name == "time":
-                tm = np.asarray(c[...])
-        out = np.full((len(yx), r.shape[2]), np.nan, np.float32)
-        for k, c in enumerate(yx):
-            if c is not None:
-                out[k] = r[c[0], c[1], :]
+    # each file carries its own valid times (backward-averaged variables start one step after init)
+    out, tm = _read_points(path, yx, want_time=True)
     vt = pd.DatetimeIndex(pd.to_datetime(tm, unit="s", utc=True)) if tm is not None else \
         pd.DatetimeIndex(pd.to_datetime(meta["valid_times"], utc=True))[-out.shape[1]:]
     return vt, out
