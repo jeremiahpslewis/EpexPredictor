@@ -20,6 +20,15 @@ Also fetched for the matched variant and the log only (not app inputs):
   - Open-Meteo model metadata (last run init / availability) for the models behind the default forecast.
 Writes SP/live/<D>/fetch_log.json. Network goes through the session proxy (aiohttp trust_env).
 
+WEATHER SOURCE (flag --weather-source, or env LIVE_WEATHER_SOURCE so live_forecast.py passes it through; default api):
+  api         - unchanged: Open-Meteo HTTP API as above;
+  api-then-s3 - API primary and fallback host once each; if both fail, the weather is read from Open-Meteo's open-data
+                bucket on AWS S3 (s3_weather.py, run in SP/omvenv; no quota) before keeping the stored forecast;
+                grid previous-runs and model metadata likewise fall back to S3;
+  s3          - S3 only (no Open-Meteo API call at all).
+  S3 values come from data/ (the rolling time series the API itself reads), blended ICON-D2 > ICON-EU > ICON >
+  ECMWF IFS; see S3_WEATHER.md for the match against the API. The source is logged per store as "s3".
+
 usage: tsvenv/bin/python live_fetch.py --day 2026-11-28 [--outdir SP/live/2026-11-28]
 """
 import argparse
@@ -47,6 +56,11 @@ OM_FALLBACK = "previous-runs-api.open-meteo.com"
 OM_HOSTS = ("api.open-meteo.com", "historical-forecast-api.open-meteo.com")
 META_MODELS = ("dwd_icon_d2", "dwd_icon_eu", "dwd_icon", "ecmwf_ifs025", "ncep_gfs013", "meteofrance_arome_france_hd",
                "knmi_harmonie_arome_europe", "dmi_harmonie_arome_europe")
+
+OMPY = f"{SP}/omvenv/bin/python"           # venv with omfiles (s3_weather.py); never tsvenv/venv
+HERE = os.path.dirname(os.path.abspath(__file__))
+WEATHER_SOURCE = {"v": os.environ.get("LIVE_WEATHER_SOURCE", "api")}
+OUTDIR = {"v": None}
 
 REQUESTS: list[dict] = []        # every HTTP request: url (no secrets are used), host, status, time
 REWRITE = {"on": False}
@@ -135,13 +149,80 @@ def grid_prev_runs(d: date, path: str) -> dict:
     return out
 
 
+def s3_run(args: list, out_parquet: str, timeout=600) -> pd.DataFrame:
+    """run s3_weather.py in the omfiles venv; returns its frame (complete rows only) and logs the call"""
+    import subprocess
+    t = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    r = subprocess.run([OMPY, "-I", f"{HERE}/s3_weather.py", *args, "--out", out_parquet], cwd=HERE, env=dict(os.environ, SP=SP),
+                       capture_output=True, text=True, timeout=timeout)
+    REQUESTS.append({"t_utc": t, "host": "openmeteo.s3.amazonaws.com", "status": r.returncode, "url": " ".join(args)[:300]})
+    if r.returncode != 0:
+        raise RuntimeError(f"s3_weather.py exit {r.returncode}: {r.stderr[-300:]}")
+    return pd.read_parquet(out_parquet)
+
+
+def s3_weather_store(name: str, w, t: datetime, outdir: str) -> dict:
+    """the store's refresh window (and any gap before it) from S3 data/ into the app store, complete rows only"""
+    before = w.data.index.max()
+    start = min(before, t - timedelta(days=1)).date() if before == before else (t - timedelta(days=1)).date()
+    fn = f"{outdir}/s3_weather_{name}.parquet"
+    df = s3_run(["store", "--store", name, "--start", str(start), "--end", str((t + timedelta(days=8)).date()), "--mode", "rolling"], fn)
+    df = df.dropna()            # the app's _update_data drops partial rows anyway; never mix with older API values
+    if df.empty or set(df.columns) != w.expected_columns():
+        raise RuntimeError(f"S3 frame unusable: {len(df)} complete rows, columns ok {set(df.columns) == w.expected_columns()}")
+    df.index = pd.DatetimeIndex(df.index).tz_convert("UTC")
+    df.index.name = "time"
+    w._update_data(df)
+    w.data.sort_index(inplace=True)
+    info = json.load(open(fn + ".json"))
+    return {"s3_rows": len(df), "s3_first": str(df.index.min()), "s3_last": str(df.index.max()),
+            "s3_models": {m: sorted({str(r) for v in d.values() for r in v.get("runs", {})}) or [v.get("source") for v in d.values()][:1]
+                          for m, d in info.get("models", {}).items()}, "s3_file": fn}
+
+
+def grid_prev_runs_s3(d: date, path: str) -> dict:
+    """grid_prev_runs from S3 data_run (newest run with init <= valid - 24 h * k), same columns and genuineness log"""
+    s, e = d - timedelta(days=8), d + timedelta(days=1)
+    df = s3_run(["vintage", "--store", "GRID", "--k", "1", "2", "3", "--start", str(s), "--end", str(e)], path + ".s3.parquet")
+    df = df.astype("float32")
+    df.to_parquet(path)
+    fetched = pd.Timestamp.now(tz="UTC")
+    out = {"source": "s3"}
+    for k in (1, 2, 3):
+        cols = [c for c in df.columns if c.endswith(f"_d{k}")]
+        last = df[cols].dropna(how="all").index.max()
+        out[f"d{k}_last_valid"] = str(last)
+        out[f"d{k}_last_genuine_valid"] = str(min(last, (fetched + pd.Timedelta(hours=24 * k)).floor("1h")))
+    out["rows"], out["fetched_utc"] = len(df), fetched.isoformat(timespec="seconds")
+    return out
+
+
 def model_meta() -> dict:
     out = {}
+    if WEATHER_SOURCE["v"] == "s3":
+        return model_meta_s3()
     for m in META_MODELS:
         try:
             j = get_json(f"https://api.open-meteo.com/data/{m}/static/meta.json")
             out[m] = {k: datetime.fromtimestamp(j[k], timezone.utc).isoformat() for k in
                       ("last_run_initialisation_time", "last_run_availability_time", "last_run_modification_time") if k in j}
+        except Exception as e:  # noqa: BLE001 - log only
+            out[m] = {"error": repr(e)[:200]}
+    if WEATHER_SOURCE["v"] == "api-then-s3" and all("error" in v for v in out.values()):
+        return model_meta_s3()
+    return out
+
+
+def model_meta_s3() -> dict:
+    """the same metadata from the S3 bucket (data/<model>/static/meta.json: the rolling series' newest run)"""
+    out = {}
+    for m in META_MODELS:
+        try:
+            with urllib.request.urlopen(f"https://openmeteo.s3.amazonaws.com/data/{m}/static/meta.json", timeout=60) as r:
+                j = json.loads(r.read())
+            out[m] = {k: datetime.fromtimestamp(j[k], timezone.utc).isoformat() for k in
+                      ("last_run_initialisation_time", "last_run_availability_time", "last_run_modification_time") if k in j}
+            out[m]["source"] = "s3"
         except Exception as e:  # noqa: BLE001 - log only
             out[m] = {"error": repr(e)[:200]}
     return out
@@ -207,9 +288,21 @@ async def fetch_stores(d: date, only=None) -> dict:
             before = w.data.index.max()
             n0 = len(REQUESTS)
             entry = {"before": str(before)}
-            # primary, fallback; then twice more after a pause (the 429s seen on 2026-11-26 came and went within seconds)
-            for i, attempt in enumerate(("primary", "fallback", "primary", "fallback", "primary", "fallback")):
-                if i in (2, 4):
+            # primary, fallback; then twice more after a pause (the 429s seen on 2026-11-26 came and went within seconds).
+            # With an S3 weather source: S3 only, or API primary + fallback once and then S3
+            attempts = {"api": ("primary", "fallback", "primary", "fallback", "primary", "fallback"),
+                        "api-then-s3": ("primary", "fallback", "s3"), "s3": ("s3",)}[WEATHER_SOURCE["v"]]
+            for i, attempt in enumerate(attempts):
+                if attempt == "s3":
+                    try:
+                        entry |= s3_weather_store(name, w, datetime.now(timezone.utc), OUTDIR["v"])
+                        await w.serialize()
+                        entry["source"] = "s3"
+                        break
+                    except Exception as e:  # noqa: BLE001
+                        entry.setdefault("errors", []).append(f"s3: {repr(e)[:200]}")
+                        continue
+                if i in (2, 4) and attempts[i] != "s3":
                     # per-store retry after a pause (the 429s come and go within a minute); overall cap 9 min, after
                     # which a store keeps its stored forecast
                     if time.time() - w_t0 > 540:
@@ -227,7 +320,7 @@ async def fetch_stores(d: date, only=None) -> dict:
                     entry.setdefault("errors", []).append(f"{attempt}: {repr(e)[:150]}")
                 finally:
                     REWRITE["on"] = False
-            entry["hosts"] = sorted({r["host"] for r in REQUESTS[n0:] if "open-meteo" in r["host"]})
+            entry["hosts"] = sorted({r["host"] for r in REQUESTS[n0:] if "open-meteo" in r["host"] or "openmeteo" in r["host"]})
             entry["last"] = str(w.data.dropna().index.max())
             entry["fetched_utc"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
             # when the weather the store now holds was fetched: this run, or (both hosts failed) the last good fetch,
@@ -241,7 +334,8 @@ async def fetch_stores(d: date, only=None) -> dict:
             entry["weather_fetched_utc"] = wft.get(name, {}).get("fetched_utc", "seed (fresh_data, 2026-11-26 ~10 UTC)")
             entry["weather_source"] = wft.get(name, {}).get("source", "seed")
             log["weather"][name] = entry
-            await asyncio.sleep(15)   # spacing between stores, as the app's 5-20 s (per-minute limit)
+            if WEATHER_SOURCE["v"] != "s3":
+                await asyncio.sleep(15)   # spacing between stores, as the app's 5-20 s (per-minute limit)
 
     parts = {"prices": prices, "generation": generation, "gas": gas, "weather": weather}
     await asyncio.gather(*(f() for k, f in parts.items() if only is None or k == only))
@@ -253,10 +347,14 @@ def main():
     ap.add_argument("--day", required=True)
     ap.add_argument("--outdir")
     ap.add_argument("--only", choices=("weather",), help="refresh the weather only and update the existing fetch_log.json")
+    ap.add_argument("--weather-source", choices=("api", "api-then-s3", "s3"), default=WEATHER_SOURCE["v"],
+                    help="Open-Meteo HTTP API (default), API then the S3 open-data bucket, or S3 only (env LIVE_WEATHER_SOURCE)")
     a = ap.parse_args()
+    WEATHER_SOURCE["v"] = a.weather_source
     d = date.fromisoformat(a.day)
     outdir = a.outdir or f"{SP}/live/{d}"
     init_env(outdir)
+    OUTDIR["v"] = outdir
     t0 = time.time()
     if a.only:
         log = json.load(open(f"{outdir}/fetch_log.json"))
@@ -264,6 +362,7 @@ def main():
         log["weather_refetch_start_utc"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     else:
         log = {"day": str(d), "fetch_start_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    log["weather_source_flag"] = WEATHER_SOURCE["v"]
     log["openmeteo_model_runs_at_start"] = model_meta()
     new = asyncio.run(fetch_stores(d, a.only))
     if a.only:
@@ -272,9 +371,16 @@ def main():
         log |= new
     if not a.only or "error" in log.get("grid_prev_live", {"error": 1}):
         try:
+            if WEATHER_SOURCE["v"] == "s3":
+                raise RuntimeError("weather source s3: no API call")
             log["grid_prev_live"] = grid_prev_runs(d, f"{outdir}/grid_prev_live.parquet")
         except Exception as e:  # noqa: BLE001 - only the matched variant needs it
             log["grid_prev_live"] = {"error": repr(e)[:300]}
+            if WEATHER_SOURCE["v"] in ("s3", "api-then-s3"):
+                try:
+                    log["grid_prev_live"] = grid_prev_runs_s3(d, f"{outdir}/grid_prev_live.parquet") | {"api_error": repr(e)[:200]}
+                except Exception as e2:  # noqa: BLE001
+                    log["grid_prev_live"]["s3_error"] = repr(e2)[:300]
     log["openmeteo_model_runs_at_end"] = model_meta()
     # snapshot of the stores the forecast reads (the persistent directory moves on the next day)
     snap = f"{outdir}/stores"
