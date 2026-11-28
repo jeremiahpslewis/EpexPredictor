@@ -63,6 +63,11 @@ blend MAE ranged from about 0.4 to 3.2 on the stored days); the table is a runni
 | D | naive (D-7) | app | team = champion config | `matched` shadow | team minus app | issued UTC | notes |
 |---|---|---|---|---|---|---|---|
 | 2026-11-28 (Sat) | 1.924 | 0.816 | 0.867 | 0.929 | +0.051 | 11-27 09:31 | grid weather stale (fetched 11-26 15:56 UTC, Open-Meteo 429); hashes in `E/live/2026-11-28.md` |
+| 2026-11-29 (Sun) | 2.221 | 0.921 | 0.888 | 0.836 | −0.033 | 11-28 09:54 | all inputs from the 00:11 UTC snapshot (container restart, then Open-Meteo 429); hashes in `E/live/2026-11-29.md` |
+| **mean, 2 days** | 2.073 | 0.869 | 0.878 | 0.883 | +0.009 | | |
+
+Members on 2026-11-29: app 1.013 / 1.000 / 1.027; champion 0.992 / 0.977 / 1.009; `matched` 0.966 / 0.914 / 0.966.
+Residual load 2026-11-28 (GW MAE): champion trees 2.05, mixed 1.35; `matched` trees 1.62, mixed 1.59.
 
 Members on 2026-11-28 (trees / Timestral / market route): app 0.803 / 1.032 / 0.833; champion 0.950 / 1.070 / 0.841;
 `matched` 0.931 / 1.127 / 0.866. Residual-load scores follow on 11-29.
