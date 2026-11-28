@@ -27,7 +27,8 @@ WEATHER SOURCE (flag --weather-source, or env LIVE_WEATHER_SOURCE so live_foreca
                 grid previous-runs and model metadata likewise fall back to S3;
   s3          - S3 only (no Open-Meteo API call at all).
   S3 values come from data/ (the rolling time series the API itself reads), blended ICON-D2 > ICON-EU > ICON >
-  ECMWF IFS; see S3_WEATHER.md for the match against the API. The source is logged per store as "s3".
+  ECMWF IFS. They are close to the API but not identical (S3_WEATHER.md: no ICON-D2-RUC / KNMI NL, temperature not
+  corrected), so keep the default `api`; the S3 path is a labelled fallback. Logged per store as source "s3".
 
 usage: tsvenv/bin/python live_fetch.py --day 2026-11-28 [--outdir SP/live/2026-11-28]
 """

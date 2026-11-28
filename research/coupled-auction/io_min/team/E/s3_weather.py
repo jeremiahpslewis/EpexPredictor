@@ -19,13 +19,19 @@ Stored are u/v wind components (speed is derived: hypot * 3.6 km/h) and, for ICO
 (shortwave = sum). Backward-averaged radiation lacks the first step of each run in data_run.
 
 Modes:
-  rolling  - data/ as it is now (the API's own source: identical values for the latest forecast);
+  rolling  - data/ as it is now (the time series the API reads; hourly, already time-interpolated by Open-Meteo);
   latest   - "latest run published <= asof" per model, from data_run: for each valid time the newest run with
-             init <= valid time among those published by asof (the stitch data/ performs);
-  vintage  - "the run issued k days before each valid time": newest run with init <= valid - 24 h * k
-             (previous-runs API semantics, previous_day<k>), from data_run.
-Models are blended like the API's default for central Europe (see BLEND): the first model in the list that has a
-value wins for each point and valid time.
+             init <= valid time that reaches it, among those published (meta.json created_at) by asof;
+  vintage  - "the run issued k days before each valid time": newest run with init <= valid - 24 h * k and
+             lead < 24 h * (k + 1) (previous-runs API semantics, previous_day<k>), from data_run.
+Models are blended in BLEND order: the first model with a value wins for each point and valid time.
+
+NOT an exact copy of the API's default ("best match") - measured on 2026-11-28 (S3_WEATHER.md): the API puts
+ICON-D2-RUC (hourly runs, ~27 h, native grid only; not used here) first, KNMI Harmonie-Arome NL on the western grid
+points, and corrects temperature_2m (no regular-grid cell reproduces it). Where the API used plain ICON-D2 (lead
+~27-48 h, 49 of 58 grid points) wind and radiation match exactly (84 % of values) on the nearest regular-grid cell
+(an optional SP/s3cache/cellmap.json overrides cells per point; not needed so far). Elsewhere expect, for the DE grid, mean |diff| ~1.7 km/h wind,
+~0.35 K temperature, ~10 W/m2 radiation, worse in the 15-min zone stores.
 
 Needs the `omfiles` package (and fsspec/s3fs/pyproj): run with SP/omvenv/bin/python, never in the app venvs.
 
@@ -48,7 +54,7 @@ import pandas as pd
 SP = os.environ.get("SP", "/tmp/claude-0/-home-user-EpexPredictor/d6125cc0-c431-5b93-a06f-0110cd871ab6/scratchpad")
 BUCKET = "openmeteo"
 CACHE = f"{SP}/s3cache"
-THREADS = int(os.environ.get("S3W_THREADS", "4"))      # network-bound reads; the CPU work is small
+THREADS = int(os.environ.get("S3W_THREADS", "1"))      # >1 hangs (s3fs async in several threads); files are read concurrently instead
 
 _fs = None
 
@@ -106,7 +112,7 @@ def store_spec(store):
 
 ROUND = {"global_tilted_irradiance": 0, "relative_humidity_2m": 0}   # API output precision; everything else 0.1
 
-# API default ("best match") for central Europe, highest priority first (validated: see S3_WEATHER.md)
+# priority order (the API's default for central Europe without ICON-D2-RUC and KNMI NL; see S3_WEATHER.md)
 BLEND = ["dwd_icon_d2", "dwd_icon_eu", "dwd_icon", "ecmwf_ifs025"]
 
 
@@ -163,10 +169,24 @@ def cells(model, points):
 CONCURRENCY = int(os.environ.get("S3W_CONCURRENCY", "32"))   # ranged GETs in flight per file
 
 
-async def _aread_points(path, yx, tsl, want_time):
+def _afs():
     import s3fs
+    return s3fs.S3FileSystem(anon=True, asynchronous=True, skip_instance_cache=True)
+
+
+async def _aclose(afs):
+    c = getattr(afs, "_s3creator", None)
+    if c is not None:
+        try:
+            await c.__aexit__(None, None, None)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _aread_points(path, yx, tsl, want_time, afs=None):
     from omfiles import OmFileReaderAsync
-    afs = s3fs.S3FileSystem(anon=True, asynchronous=True, skip_instance_cache=True)
+    own = afs is None
+    afs = afs or _afs()
     r = await OmFileReaderAsync.from_fsspec(afs, f"{BUCKET}/{path}")
     try:
         nt = r.shape[2]
@@ -189,21 +209,77 @@ async def _aread_points(path, yx, tsl, want_time):
         return out, tm
     finally:
         r.close()
+        if own:
+            await _aclose(afs)
+
+
+_MEM: dict = {}
+
+
+def _ckey(path, yx, tsl):
+    import hashlib
+    return hashlib.sha1(f"{path}|{yx}|{tsl}".encode()).hexdigest()[:20]
+
+
+def prefetch(jobs):
+    """read many files' points in one event loop, concurrently (threads with one loop each hang in s3fs);
+    jobs: (path, yx, tsl, want_time). Results land in the memory cache that _read_points consults first."""
+    todo = [j for j in jobs if _ckey(j[0], j[1], j[2]) not in _MEM
+            and not os.path.exists(f"{CACHE}/raw/{_ckey(j[0], j[1], j[2])}.npz")]
+    if not todo:
+        return
+
+    async def run():
+        sem = asyncio.Semaphore(int(os.environ.get("S3W_FILES", "12")))
+        afs = _afs()
+
+        async def one(j):
+            async with sem:
+                for attempt in range(3):
+                    try:
+                        return j, await _aread_points(*j, afs=afs)
+                    except FileNotFoundError:
+                        return j, None
+                    except Exception:  # noqa: BLE001 - retried; a last failure is left to _read_points
+                        await asyncio.sleep(3 + 5 * attempt)
+                return j, None
         try:
-            s = afs._s3
-            if s is not None:
-                await s.close()
-        except Exception:  # noqa: BLE001
-            pass
+            return await asyncio.gather(*(one(j) for j in todo))
+        finally:
+            await _aclose(afs)
+    for j, res in asyncio.run(run()):
+        if res is not None:
+            k = _ckey(j[0], j[1], j[2])
+            _MEM[k] = res
+            if j[0].startswith("data_run/") and os.environ.get("S3W_CACHE", "1") == "1":
+                os.makedirs(f"{CACHE}/raw", exist_ok=True)
+                np.savez(f"{CACHE}/raw/{k}.tmp.npz", v=res[0], tm=np.array([]) if res[1] is None else res[1])
+                os.replace(f"{CACHE}/raw/{k}.tmp.npz", f"{CACHE}/raw/{k}.npz")
 
 
 def _read_points(path, yx, tsl=slice(None), want_time=False):
     """values [npoint, ntime] at the given cells from one .om file (time last); NaN where a cell is None.
     All points of a file are read concurrently (async ranged GETs); a read that fails (e.g. the rolling chunk being
     overwritten by a new run at that moment) is retried twice."""
+    k = _ckey(path, yx, tsl)
+    if k in _MEM:
+        out, tm = _MEM[k]
+        return (out, tm) if want_time else out
+    cfn = None
+    if path.startswith("data_run/") and os.environ.get("S3W_CACHE", "1") == "1":
+        # run files never change once published: keep the few values read per file (SP/s3cache/raw)
+        cfn = f"{CACHE}/raw/{k}.npz"
+        if os.path.exists(cfn):
+            z = np.load(cfn)
+            tm = z["tm"] if z["tm"].size else None
+            return (z["v"], tm) if want_time else z["v"]
     for attempt in range(3):
         try:
             out, tm = asyncio.run(_aread_points(path, yx, tsl, want_time))
+            if cfn is not None:
+                os.makedirs(f"{CACHE}/raw", exist_ok=True)
+                np.savez(cfn + ".tmp.npz", v=out, tm=np.array([]) if tm is None else tm)
+                os.replace(cfn + ".tmp.npz", cfn)
             return (out, tm) if want_time else out
         except FileNotFoundError:
             raise
@@ -219,6 +295,13 @@ def rolling_raw(model, var, yx, start, end):
     meta = OmChunksMeta.from_dict(json.loads(fs().cat_file(f"{BUCKET}/data/{model}/static/meta.json")))
     t0, t1 = np.datetime64(pd.Timestamp(start).tz_localize(None), "s"), np.datetime64(pd.Timestamp(end).tz_localize(None), "s")
     ts, vs = [], []
+    pre = []
+    for c in meta.chunks_for_date_range(t0, t1):
+        ct = meta.get_chunk_time_range(c)
+        ii = np.where((ct >= t0) & (ct <= t1))[0]
+        if len(ii):
+            pre.append((f"data/{model}/{var}/chunk_{c}.om", yx, slice(int(ii[0]), int(ii[-1]) + 1), False))
+    prefetch(pre)
     for c in meta.chunks_for_date_range(t0, t1):
         ct = meta.get_chunk_time_range(c)
         m = (ct >= t0) & (ct <= t1)
@@ -288,6 +371,10 @@ def stored_vars(model, var):
     """which stored variables give `var`, and how"""
     if var.startswith("wind_speed_"):
         h = var.split("_")[-1]
+        if model.startswith("ecmwf") and h != "100m" and h != "10m":
+            # IFS stores 10 m and 100 m only: power law (exponent 1/7) from 100 m. An approximation, not the API's
+            f = (int(h[:-1]) / 100) ** (1 / 7)
+            return ["wind_u_component_100m", "wind_v_component_100m"], lambda u, v: np.hypot(u, v) * 3.6 * f
         return [f"wind_u_component_{h}", f"wind_v_component_{h}"], lambda u, v: np.hypot(u, v) * 3.6
     if var in ("shortwave_radiation", "global_tilted_irradiance"):
         if model.startswith("ecmwf"):
@@ -332,6 +419,7 @@ def backward_avg_linear(t_src, v, t_dst):
 
 
 def on_times(var, t_src, v, t_dst):
+    t_src, t_dst = pd.DatetimeIndex(t_src).as_unit("ns"), pd.DatetimeIndex(t_dst).as_unit("ns")   # asi8 below
     if len(t_src) == 0:
         return np.full((v.shape[0], len(t_dst)), np.nan, np.float32)
     if var in RADIATION:
@@ -362,6 +450,9 @@ def model_var_runs(model, var, yx, t_dst, pick, strict_rad=False):
     eps = pd.Timedelta(seconds=1) if (strict_rad and var in RADIATION) else pd.Timedelta(0)
     chosen = pd.Series([pick(t - eps) for t in t_dst], index=t_dst)
     used = {}
+    inits = [i for i in chosen.dropna().unique() if run_meta(model, i) is not None]
+    prefetch([(f"data_run/{model}/{pd.Timestamp(i):%Y/%m/%d/%H%M}Z/{n}.om", yx, slice(None), True) for i in inits for n in names
+              if n in run_meta(model, i)["variables"]])
     for init, ts in chosen.dropna().groupby(chosen.dropna()):
         raws = [run_raw(model, init, n, yx) for n in names]
         if any(r is None for r in raws):
@@ -392,26 +483,27 @@ def fetch(points, variables: dict, start, end, resolution="hourly", mode="rollin
     cols = {}
 
     def run_picker(model):
-        runs = list_runs(model, s - pd.Timedelta(days=10), min(asof, e))
-        if mode == "latest":
-            ok = []
-            for r in runs:
-                m = run_meta(model, r)
-                if m is not None and pd.Timestamp(m["created_at"]) <= asof:
-                    ok.append(r)
-            ok = pd.DatetimeIndex(ok)
-
-            def pick(t):
-                c = ok[ok <= t]
-                return c.max() if len(c) else None
-            return pick, [str(x) for x in ok[-3:]]
-        lag = pd.Timedelta(hours=24 * k)
-        ri = pd.DatetimeIndex(runs)
+        """pick(t) -> the run that supplies valid time t: the newest run with init <= t (latest) or <= t - 24 h * k
+        (vintage) whose forecast reaches t (ICON-EU's 03/09/15/21Z runs end after 30 h, ICON's 06/18Z after 120 h,
+        and a newer short run must not hide an older long one). Vintage also requires lead < 24 h * (k + 1), as the
+        previous-runs API files each run's steps by lead day."""
+        lookback = pd.Timedelta(hours=30 + (24 * k if mode == "vintage" else 0))
+        runs = list_runs(model, s - lookback, min(asof, e))
+        ok, ends = [], []
+        for r in runs:
+            m = run_meta(model, r)
+            if m is None or pd.Timestamp(m["created_at"]) > asof:
+                continue
+            ok.append(r)
+            ends.append(pd.Timestamp(m["valid_times"][-1]))
+        ok, ends = pd.DatetimeIndex(ok), pd.DatetimeIndex(ends)
+        lag = pd.Timedelta(hours=24 * k) if mode == "vintage" else pd.Timedelta(0)
+        cap = pd.Timedelta(hours=24 * (k + 1)) if mode == "vintage" else pd.Timedelta(days=99)
 
         def pick(t):
-            c = ri[ri <= t - lag]
-            return c.max() if len(c) else None
-        return pick, None
+            c = (ok <= t - lag) & (ends >= t) & (t - ok < cap)
+            return ok[c].max() if c.any() else None
+        return pick, [str(x) for x in ok[-3:]]
 
     work = []
     for var, name in variables.items():
